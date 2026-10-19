@@ -14,11 +14,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
-import openai
 import pytest
 
 from semula.cli import main
 from tests.support.server import running_server
+
+openai = pytest.importorskip("openai")
 
 pytestmark = pytest.mark.e2e
 

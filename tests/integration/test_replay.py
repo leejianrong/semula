@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -79,6 +80,26 @@ async def test_bad_requests_are_400s(replay: httpx.AsyncClient) -> None:
     assert no_messages.status_code == 400
 
 
-async def test_streaming_is_reported_as_not_implemented_yet(replay: httpx.AsyncClient) -> None:
+async def test_a_recorded_answer_streams_as_sse(record: httpx.AsyncClient) -> None:
+    text = "Streaming works for recorded answers."
+    await record_answer(record, chat("stream me"), {"content": text})
+
+    async with record.stream(
+        "POST", "/v1/chat/completions", json=chat("stream me", stream=True)
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        lines = [line async for line in resp.aiter_lines() if line]
+    assert lines[-1] == "data: [DONE]"
+    chunks = [json.loads(line[6:]) for line in lines[:-1]]
+    streamed = "".join(c["choices"][0]["delta"].get("content") or "" for c in chunks)
+    assert streamed == text
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+
+
+async def test_a_streaming_miss_in_replay_mode_is_a_normal_json_error(
+    replay: httpx.AsyncClient,
+) -> None:
     resp = await replay.post("/v1/chat/completions", json=chat(stream=True))
-    assert resp.status_code == 501
+    assert resp.status_code == 424
+    assert resp.json()["error"]["code"] == "semula_no_match"

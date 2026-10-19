@@ -6,25 +6,22 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import canonical
 from .errors import SemulaError
 from .responses import build_completion
 from .service import Service
+from .streaming import sse_events
 
 router = APIRouter(prefix="/v1")
 
 
-@router.post("/chat/completions")
-async def chat_completions(request: Request) -> JSONResponse:
+@router.post("/chat/completions", response_model=None)
+async def chat_completions(request: Request) -> JSONResponse | StreamingResponse:
     service: Service = request.app.state.service
     started = time.perf_counter()
     body = await _read_body(request)
-    if body.get("stream"):
-        raise SemulaError(
-            501, "semula_not_implemented", "Streaming is not implemented yet.", param="stream"
-        )
     model = str(body.get("model") or "semula")
     req = canonical.from_openai(body)
 
@@ -32,7 +29,7 @@ async def chat_completions(request: Request) -> JSONResponse:
     if match:
         service.record_hit(match.entry_id)
         service.log_call("hit", started, tier=match.tier, entry_id=match.entry_id)
-        return JSONResponse(build_completion(match.stored, model))
+        return _respond(service, body, match.stored, model)
 
     if service.settings.mode == "replay":
         service.log_call("miss", started)
@@ -56,7 +53,20 @@ async def chat_completions(request: Request) -> JSONResponse:
             err_type="semula_error",
         )
     service.log_call("recorded", started, pending_id=pending_id)
-    return JSONResponse(build_completion(stored, model))
+    return _respond(service, body, stored, model)
+
+
+def _respond(
+    service: Service, body: dict[str, Any], stored: dict[str, Any], model: str
+) -> JSONResponse | StreamingResponse:
+    if not body.get("stream"):
+        return JSONResponse(build_completion(stored, model))
+    options = body.get("stream_options")
+    include_usage = bool(isinstance(options, dict) and options.get("include_usage"))
+    events = sse_events(
+        stored, model, chunk_size=service.settings.chunk_size, include_usage=include_usage
+    )
+    return StreamingResponse(events, media_type="text/event-stream")
 
 
 @router.get("/models")
