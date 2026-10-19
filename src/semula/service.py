@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +21,8 @@ from .errors import SemulaError
 from .ids import new_ulid
 from .responses import parse_answer, validate_tool_calls
 
+_SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
+
 
 @dataclass(frozen=True)
 class Match:
@@ -34,6 +37,78 @@ class Service:
         self.settings = settings
         self._waiters: dict[str, asyncio.Event] = {}
         self._config = FingerprintConfig()
+
+    # --- projects -----------------------------------------------------------------
+    def create_project(self, slug: str, name: str | None = None) -> dict[str, Any]:
+        if not _SLUG.fullmatch(slug):
+            raise SemulaError(
+                422,
+                "invalid_project_id",
+                "A project id is 1-63 characters: lowercase letters, digits and hyphens, "
+                "starting with a letter or digit.",
+                param="id",
+            )
+        if self.db.query_one(
+            "SELECT 1 FROM project WHERE workspace_id=? AND id=?", (DEFAULT_WORKSPACE, slug)
+        ):
+            raise SemulaError(409, "project_exists", f"Project '{slug}' already exists.")
+        self.db.execute(
+            "INSERT INTO project (workspace_id, id, name) VALUES (?,?,?)",
+            (DEFAULT_WORKSPACE, slug, name or slug),
+        )
+        return self.get_project(slug)
+
+    def list_projects(self) -> list[dict[str, Any]]:
+        rows = self.db.query(
+            "SELECT p.id, p.name, p.created_at, "
+            "(SELECT COUNT(*) FROM entry e WHERE e.workspace_id=p.workspace_id "
+            " AND e.project_id=p.id) AS entries, "
+            "(SELECT COUNT(*) FROM pending q WHERE q.workspace_id=p.workspace_id "
+            " AND q.project_id=p.id AND q.status='pending') AS pending "
+            "FROM project p WHERE p.workspace_id=? ORDER BY p.id",
+            (DEFAULT_WORKSPACE,),
+        )
+        return [dict(r) for r in rows]
+
+    def get_project(self, slug: str) -> dict[str, Any]:
+        for project in self.list_projects():
+            if project["id"] == slug:
+                return project
+        raise SemulaError(404, "project_not_found", f"No project '{slug}'.", param="project")
+
+    def require_project(self, slug: str) -> str:
+        self.get_project(slug)
+        return slug
+
+    def update_project(self, slug: str, name: str | None) -> dict[str, Any]:
+        self.require_project(slug)
+        if name:
+            self.db.execute(
+                "UPDATE project SET name=? WHERE workspace_id=? AND id=?",
+                (name, DEFAULT_WORKSPACE, slug),
+            )
+        return self.get_project(slug)
+
+    def delete_project(self, slug: str) -> None:
+        self.require_project(slug)
+        if slug == DEFAULT_PROJECT:
+            raise SemulaError(409, "default_project", "The default project cannot be deleted.")
+        for pid in [
+            r["id"]
+            for r in self.db.query(
+                "SELECT id FROM pending WHERE workspace_id=? AND project_id=?",
+                (DEFAULT_WORKSPACE, slug),
+            )
+        ]:
+            event = self._waiters.pop(pid, None)
+            if event:
+                event.set()  # release held calls; they will find no answer and time out cleanly
+        self.db.execute(
+            "DELETE FROM call_log WHERE workspace_id=? AND project_id=?", (DEFAULT_WORKSPACE, slug)
+        )
+        self.db.execute(
+            "DELETE FROM project WHERE workspace_id=? AND id=?", (DEFAULT_WORKSPACE, slug)
+        )
 
     # --- models -----------------------------------------------------------------
     def list_models(self, project: str = DEFAULT_PROJECT) -> list[str]:
@@ -106,12 +181,18 @@ class Service:
         entry = self.db.query_one("SELECT responses FROM entry WHERE id=?", (row["entry_id"],))
         return json.loads(entry["responses"])[0] if entry else None
 
-    def list_pending(self, status: str | None = "pending") -> list[dict[str, Any]]:
+    def list_pending(
+        self, status: str | None = "pending", project: str | None = None
+    ) -> list[dict[str, Any]]:
         sql = "SELECT * FROM pending WHERE workspace_id=?"
         params: list[Any] = [DEFAULT_WORKSPACE]
         if status:
             sql += " AND status=?"
             params.append(status)
+        if project:
+            self.require_project(project)
+            sql += " AND project_id=?"
+            params.append(project)
         rows = self.db.query(sql + " ORDER BY id", params)
         return [_pending_view(r, full=False) for r in rows]
 

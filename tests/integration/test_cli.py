@@ -69,3 +69,17 @@ def _write(tmp_path: Path, text: str) -> Path:
     p = tmp_path / "answer.json"
     p.write_text(text)
     return p
+
+
+def test_project_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with running_server(tmp_path) as url:
+        assert run(url, "project", "create", "my-app", "--name", "My App") == 0
+        assert run(url, "project", "create", "my-app") == 4  # already exists
+        assert run(url, "project", "create", "Bad Id") == 4
+        capsys.readouterr()
+        assert run(url, "--json", "project", "list") == 0
+        ids = [p["id"] for p in json.loads(capsys.readouterr().out)]
+        assert ids == ["default", "my-app"]
+        assert run(url, "project", "delete", "my-app") == 0
+        assert run(url, "project", "delete", "my-app") == 3
+        assert run(url, "project", "delete", "default") == 4

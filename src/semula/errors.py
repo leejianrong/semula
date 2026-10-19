@@ -14,6 +14,7 @@ class SemulaError(Exception):
         *,
         param: str | None = None,
         err_type: str = "invalid_request_error",
+        extra: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.status = status
@@ -21,13 +22,15 @@ class SemulaError(Exception):
         self.message = message
         self.param = param
         self.err_type = err_type
+        self.extra = extra or {}
 
     def body(self) -> dict[str, Any]:
         return {
+            **self.extra,
             "error": {
                 "message": self.message,
                 "type": self.err_type,
                 "param": self.param,
                 "code": self.code,
-            }
+            },
         }

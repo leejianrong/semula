@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import canonical
+from .db import DEFAULT_PROJECT
 from .errors import SemulaError
 from .responses import build_completion
 from .service import Service
@@ -17,22 +18,34 @@ from .streaming import sse_events
 router = APIRouter(prefix="/v1")
 
 
+def _project(request: Request, service: Service) -> str:
+    """Path beats header beats default. An unknown project is a 404, never a silent fallback."""
+    slug = (
+        request.path_params.get("project_id")
+        or request.headers.get("x-semula-project")
+        or DEFAULT_PROJECT
+    )
+    return service.require_project(str(slug))
+
+
 @router.post("/chat/completions", response_model=None)
+@router.post("/projects/{project_id}/chat/completions", response_model=None)
 async def chat_completions(request: Request) -> JSONResponse | StreamingResponse:
     service: Service = request.app.state.service
+    project = _project(request, service)
     started = time.perf_counter()
     body = await _read_body(request)
     model = str(body.get("model") or "semula")
     req = canonical.from_openai(body)
 
-    match = service.find(req)
+    match = service.find(req, project)
     if match:
         service.record_hit(match.entry_id)
-        service.log_call("hit", started, tier=match.tier, entry_id=match.entry_id)
+        service.log_call("hit", started, tier=match.tier, entry_id=match.entry_id, project=project)
         return _respond(service, body, match.stored, model)
 
     if service.settings.mode == "replay":
-        service.log_call("miss", started)
+        service.log_call("miss", started, project=project)
         raise SemulaError(
             424,
             "semula_no_match",
@@ -40,10 +53,10 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             err_type="semula_error",
         )
 
-    pending_id = service.open_pending(req)
+    pending_id = service.open_pending(req, project)
     stored = await service.wait_for_answer(pending_id, service.settings.record_timeout)
     if stored is None:
-        service.log_call("record_timeout", started, pending_id=pending_id)
+        service.log_call("record_timeout", started, pending_id=pending_id, project=project)
         raise SemulaError(
             504,
             "semula_record_timeout",
@@ -52,7 +65,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             "a late answer is still saved.",
             err_type="semula_error",
         )
-    service.log_call("recorded", started, pending_id=pending_id)
+    service.log_call("recorded", started, pending_id=pending_id, project=project)
     return _respond(service, body, stored, model)
 
 
@@ -74,15 +87,18 @@ def _model(model_id: str) -> dict[str, Any]:
 
 
 @router.get("/models")
+@router.get("/projects/{project_id}/models")
 async def models(request: Request) -> dict[str, Any]:
     service: Service = request.app.state.service
-    return {"object": "list", "data": [_model(m) for m in service.list_models()]}
+    project = _project(request, service)
+    return {"object": "list", "data": [_model(m) for m in service.list_models(project)]}
 
 
 @router.get("/models/{model_id:path}")
+@router.get("/projects/{project_id}/models/{model_id:path}")
 async def retrieve_model(model_id: str, request: Request) -> dict[str, Any]:
     service: Service = request.app.state.service
-    if model_id not in service.list_models():
+    if model_id not in service.list_models(_project(request, service)):
         raise SemulaError(
             404,
             "model_not_found",
