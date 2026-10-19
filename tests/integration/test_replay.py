@@ -103,3 +103,21 @@ async def test_a_streaming_miss_in_replay_mode_is_a_normal_json_error(
     resp = await replay.post("/v1/chat/completions", json=chat(stream=True))
     assert resp.status_code == 424
     assert resp.json()["error"]["code"] == "semula_no_match"
+
+
+async def test_recorded_chunk_boundaries_replay_verbatim_and_serve_non_stream(
+    record: httpx.AsyncClient,
+) -> None:
+    pieces = ["Hel", "lo ", "wor", "ld"]
+    await record_answer(record, chat("verbatim"), {"chunks": pieces})
+
+    async with record.stream(
+        "POST", "/v1/chat/completions", json=chat("verbatim", stream=True)
+    ) as resp:
+        lines = [line async for line in resp.aiter_lines() if line]
+    chunks = [json.loads(line[6:]) for line in lines[:-1]]
+    streamed = [c["choices"][0]["delta"].get("content") for c in chunks[1:-1]]
+    assert streamed == pieces
+
+    plain = await record.post("/v1/chat/completions", json=chat("verbatim"))
+    assert plain.json()["choices"][0]["message"]["content"] == "Hello world"

@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .errors import SemulaError
+from .streaming import assemble, ensure_tool_call_ids
 
 FINISH_REASONS = {"stop", "length", "tool_calls", "content_filter", "function_call"}
 
@@ -29,8 +30,12 @@ def parse_answer(payload: Any) -> dict[str, Any]:
     Accepts a full Chat Completions body (uses ``choices[0]``), a
     ``{"message": {...}}`` object, or the shorthand ``{"content": "text"}``.
     """
+    if isinstance(payload, list):
+        return _from_chunks(payload, None, None)
     if not isinstance(payload, Mapping):
-        raise AnswerInvalid("The answer must be a JSON object.")
+        raise AnswerInvalid("The answer must be a JSON object or a list of stream chunks.")
+    if isinstance(payload.get("chunks"), list):
+        return _from_chunks(payload["chunks"], payload.get("finish_reason"), payload.get("usage"))
     if "choices" in payload:
         choices = payload["choices"]
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], Mapping):
@@ -55,6 +60,38 @@ def parse_answer(payload: Any) -> dict[str, Any]:
             "Send a chat completion body, {'message': {...}}, or {'content': 'text'}."
         )
     return _validate_message(message, finish, usage)
+
+
+def _from_chunks(chunks: list[Any], finish: Any, usage: Any) -> dict[str, Any]:
+    """Accept an answer recorded as a stream, keeping its chunk boundaries (ADR-0008).
+
+    Each item is a plain string (a content piece), a bare delta object, or a full
+    ``chat.completion.chunk``. Boundaries are kept so replay can emit them verbatim.
+    """
+    deltas: list[dict[str, Any]] = []
+    for i, item in enumerate(chunks):
+        if isinstance(item, str):
+            deltas.append({"content": item})
+        elif isinstance(item, Mapping) and "choices" in item:
+            if item.get("usage") and usage is None:
+                usage = item["usage"]
+            choices = item["choices"]
+            if choices:
+                choice = choices[0]
+                finish = choice.get("finish_reason") or finish
+                if choice.get("delta"):
+                    deltas.append(dict(choice["delta"]))
+        elif isinstance(item, Mapping):
+            deltas.append(dict(item))
+        else:
+            raise AnswerInvalid("Each chunk must be a string or an object.", f"chunks[{i}]")
+    deltas = [d for d in deltas if d]
+    if not deltas:
+        raise AnswerInvalid("The stream has no content or tool-call deltas.", "chunks")
+    message = assemble(deltas)
+    stored = _validate_message(message, finish, usage)
+    stored["chunks"] = ensure_tool_call_ids(deltas, stored["message"].get("tool_calls") or [])
+    return stored
 
 
 def _validate_message(message: Any, finish: Any, usage: Any) -> dict[str, Any]:

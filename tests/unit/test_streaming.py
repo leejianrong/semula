@@ -72,3 +72,61 @@ def test_tool_calls_stream_as_indexed_argument_fragments() -> None:
 
 def test_chunk_size_below_one_is_clamped() -> None:
     assert len(rechunk({"content": "abc"}, 0)) == 3
+
+
+def test_string_chunks_are_kept_as_boundaries() -> None:
+    s = parse_answer({"chunks": ["Hel", "lo ", "wor", "ld"]})
+    assert s["message"]["content"] == "Hello world"
+    assert s["chunks"] == [{"content": c} for c in ["Hel", "lo ", "wor", "ld"]]
+    events = parse_events(list(sse_events(s, "m", chunk_size=2, include_usage=False)))
+    pieces = [e["choices"][0]["delta"].get("content") for e in events if isinstance(e, dict)]
+    assert pieces == ["", "Hel", "lo ", "wor", "ld", None]
+
+
+def test_captured_chat_completion_chunks_are_accepted() -> None:
+    def chunk(delta: dict, finish: str | None = None, usage: dict | None = None) -> dict:
+        body = {
+            "object": "chat.completion.chunk",
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+        }
+        if usage:
+            body = {"object": "chat.completion.chunk", "choices": [], "usage": usage}
+        return body
+
+    s = parse_answer(
+        [
+            chunk({"role": "assistant", "content": ""}),
+            chunk({"content": "Hi"}),
+            chunk({"content": "!"}),
+            chunk({}, "stop"),
+            chunk({}, None, {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}),
+        ]
+    )
+    assert s["message"]["content"] == "Hi!" and s["finish_reason"] == "stop"
+    assert s["usage"]["total_tokens"] == 5
+    events = parse_events(list(sse_events(s, "m", chunk_size=1, include_usage=False)))
+    first = [e for e in events if isinstance(e, dict)][0]
+    assert first["choices"][0]["delta"]["role"] == "assistant"
+
+
+def test_streamed_tool_call_without_id_gets_one_in_message_and_chunks() -> None:
+    s = parse_answer(
+        {
+            "chunks": [
+                {"tool_calls": [{"index": 0, "function": {"name": "f", "arguments": ""}}]},
+                {"tool_calls": [{"index": 0, "function": {"arguments": '{"a":'}}]},
+                {"tool_calls": [{"index": 0, "function": {"arguments": "1}"}}]},
+            ]
+        }
+    )
+    call_id = s["message"]["tool_calls"][0]["id"]
+    assert call_id.startswith("call_")
+    assert s["chunks"][0]["tool_calls"][0]["id"] == call_id
+    assert s["finish_reason"] == "tool_calls"
+
+
+def test_empty_stream_is_rejected() -> None:
+    from semula.responses import AnswerInvalid
+
+    with pytest.raises(AnswerInvalid):
+        parse_answer({"chunks": []})

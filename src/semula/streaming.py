@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import secrets
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 
@@ -48,7 +48,7 @@ def rechunk(message: Mapping[str, Any], chunk_size: int) -> list[dict[str, Any]]
     return deltas
 
 
-def assemble(deltas: list[Mapping[str, Any]]) -> dict[str, Any]:
+def assemble(deltas: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Rebuild one assistant message from stream deltas."""
     content_parts: list[str] = []
     calls: dict[int, dict[str, Any]] = {}
@@ -74,6 +74,22 @@ def assemble(deltas: list[Mapping[str, Any]]) -> dict[str, Any]:
     if calls:
         message["tool_calls"] = [calls[i] for i in sorted(calls)]
     return message
+
+
+def ensure_tool_call_ids(
+    deltas: list[dict[str, Any]], calls: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Copy ids generated during validation back into the first delta of each call."""
+    seen: set[int] = set()
+    for delta in deltas:
+        for tc in delta.get("tool_calls") or []:
+            index = int(tc.get("index", 0))
+            if index in seen:
+                continue
+            seen.add(index)
+            if not tc.get("id") and index < len(calls):
+                tc["id"] = calls[index]["id"]
+    return deltas
 
 
 def _chunk(
