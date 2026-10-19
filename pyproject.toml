@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "semula"
+version = "0.0.1"
+description = "A record-replay fake LLM server: OpenAI-compatible, answered once by your coding agent, replayed for free."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Jian Lee", email = "leejianrong2@gmail.com" }]
+keywords = ["llm", "openai", "mock", "record-replay", "testing", "mcp"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
+# Runtime dependencies are added by the slice that first needs them (ADR-0001).
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/leejianrong/semula"
+Repository = "https://github.com/leejianrong/semula"
+Issues = "https://github.com/leejianrong/semula/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pip-audit>=2.7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/semula"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: fast, isolated tests with no I/O beyond a temp dir",
+    "integration: in-process app against a temp SQLite file; no network, no Docker",
+    "e2e: the real container driven by real SDK clients (CI, needs Docker)",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/semula"]
