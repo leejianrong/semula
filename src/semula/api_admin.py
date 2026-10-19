@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from . import canonical
 from .errors import SemulaError
 from .service import Service
 
@@ -79,6 +80,36 @@ def delete_entry(
     entry_id: str, request: Request, version: int | None = None, force: bool = False
 ) -> None:
     _service(request).delete_entry(entry_id, version, actor=_actor(request), force=force)
+
+
+@router.post("/projects/{project_id}/test-match")
+async def test_match(project_id: str, request: Request) -> dict[str, Any]:
+    """Body: ``{"prompt": "text"}``, or ``{"request": {chat completion body}}``."""
+    body = await _json(request)
+    if isinstance(body.get("request"), dict):
+        chat_body = body["request"]
+    elif isinstance(body.get("prompt"), str):
+        chat_body = {"messages": [{"role": "user", "content": body["prompt"]}]}
+    else:
+        raise SemulaError(
+            400, "invalid_request", "Send {'prompt': 'text'} or {'request': {...}}.", param="prompt"
+        )
+    if not isinstance(chat_body.get("messages"), list):
+        raise SemulaError(
+            400, "invalid_request", "The request needs a 'messages' list.", param="request"
+        )
+    return _service(request).test_match(canonical.from_openai(chat_body), project_id)
+
+
+@router.get("/mode")
+def get_mode(request: Request) -> dict[str, str]:
+    return {"mode": _service(request).mode}
+
+
+@router.put("/mode")
+async def put_mode(request: Request) -> dict[str, str]:
+    body = await _json(request)
+    return {"mode": _service(request).set_mode(str(body.get("mode", "")))}
 
 
 @router.get("/pending")

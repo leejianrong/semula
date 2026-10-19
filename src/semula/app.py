@@ -52,7 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "version": __version__, "mode": settings.mode}
+        return {"status": "ok", "version": __version__, "mode": app.state.service.mode}
 
     app.include_router(api_openai.router)
     app.include_router(api_admin.router)
