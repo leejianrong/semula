@@ -158,6 +158,31 @@ def get_pending(pending_id: str, request: Request) -> dict[str, Any]:
     return _service(request).get_pending(pending_id)
 
 
+@router.get("/candidates")
+def list_candidates(
+    request: Request, status: str | None = "open", project: str | None = None
+) -> dict[str, Any]:
+    """Weak lexical matches waiting for a decision, best score first. ``status=all`` shows
+    decided ones too."""
+    found = _service(request).list_candidates(project, None if status == "all" else status)
+    return {"candidates": found}
+
+
+@router.get("/candidates/{candidate_id}")
+def get_candidate(candidate_id: str, request: Request) -> dict[str, Any]:
+    return _service(request).get_candidate(candidate_id)
+
+
+@router.post("/candidates/{candidate_id}/approve")
+async def approve_candidate(candidate_id: str, request: Request) -> dict[str, Any]:
+    return await offload(_service(request).approve_candidate, candidate_id)
+
+
+@router.post("/candidates/{candidate_id}/reject")
+async def reject_candidate(candidate_id: str, request: Request) -> dict[str, Any]:
+    return await offload(_service(request).reject_candidate, candidate_id)
+
+
 async def _json(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()

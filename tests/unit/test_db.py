@@ -18,7 +18,7 @@ from tests.support.db import fresh_database_url
 
 pytestmark = pytest.mark.unit
 
-HEAD = "0002"  # bump with every new migration
+HEAD = "0004"  # bump with every new migration
 
 # What the pre-Alembic hand-rolled runner produced at its version 2.
 LEGACY_DDL = """
@@ -84,7 +84,9 @@ def test_every_table_carries_workspace_id(tmp_path: Path) -> None:
     missing = [
         t
         for t in inspector.get_table_names()
-        if t not in skip and "workspace_id" not in {c["name"] for c in inspector.get_columns(t)}
+        if t not in skip
+        and not t.startswith("entry_fts")  # SQLite's full-text index (virtual + shadow tables)
+        and "workspace_id" not in {c["name"] for c in inspector.get_columns(t)}
     ]
     assert missing == []
 
@@ -94,7 +96,17 @@ def test_the_migrations_and_the_schema_module_agree(tmp_path: Path) -> None:
     db = new_db(tmp_path)
     with db.engine.connect() as conn:
         diff = compare_metadata(
-            MigrationContext.configure(conn, opts={"compare_type": True}), metadata
+            MigrationContext.configure(
+                conn,
+                opts={
+                    "compare_type": True,
+                    # the FTS5 virtual table (and its shadow tables) is migration-only
+                    "include_object": lambda obj, name, type_, *_: (
+                        not (type_ == "table" and name is not None and name.startswith("entry_fts"))
+                    ),
+                },
+            ),
+            metadata,
         )
     assert diff == []
 

@@ -39,7 +39,9 @@ feature (FTS5).
    SQLite file or Postgres schema.
 7. **Lexical search is a seam.** SEM-E6's BM25 tier must sit behind a small interface
    with one implementation per backend (SQLite FTS5 now; Postgres `tsvector` when hosted). No
-   FTS SQL outside that implementation.
+   FTS SQL outside that implementation. Built in SEM-E6 as `semula/lexical.py`: `Fts5Index`
+   (virtual table from migration 0003) and a `ScanIndex` fallback for other databases; scoring is
+   in the service (ADR-0003 amendment).
 
 ## Alternatives considered
 

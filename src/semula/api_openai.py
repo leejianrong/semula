@@ -41,7 +41,8 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     model = str(body.get("model") or "semula")
     req = canonical.from_openai(body)
 
-    match = await offload(service.find, req, project)
+    found = await offload(service.lookup, req, project)
+    match = found.match
     if match:
         await offload(service.record_hit, match.entry_id)
         await offload(
@@ -50,12 +51,14 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 "hit",
                 started,
                 tier=match.tier,
+                score=match.score,
                 entry_id=match.entry_id,
                 project=project,
             )
         )
         return _respond(service, body, match.stored, model)
 
+    await offload(service.record_candidates, req, project, found.candidates)  # still a miss
     if service.mode == "replay":
         await offload(partial(service.log_call, "miss", started, project=project))
         raise SemulaError(

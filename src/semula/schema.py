@@ -132,3 +132,41 @@ call_log = sa.Table(
     sa.Column("pending_id", sa.Text),
     sa.Index("idx_call_log_ts", "workspace_id", "project_id", "ts"),
 )
+
+# A weak lexical match held for a human: "this request looks like that entry" (ADR-0003).
+# Rows stay after a decision so a rejected pairing is remembered and never queued again.
+candidate = sa.Table(
+    "candidate",
+    metadata,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("project_id", sa.Text, nullable=False),
+    sa.Column("entry_id", sa.Text, sa.ForeignKey("entry.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("fingerprint", sa.Text, nullable=False),
+    sa.Column("canonical_request", sa.Text, nullable=False),
+    sa.Column("score", sa.Float, nullable=False),
+    sa.Column("tier", sa.Text, nullable=False),
+    # open | approved | rejected | superseded (the request was answered or approved elsewhere)
+    sa.Column("status", sa.Text, nullable=False, default="open"),
+    _ts("created_at"),
+    sa.Column("decided_at", sa.Text),
+    _project_fk("candidate"),
+    sa.Index("idx_candidate_status", "workspace_id", "project_id", "status"),
+    sa.Index("idx_candidate_pair", "workspace_id", "project_id", "fingerprint", "entry_id"),
+)
+
+# An approved candidate: this request fingerprint now serves that entry (tier "alias").
+alias = sa.Table(
+    "alias",
+    metadata,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("project_id", sa.Text, nullable=False),
+    sa.Column("entry_id", sa.Text, sa.ForeignKey("entry.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("fingerprint", sa.Text, nullable=False),
+    sa.Column("exact_fingerprint", sa.Text, nullable=False),
+    sa.Column("canonical_request", sa.Text, nullable=False),
+    _ts("created_at"),
+    _project_fk("alias"),
+    sa.Index("idx_alias_fingerprint", "workspace_id", "project_id", "fingerprint"),
+)

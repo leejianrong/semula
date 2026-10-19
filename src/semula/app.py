@@ -20,6 +20,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     db = Database(settings.resolved_database_url)
     service = Service(db, settings)
+    service.sync_index()
     mcp_app = build_mcp(service).http_app(path="/")
     app = FastAPI(title="semula", version=__version__, lifespan=mcp_app.lifespan)
     app.state.settings = settings

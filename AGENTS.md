@@ -4,7 +4,7 @@
 
 semula is a record-replay fake LLM server: an OpenAI-compatible endpoint that replays recorded answers and, in record mode, parks unknown prompts for a coding agent to answer over MCP or CLI. Python 3.11+, FastAPI, SQLite, `uv`. src layout in `src/semula/`.
 
-Status: pre-alpha. Planning is done; slices SEM-E2 to SEM-E5 (record/replay, streaming and tools, projects and entries, MCP/CLI/API key/playbook) and SEM-E12 (SQLite and Postgres) are built. Next is SEM-E6 (smarter matching with human review). See the Pandan board for live status. Trust the code over any doc where they disagree, and fix the doc.
+Status: pre-alpha. Planning is done; slices SEM-E2 to SEM-E5 (record/replay, streaming and tools, projects and entries, MCP/CLI/API key/playbook), SEM-E6 (smarter matching with human review) and SEM-E12 (SQLite and Postgres) are built. Next is SEM-E7 (call log, event bus, redaction, export/import, slim image, benchmark). See the Pandan board for live status. Trust the code over any doc where they disagree, and fix the doc.
 
 ## Why
 

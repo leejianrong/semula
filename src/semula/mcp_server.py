@@ -35,6 +35,7 @@ held calls time out (default 300 s), though a late answer is still saved.
 
 Write answers the way the real model would, in the format the app's prompt asks for. Replace
 anything that changes per call with a template: {{now}}, {{uuid}}, {{request.model}}.
+Near-misses wait in a review queue (list_candidates); a human normally decides them.
 Errors come back as JSON with a 'code' and 'param'; fix what they name and resubmit.
 """
 
@@ -95,7 +96,9 @@ def build_mcp(service: Service) -> FastMCP:
     def update_project_settings(id: str, settings: dict[str, Any]) -> dict[str, Any]:
         """Patch a project's settings; a null value resets that setting. Keys: models, tail_n
         (match only the last N messages), scrub_patterns (regexes to ignore when matching),
-        include_params (request params that count, e.g. ['temperature']), record_timeout.
+        include_params (request params that count, e.g. ['temperature']), record_timeout,
+        bm25_serve_threshold (0-1 word overlap at which a close match is served; default 0.97),
+        bm25_review_threshold (0-1 floor for the review queue; default 0.6).
         Changing a matching setting re-keys the project's existing entries."""
         return service.update_project(id, settings=settings)["settings"]  # type: ignore[no-any-return]
 
@@ -179,8 +182,9 @@ def build_mcp(service: Service) -> FastMCP:
         project: str = "default", prompt: str | None = None, request: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Ask what would happen to a request now, without serving it or counting a hit: which
-        tier matched (exact or normalised), the entry, and on a miss the nearest recorded entry
-        with a word-overlap score. Pass 'prompt' (one user message) or a full chat 'request'."""
+        tier matched (exact, normalised, alias or bm25), the entry and its score, and on a miss
+        the weak 'candidates' that would go to review and the nearest recorded entry. Pass
+        'prompt' (one user message) or a full chat 'request'."""
         if request is None:
             if prompt is None:
                 raise SemulaError(400, "invalid_request", "Pass 'prompt' or 'request'.")
@@ -188,6 +192,34 @@ def build_mcp(service: Service) -> FastMCP:
         if not isinstance(request.get("messages"), list):
             raise SemulaError(400, "invalid_request", "The request needs a 'messages' list.")
         return service.test_match(canonical.from_openai(request), project)
+
+    @tool
+    def list_candidates(
+        project: str | None = None, include_decided: bool = False
+    ) -> list[dict[str, Any]]:
+        """List the review queue: prompts that nearly matched a recorded entry but not closely
+        enough to serve. Each has a word-overlap score, the new prompt's last message and the
+        entry's. Best score first. Nothing was served from these; the app's call was a miss."""
+        return service.list_candidates(project, None if include_decided else "open")
+
+    @tool
+    def get_candidate(id: str) -> dict[str, Any]:
+        """Read one candidate in full: the new request, and the entry (request and responses) it
+        resembles. Compare them closely before deciding."""
+        return service.get_candidate(id)
+
+    @tool
+    def approve_candidate(id: str) -> dict[str, Any]:
+        """Say the new prompt means the same as the entry: that prompt will now be answered from
+        the entry. Only do this when you have read both and the answer is right for the new
+        prompt, or a human told you to. A wrong approval silently serves a wrong answer."""
+        return service.approve_candidate(id)
+
+    @tool
+    def reject_candidate(id: str) -> dict[str, Any]:
+        """Say the prompts differ. That pairing never reappears in the queue and is never served.
+        Answer the pending request for the new prompt instead."""
+        return service.reject_candidate(id)
 
     return mcp
 
