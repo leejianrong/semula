@@ -65,7 +65,7 @@ For planning today, indah's existing ADRs that rule things out (e.g. ADR-0008 "n
 | 2026-10-19 | The free-form dashboard design waits until the headless core is further along; the indah requests prompt was handed to the indah agent, its plan is awaited | SEM-E9, `docs/INDAH-REQUESTS-PROMPT.md` |
 | 2026-10-19 | MCP authorization (OAuth 2.1 resource server: RFC 9728 metadata, token audience validation, scope challenges) is a hosted-only item. RFC 9207 `iss` checks and CIMD are client and authorization-server duties. Today: the shared `SEMULA_API_KEY` only | SEM-53 |
 | 2026-10-19 | Codex MCP registration syntax is unverified; the CLI is the fallback | `docs/agents/PLAYBOOK.md` |
-| 2026-10-20 | Lexical tier: FTS5 retrieves, word-overlap scores; auto-serve default 0.97 plus a same-shape guard; review floor 0.6. Defaults untuned, to revisit against real recordings | ADR-0003 amendment |
+| 2026-10-20 | Lexical tier: FTS5 retrieves, word-overlap scores; auto-serve default 1.0 (near-misses go to review; lower it per project once tuned) plus a same-shape guard; review floor 0.6 | ADR-0003 amendment |
 | 2026-10-20 | MCP exposes approve and reject to agents, with a description telling them to wait for a human unless asked | `docs/agents/PLAYBOOK.md` |
 
 ## Deferred

@@ -44,6 +44,11 @@ async def settings(client: httpx.AsyncClient, **values: object) -> httpx.Respons
     return await client.patch("/api/v1/projects/default", json={"settings": values})
 
 
+async def relax(client: httpx.AsyncClient) -> None:
+    """Opt in to auto-serving near-identical prompts; the default sends them to review."""
+    assert (await settings(client, bm25_serve_threshold=0.97)).status_code == 200
+
+
 async def candidates(client: httpx.AsyncClient, status: str = "open") -> list[dict]:
     resp = await client.get("/api/v1/candidates", params={"status": status})
     assert resp.status_code == 200, resp.text
@@ -58,6 +63,7 @@ def last_call(client: httpx.AsyncClient) -> dict:
 
 # --- SEM-31: the BM25 tier ---------------------------------------------------------------
 async def test_a_near_identical_prompt_hits_above_the_threshold(replay: httpx.AsyncClient) -> None:
+    await relax(replay)
     await seed(replay)
     resp = await replay.post("/v1/chat/completions", json=ask(NEAR))
     assert resp.status_code == 200
@@ -73,6 +79,15 @@ async def test_below_the_threshold_it_falls_through_to_a_miss(replay: httpx.Asyn
     assert resp.status_code == 424
     assert resp.json()["error"]["code"] == "semula_no_match"
     assert last_call(replay)["outcome"] == "miss"
+
+
+async def test_by_default_a_near_identical_prompt_is_reviewed_not_served(
+    replay: httpx.AsyncClient,
+) -> None:
+    await seed(replay)
+    assert (await replay.post("/v1/chat/completions", json=ask(NEAR))).status_code == 424
+    (found,) = await candidates(replay)
+    assert found["score"] >= 0.97
 
 
 async def test_the_threshold_is_per_project(replay: httpx.AsyncClient) -> None:
@@ -110,6 +125,7 @@ async def test_the_same_words_with_other_tools_are_not_auto_served(
 async def test_params_a_project_requires_to_match_also_gate_the_lexical_tier(
     replay: httpx.AsyncClient,
 ) -> None:
+    await relax(replay)
     await settings(replay, include_params=["temperature"])
     await replay.post(
         "/api/v1/projects/default/entries",
@@ -124,6 +140,7 @@ async def test_params_a_project_requires_to_match_also_gate_the_lexical_tier(
 
 
 async def test_a_deleted_entry_leaves_the_index(replay: httpx.AsyncClient) -> None:
+    await relax(replay)
     entry = (await replay.get("/api/v1/entries/" + await seed(replay))).json()
     assert (await replay.post("/v1/chat/completions", json=ask(NEAR))).status_code == 200
     await replay.delete(f"/api/v1/entries/{entry['id']}", params={"version": entry["version"]})
@@ -154,6 +171,7 @@ async def test_changing_a_scrub_rule_reindexes_the_words(replay: httpx.AsyncClie
 async def test_an_index_that_fell_behind_is_repaired_at_startup(tmp_path: Path) -> None:
     url = fresh_database_url(tmp_path)
     async with make_client(tmp_path, mode="replay", database_url=url) as first:
+        await relax(first)
         await seed(first)
         db = first._transport.app.state.db  # type: ignore[attr-defined]
         if db.dialect != "sqlite":
@@ -167,6 +185,7 @@ async def test_an_index_that_fell_behind_is_repaired_at_startup(tmp_path: Path) 
 async def test_test_match_reports_the_tier_and_score_and_changes_nothing(
     replay: httpx.AsyncClient,
 ) -> None:
+    await relax(replay)
     await seed(replay)
     out = (await replay.post("/api/v1/projects/default/test-match", json={"prompt": NEAR})).json()
     assert out["tier"] == "bm25" and out["would"] == "serve" and 0.97 <= out["score"] < 1

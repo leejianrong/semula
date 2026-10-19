@@ -97,7 +97,8 @@ def build_mcp(service: Service) -> FastMCP:
         """Patch a project's settings; a null value resets that setting. Keys: models, tail_n
         (match only the last N messages), scrub_patterns (regexes to ignore when matching),
         include_params (request params that count, e.g. ['temperature']), record_timeout,
-        bm25_serve_threshold (0-1 word overlap at which a close match is served; default 0.97),
+        bm25_serve_threshold (0-1 word overlap at which a close match is served; default 1, so
+        near-misses go to review),
         bm25_review_threshold (0-1 floor for the review queue; default 0.6).
         Changing a matching setting re-keys the project's existing entries."""
         return service.update_project(id, settings=settings)["settings"]  # type: ignore[no-any-return]

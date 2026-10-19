@@ -21,7 +21,7 @@ async def test_defaults_are_visible_and_documented_by_the_api(replay: httpx.Asyn
         "scrub_patterns": [],
         "include_params": [],
         "record_timeout": None,
-        "bm25_serve_threshold": 0.97,
+        "bm25_serve_threshold": 1.0,
         "bm25_review_threshold": 0.6,
     }
 

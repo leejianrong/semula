@@ -96,7 +96,7 @@ Rules that keep answers replayable:
 
 ### Near misses and the review queue
 
-Beyond exact and normalised matches, semula compares words (`bm25` tier). A prompt scoring at or above `bm25_serve_threshold` (default 0.97, so only trivial differences) with the same roles, tools and required params is served. A prompt scoring between `bm25_review_threshold` (default 0.6) and that bar is **never served**: the call is a miss (parked in record mode) and the pairing waits in the review queue.
+Beyond exact and normalised matches, semula compares words (`bm25` tier). A prompt scoring at or above `bm25_serve_threshold` (default 1: only prompts with the same words; a project can lower it) with the same roles, tools and required params is served. A prompt scoring between `bm25_review_threshold` (default 0.6) and that bar is **never served**: the call is a miss (parked in record mode) and the pairing waits in the review queue.
 
 `list_candidates` shows the queue, best score first; `get_candidate` shows the new request next to the entry it resembles. **Approve** (`approve_candidate`) only when the entry's answer is right for the new prompt, since an approved prompt is then served from that entry, edits included. **Reject** (`reject_candidate`) when it is not: that pairing never reappears. A human normally decides; do it yourself only when asked. Either way, answering the parked request for the new prompt is separate and still needed.
 
