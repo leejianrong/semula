@@ -18,7 +18,7 @@ from .config import Settings
 from .db import DEFAULT_PROJECT, DEFAULT_WORKSPACE, Database
 from .errors import SemulaError
 from .ids import new_ulid
-from .responses import parse_answer
+from .responses import parse_answer, validate_tool_calls
 
 
 @dataclass(frozen=True)
@@ -121,6 +121,7 @@ class Service:
         if row["status"] != "pending":
             raise SemulaError(409, "already_answered", f"{pending_id} was already answered.")
         stored = parse_answer(payload)
+        validate_tool_calls(stored, CanonicalRequest.from_json(row["canonical_request"]).tools)
         entry_id = new_ulid()
         self.db.execute(
             "INSERT INTO entry (id, workspace_id, project_id, fingerprint, exact_fingerprint, "

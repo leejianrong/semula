@@ -13,6 +13,8 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from jsonschema import Draft202012Validator, SchemaError
+
 from .errors import SemulaError
 from .streaming import assemble, ensure_tool_call_ids
 
@@ -174,3 +176,42 @@ def build_completion(stored: Mapping[str, Any], model: str) -> dict[str, Any]:
         ],
         "usage": usage,
     }
+
+
+def validate_tool_calls(stored: Mapping[str, Any], tools: list[dict[str, Any]]) -> None:
+    """Check an answer's tool calls against the tools the request offered.
+
+    A call must name an offered tool and its arguments must satisfy that tool's JSON
+    schema, so an agent-written answer cannot break the app that replays it.
+    """
+    calls = stored["message"].get("tool_calls") or []
+    if not calls:
+        return
+    by_name: dict[str, Any] = {}
+    for tool in tools:
+        fn = tool.get("function") if isinstance(tool.get("function"), Mapping) else tool
+        if isinstance(fn, Mapping) and fn.get("name"):
+            by_name[str(fn["name"])] = fn.get("parameters") or {}
+    if not by_name:
+        raise AnswerInvalid(
+            "The request offered no tools, so the answer cannot call one.", "message.tool_calls"
+        )
+    for i, call in enumerate(calls):
+        name = call["function"]["name"]
+        where = f"message.tool_calls[{i}].function"
+        if name not in by_name:
+            raise AnswerInvalid(
+                f"Unknown tool {name!r}. The request offered: {sorted(by_name)}.", f"{where}.name"
+            )
+        try:
+            validator = Draft202012Validator(by_name[name])
+        except SchemaError:
+            continue  # the app's own schema is broken; do not block the answer on it
+        error = next(iter(validator.iter_errors(json.loads(call["function"]["arguments"]))), None)
+        if error is not None:
+            path = ".".join(str(p) for p in error.absolute_path)
+            raise AnswerInvalid(
+                f"Arguments for {name!r} do not match its schema"
+                f"{' at ' + path if path else ''}: {error.message}",
+                f"{where}.arguments" + (f".{path}" if path else ""),
+            )

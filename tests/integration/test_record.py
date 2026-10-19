@@ -86,3 +86,49 @@ async def test_an_invalid_answer_is_rejected_and_the_call_stays_held(
     good = await record.post(f"/api/v1/pending/{pid}/answer", json={"content": "fine"})
     assert good.status_code == 200
     assert (await call).json()["choices"][0]["message"]["content"] == "fine"
+
+
+async def test_tool_call_answers_are_checked_against_the_request_tools(
+    record: httpx.AsyncClient,
+) -> None:
+    tool = {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        },
+    }
+    call = asyncio.create_task(
+        record.post("/v1/chat/completions", json=chat("weather?", tools=[tool]))
+    )
+    await asyncio.sleep(0.05)
+    pid = (await record.get("/api/v1/pending")).json()["pending"][0]["id"]
+
+    def answer(name: str, args: str) -> dict[str, object]:
+        return {
+            "message": {
+                "content": None,
+                "tool_calls": [{"function": {"name": name, "arguments": args}}],
+            }
+        }
+
+    wrong_tool = await record.post(f"/api/v1/pending/{pid}/answer", json=answer("nope", "{}"))
+    assert wrong_tool.status_code == 422
+    bad_args = await record.post(
+        f"/api/v1/pending/{pid}/answer", json=answer("get_weather", '{"city": 1}')
+    )
+    assert bad_args.status_code == 422
+    assert bad_args.json()["error"]["param"].endswith("arguments.city")
+    assert not call.done()
+
+    good = await record.post(
+        f"/api/v1/pending/{pid}/answer", json=answer("get_weather", '{"city": "KL"}')
+    )
+    assert good.status_code == 200
+    message = (await call).json()["choices"][0]
+    assert message["finish_reason"] == "tool_calls"
+    assert message["message"]["tool_calls"][0]["function"]["arguments"] == '{"city": "KL"}'
