@@ -26,6 +26,9 @@ from .responses import parse_answer, validate_tool_calls
 _SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 
 
+SELECTIONS = ("first", "sequence", "cycle")
+
+
 @dataclass(frozen=True)
 class Match:
     entry_id: str
@@ -180,13 +183,168 @@ class Service:
             ("normalised", "fingerprint", normalised_fingerprint(req, config)),
         ):
             row = self.db.query_one(
-                f"SELECT id, responses FROM entry WHERE workspace_id=? AND project_id=? "  # noqa: S608
-                f"AND {column}=? ORDER BY created_at LIMIT 1",
+                "SELECT id, responses, selection, hit_count FROM entry "  # noqa: S608
+                f"WHERE workspace_id=? AND project_id=? AND {column}=? ORDER BY created_at LIMIT 1",
                 (DEFAULT_WORKSPACE, project, fp),
             )
             if row:
-                return Match(row["id"], tier, json.loads(row["responses"])[0])
+                responses = json.loads(row["responses"])
+                chosen = responses[_pick(row["selection"], row["hit_count"], len(responses))]
+                return Match(row["id"], tier, chosen)
         return None
+
+    # --- entries ------------------------------------------------------------------
+    def list_entries(
+        self, project: str, q: str | None = None, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        """A lean projection: no request or response bodies, cheap for agents to scan."""
+        self.require_project(project)
+        where, params = "workspace_id=? AND project_id=?", [DEFAULT_WORKSPACE, project]
+        if q:
+            where += " AND canonical_request LIKE ? ESCAPE '\\'"
+            params.append(
+                "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            )
+        total = self.db.query_one(f"SELECT COUNT(*) AS n FROM entry WHERE {where}", params)  # noqa: S608
+        rows = self.db.query(
+            f"SELECT * FROM entry WHERE {where} ORDER BY id LIMIT ? OFFSET ?",  # noqa: S608
+            [*params, max(1, min(limit, 500)), max(0, offset)],
+        )
+        return {
+            "total": int(total["n"]) if total else 0,
+            "entries": [_entry_view(r, full=False) for r in rows],
+        }
+
+    def get_entry(self, entry_id: str) -> dict[str, Any]:
+        return _entry_view(self._entry_row(entry_id), full=True)
+
+    def _entry_row(self, entry_id: str) -> Any:
+        row = self.db.query_one(
+            "SELECT * FROM entry WHERE id=? AND workspace_id=?", (entry_id, DEFAULT_WORKSPACE)
+        )
+        if not row:
+            raise SemulaError(404, "entry_not_found", f"No entry {entry_id}.")
+        return row
+
+    def _guard_write(
+        self, row: Any, version: int | None, actor: str, force: bool, action: str
+    ) -> bool:
+        """Optimistic concurrency and pin protection. Returns True when a pin was forced."""
+        if not isinstance(version, int) or isinstance(version, bool):
+            raise SemulaError(
+                400,
+                "version_required",
+                f"Say which version you are {action}: pass the entry's current 'version'.",
+                param="version",
+            )
+        view = _entry_view(row, full=True)
+        if version != row["version"]:
+            raise SemulaError(
+                409,
+                "version_conflict",
+                f"Entry {row['id']} is at version {row['version']}, not {version}. "
+                "Re-read it and apply your change to the current version.",
+                param="version",
+                extra={"current": view},
+            )
+        if row["pinned"] and actor != "human":
+            if not force:
+                raise SemulaError(
+                    409,
+                    "entry_pinned",
+                    f"Entry {row['id']} is pinned by a human. Agents cannot change it unless "
+                    "forced; ask a human, or pass force=true if you were told to.",
+                    extra={"current": view},
+                )
+            return True
+        return False
+
+    def update_entry(
+        self,
+        entry_id: str,
+        version: int | None,
+        changes: dict[str, Any],
+        *,
+        actor: str = "agent",
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Edit an entry. ``changes`` may hold response/responses/add_response/selection/pinned."""
+        row = self._entry_row(entry_id)
+        forced = self._guard_write(row, version, actor, force, "editing")
+        tools = CanonicalRequest.from_json(row["canonical_request"]).tools
+        responses = json.loads(row["responses"])
+
+        def checked(payload: Any) -> dict[str, Any]:
+            stored = parse_answer(payload)
+            validate_tool_calls(stored, tools)
+            return stored
+
+        known = {"response", "responses", "add_response", "selection", "pinned"}
+        unknown = set(changes) - known
+        if unknown or not changes:
+            raise SemulaError(
+                400,
+                "nothing_to_update" if not changes else "unknown_field",
+                f"Send at least one of {sorted(known)}."
+                if not changes
+                else f"Unknown field(s): {sorted(unknown)}.",
+            )
+        if "response" in changes:
+            responses = [checked(changes["response"])]
+        if "responses" in changes:
+            if not isinstance(changes["responses"], list) or not changes["responses"]:
+                raise SemulaError(
+                    422,
+                    "invalid_answer",
+                    "'responses' must be a non-empty list.",
+                    param="responses",
+                )
+            responses = [checked(r) for r in changes["responses"]]
+        if "add_response" in changes:
+            responses.append(checked(changes["add_response"]))
+        selection = changes.get("selection", row["selection"])
+        if selection not in SELECTIONS:
+            raise SemulaError(
+                422,
+                "invalid_selection",
+                f"selection must be one of {list(SELECTIONS)}.",
+                param="selection",
+            )
+        pinned = row["pinned"]
+        if "pinned" in changes:
+            if not isinstance(changes["pinned"], bool):
+                raise SemulaError(
+                    422, "invalid_pinned", "pinned must be true or false.", param="pinned"
+                )
+            pinned = int(changes["pinned"])
+        cursor = self.db.execute(
+            "UPDATE entry SET responses=?, selection=?, pinned=?, version=version+1, "
+            "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND version=?",
+            (json.dumps(responses), selection, pinned, entry_id, version),
+        )
+        if cursor.rowcount != 1:  # lost a race between the check and the write
+            raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
+        if forced:
+            self._log_forced(row, "forced_write")
+        return self.get_entry(entry_id)
+
+    def delete_entry(
+        self, entry_id: str, version: int | None, *, actor: str = "agent", force: bool = False
+    ) -> None:
+        row = self._entry_row(entry_id)
+        forced = self._guard_write(row, version, actor, force, "deleting")
+        cursor = self.db.execute("DELETE FROM entry WHERE id=? AND version=?", (entry_id, version))
+        if cursor.rowcount != 1:
+            raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
+        if forced:
+            self._log_forced(row, "forced_delete")
+
+    def _log_forced(self, row: Any, outcome: str) -> None:
+        self.db.execute(
+            "INSERT INTO call_log (workspace_id, project_id, mode, outcome, entry_id) "
+            "VALUES (?,?,?,?,?)",
+            (row["workspace_id"], row["project_id"], self.settings.mode, outcome, row["id"]),
+        )
 
     def record_hit(self, entry_id: str) -> None:
         self.db.execute("UPDATE entry SET hit_count = hit_count + 1 WHERE id=?", (entry_id,))
@@ -316,6 +474,36 @@ class Service:
                 pending_id,
             ),
         )
+
+
+def _pick(selection: str, served: int, count: int) -> int:
+    if selection == "sequence":
+        return min(served, count - 1)
+    if selection == "cycle":
+        return served % count
+    return 0
+
+
+def _entry_view(row: Any, *, full: bool) -> dict[str, Any]:
+    req = CanonicalRequest.from_json(row["canonical_request"])
+    responses = json.loads(row["responses"])
+    view: dict[str, Any] = {
+        "id": row["id"],
+        "project": row["project_id"],
+        "version": row["version"],
+        "pinned": bool(row["pinned"]),
+        "selection": row["selection"],
+        "hit_count": row["hit_count"],
+        "responses": len(responses),
+        "last_message": (req.messages[-1]["content"][:200] if req.messages else ""),
+        "fingerprint": row["fingerprint"],
+        "updated_at": row["updated_at"],
+    }
+    if full:
+        view["request"] = {"messages": req.messages, "tools": req.tools}
+        view["responses"] = responses
+        view["created_at"] = row["created_at"]
+    return view
 
 
 def _pending_view(row: Any, *, full: bool) -> dict[str, Any]:

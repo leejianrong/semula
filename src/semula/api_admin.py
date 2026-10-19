@@ -47,6 +47,40 @@ def delete_project(project_id: str, request: Request) -> None:
     _service(request).delete_project(project_id)
 
 
+def _actor(request: Request) -> str:
+    """Who is writing. Anything but an explicit 'human' is treated as an agent (ADR-0005)."""
+    return "human" if request.headers.get("x-semula-actor", "").lower() == "human" else "agent"
+
+
+@router.get("/projects/{project_id}/entries")
+def list_entries(
+    project_id: str, request: Request, q: str | None = None, limit: int = 50, offset: int = 0
+) -> dict[str, Any]:
+    return _service(request).list_entries(project_id, q, limit, offset)
+
+
+@router.get("/entries/{entry_id}")
+def get_entry(entry_id: str, request: Request) -> dict[str, Any]:
+    return _service(request).get_entry(entry_id)
+
+
+@router.put("/entries/{entry_id}")
+async def update_entry(entry_id: str, request: Request) -> dict[str, Any]:
+    body = await _json(request)
+    version = body.pop("version", None)
+    force = bool(body.pop("force", False))
+    return _service(request).update_entry(
+        entry_id, version, body, actor=_actor(request), force=force
+    )
+
+
+@router.delete("/entries/{entry_id}", status_code=204)
+def delete_entry(
+    entry_id: str, request: Request, version: int | None = None, force: bool = False
+) -> None:
+    _service(request).delete_entry(entry_id, version, actor=_actor(request), force=force)
+
+
 @router.get("/pending")
 def list_pending(
     request: Request, status: str | None = "pending", project: str | None = None
