@@ -14,6 +14,7 @@ import uvicorn
 
 from semula.app import create_app
 from semula.config import Settings
+from tests.support.db import fresh_database_url
 
 
 @contextmanager
@@ -22,6 +23,7 @@ def running_server(data_dir: Path, **settings: object) -> Iterator[str]:
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     sock.close()
+    settings.setdefault("database_url", fresh_database_url(data_dir))
     app = create_app(Settings(data_dir=data_dir, **settings))  # type: ignore[arg-type]
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)

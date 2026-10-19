@@ -20,10 +20,16 @@ class Settings:
     chunk_size: int = 24
     models: tuple[str, ...] = ("semula",)
     api_key: str | None = field(default=None, repr=False)
+    database_url: str | None = field(default=None, repr=False)  # may hold a password
 
     @property
     def db_path(self) -> Path:
         return self.data_dir / "semula.db"
+
+    @property
+    def resolved_database_url(self) -> str:
+        """``SEMULA_DATABASE_URL`` if set, else a SQLite file in the data dir."""
+        return self.database_url or f"sqlite:///{self.db_path}"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -38,6 +44,7 @@ class Settings:
             port=int(os.environ.get("SEMULA_PORT", "8080")),
             chunk_size=int(os.environ.get("SEMULA_CHUNK_SIZE", "24")),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
+            database_url=os.environ.get("SEMULA_DATABASE_URL") or None,
             models=tuple(
                 m.strip() for m in os.environ.get("SEMULA_MODELS", "semula").split(",") if m.strip()
             ),
