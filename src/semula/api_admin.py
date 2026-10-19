@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 
 from . import canonical
 from .errors import SemulaError
@@ -58,6 +58,26 @@ def list_entries(
     project_id: str, request: Request, q: str | None = None, limit: int = 50, offset: int = 0
 ) -> dict[str, Any]:
     return _service(request).list_entries(project_id, q, limit, offset)
+
+
+@router.post("/projects/{project_id}/entries")
+async def upsert_entry(project_id: str, request: Request, response: Response) -> dict[str, Any]:
+    """Body: ``{"request": {chat body}, "response": answer, "version"?: n, "force"?: bool}``."""
+    body = await _json(request)
+    if not isinstance(body.get("request"), dict) or "response" not in body:
+        raise SemulaError(
+            400, "invalid_request", "Send {'request': {...}, 'response': ...}.", param="request"
+        )
+    entry, created = _service(request).upsert_entry(
+        project_id,
+        body["request"],
+        body["response"],
+        version=body.get("version"),
+        actor=_actor(request),
+        force=bool(body.get("force", False)),
+    )
+    response.status_code = 201 if created else 200
+    return entry
 
 
 @router.get("/entries/{entry_id}")

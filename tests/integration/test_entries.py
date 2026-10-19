@@ -253,3 +253,52 @@ LOG_TOOL = {
     "type": "function",
     "function": {"name": "log", "parameters": {"type": "object", "properties": {"id": {}}}},
 }
+
+
+# --- authoring without a miss -----------------------------------------------------------
+
+
+async def test_an_entry_can_be_authored_up_front_and_then_replays(
+    replay: httpx.AsyncClient,
+) -> None:
+    created = await replay.post(
+        "/api/v1/projects/default/entries",
+        json={"request": chat("pre-written"), "response": {"content": "authored"}},
+    )
+    assert created.status_code == 201 and created.json()["version"] == 1
+    served = await replay.post("/v1/chat/completions", json=chat("pre-written"))
+    assert served.json()["choices"][0]["message"]["content"] == "authored"
+
+
+async def test_authoring_over_an_existing_entry_needs_its_version(
+    replay: httpx.AsyncClient,
+) -> None:
+    body = {"request": chat("twice"), "response": {"content": "one"}}
+    first = await replay.post("/api/v1/projects/default/entries", json=body)
+    clash = await replay.post("/api/v1/projects/default/entries", json=body)
+    assert clash.status_code == 409 and clash.json()["error"]["code"] == "entry_exists"
+    assert clash.json()["current"]["id"] == first.json()["id"]
+    replaced = await replay.post(
+        "/api/v1/projects/default/entries",
+        json={**body, "response": {"content": "two"}, "version": first.json()["version"]},
+    )
+    assert replaced.status_code == 200 and replaced.json()["version"] == 2
+
+
+async def test_authored_tool_calls_are_validated_against_the_request_tools(
+    replay: httpx.AsyncClient,
+) -> None:
+    bad = await replay.post(
+        "/api/v1/projects/default/entries",
+        json={
+            "request": chat("tools", tools=[LOG_TOOL]),
+            "response": {
+                "message": {
+                    "content": None,
+                    "tool_calls": [{"function": {"name": "nope", "arguments": "{}"}}],
+                }
+            },
+        },
+    )
+    assert bad.status_code == 422
+    assert (await replay.post("/api/v1/projects/default/entries", json={})).status_code == 400

@@ -59,7 +59,7 @@ def test_cli_sends_the_key_from_the_environment(
 ) -> None:
     with running_server(tmp_path, api_key=KEY) as url:
         monkeypatch.delenv("SEMULA_API_KEY", raising=False)
-        assert main(["--url", url, "pending"]) == 1
+        assert main(["--url", url, "pending"]) == 5
         assert "invalid_api_key" in capsys.readouterr().err
         monkeypatch.setenv("SEMULA_API_KEY", KEY)
         assert main(["--url", url, "--json", "pending"]) == 0

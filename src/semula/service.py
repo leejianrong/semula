@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from . import canonical
 from .canonical import (
     CanonicalRequest,
     exact_fingerprint,
@@ -227,6 +228,66 @@ class Service:
             "total": int(total["n"]) if total else 0,
             "entries": [_entry_view(r, full=False) for r in rows],
         }
+
+    def upsert_entry(
+        self,
+        project: str,
+        request_body: dict[str, Any],
+        response: Any,
+        *,
+        version: int | None = None,
+        actor: str = "agent",
+        force: bool = False,
+    ) -> tuple[dict[str, Any], bool]:
+        """Author an entry without waiting for a miss. Returns (entry, created).
+
+        If an entry already matches this request, the caller must pass its current
+        ``version``; the response then replaces the entry's responses.
+        """
+        self.require_project(project)
+        if not isinstance(request_body.get("messages"), list):
+            raise SemulaError(
+                422, "invalid_request", "The request needs a 'messages' list.", param="request"
+            )
+        req = CanonicalRequest.from_json(canonical.from_openai(request_body).to_json())
+        config = self.project_settings(project).fingerprint_config()
+        fp = normalised_fingerprint(req, config)
+        existing = self.db.query_one(
+            "SELECT id FROM entry WHERE workspace_id=? AND project_id=? AND fingerprint=? "
+            "ORDER BY created_at LIMIT 1",
+            (DEFAULT_WORKSPACE, project, fp),
+        )
+        if existing:
+            if version is None:
+                raise SemulaError(
+                    409,
+                    "entry_exists",
+                    f"An entry already matches this request ({existing['id']}). "
+                    "Pass its current 'version' to replace its response.",
+                    param="version",
+                    extra={"current": self.get_entry(existing["id"])},
+                )
+            entry = self.update_entry(
+                existing["id"], version, {"response": response}, actor=actor, force=force
+            )
+            return entry, False
+        stored = parse_answer(response)
+        validate_tool_calls(stored, req.tools)
+        entry_id = new_ulid()
+        self.db.execute(
+            "INSERT INTO entry (id, workspace_id, project_id, fingerprint, exact_fingerprint, "
+            "canonical_request, responses) VALUES (?,?,?,?,?,?,?)",
+            (
+                entry_id,
+                DEFAULT_WORKSPACE,
+                project,
+                fp,
+                exact_fingerprint(req, config),
+                req.to_json(),
+                json.dumps([stored]),
+            ),
+        )
+        return self.get_entry(entry_id), True
 
     def get_entry(self, entry_id: str) -> dict[str, Any]:
         return _entry_view(self._entry_row(entry_id), full=True)
