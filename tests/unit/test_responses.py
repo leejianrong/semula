@@ -84,3 +84,74 @@ def test_completion_gets_a_fresh_identity_and_the_request_model() -> None:
     a, b = build_completion(stored, "m1"), build_completion(stored, "m1")
     assert a["id"] != b["id"] and a["model"] == "m1"
     assert a["usage"]["total_tokens"] == 0
+
+
+WEATHER = {
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}, "days": {"type": "integer"}},
+            "required": ["city"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+def call(name: str, args: str) -> dict:
+    return parse_answer(
+        {
+            "message": {
+                "content": None,
+                "tool_calls": [{"function": {"name": name, "arguments": args}}],
+            }
+        }
+    )
+
+
+def test_valid_tool_call_passes() -> None:
+    from semula.responses import validate_tool_calls
+
+    validate_tool_calls(call("get_weather", '{"city":"KL","days":2}'), [WEATHER])
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "param", "fragment"),
+    [
+        ("get_time", "{}", "message.tool_calls[0].function.name", "get_weather"),
+        ("get_weather", "{}", "message.tool_calls[0].function.arguments", "'city' is a required"),
+        (
+            "get_weather",
+            '{"city":1}',
+            "message.tool_calls[0].function.arguments.city",
+            "not of type",
+        ),
+        (
+            "get_weather",
+            '{"city":"a","x":1}',
+            "message.tool_calls[0].function.arguments",
+            "Additional",
+        ),
+    ],
+)
+def test_bad_tool_calls_name_the_path(name: str, args: str, param: str, fragment: str) -> None:
+    from semula.responses import validate_tool_calls
+
+    with pytest.raises(AnswerInvalid) as exc:
+        validate_tool_calls(call(name, args), [WEATHER])
+    assert exc.value.param == param and fragment in exc.value.message
+
+
+def test_tool_call_without_offered_tools_is_rejected() -> None:
+    from semula.responses import validate_tool_calls
+
+    with pytest.raises(AnswerInvalid, match="offered no tools"):
+        validate_tool_calls(call("anything", "{}"), [])
+
+
+def test_text_answers_skip_tool_validation() -> None:
+    from semula.responses import validate_tool_calls
+
+    validate_tool_calls(parse_answer({"content": "hi"}), [])

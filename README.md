@@ -2,7 +2,7 @@
 
 **A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
 
-> **Status: pre-alpha.** Record-then-replay works end to end for non-streaming chat completions. Streaming, tool-call validation, projects, MCP and the dashboard are still to come. Follow progress on the [slices](docs/SLICES.md).
+> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, MCP, fuzzy matching and the dashboard are still to come. Follow progress on the [slices](docs/SLICES.md).
 
 ```mermaid
 flowchart LR

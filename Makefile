@@ -37,11 +37,11 @@ typecheck: ## Type-check with mypy (strict)
 test-fast: ## Fast layer: unit + integration, no infra
 	uv run pytest -m "unit or integration" -q
 
-test-e2e: ## Heavy layer: real container (needs Docker)
-	uv run pytest -m e2e -q
+test-e2e: ## Heavy layer: real server driven by OpenAI SDK and LangChain
+	uv run --extra dev --extra e2e pytest -m e2e -q
 
-test: ## Full test suite
-	uv run pytest -q
+test: ## Full test suite (unit, integration, e2e)
+	uv run --extra dev --extra e2e pytest -q
 
 check: lint typecheck test-fast ## The pre-push gate: lint, types, fast tests
 

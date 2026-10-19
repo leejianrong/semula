@@ -17,6 +17,8 @@ class Settings:
     record_timeout: float = 300.0
     host: str = "127.0.0.1"
     port: int = 8080
+    chunk_size: int = 24
+    models: tuple[str, ...] = ("semula",)
 
     @property
     def db_path(self) -> Path:
@@ -33,4 +35,8 @@ class Settings:
             record_timeout=float(os.environ.get("SEMULA_RECORD_TIMEOUT", "300")),
             host=os.environ.get("SEMULA_HOST", "127.0.0.1"),
             port=int(os.environ.get("SEMULA_PORT", "8080")),
+            chunk_size=int(os.environ.get("SEMULA_CHUNK_SIZE", "24")),
+            models=tuple(
+                m.strip() for m in os.environ.get("SEMULA_MODELS", "semula").split(",") if m.strip()
+            ),
         )

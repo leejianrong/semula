@@ -13,7 +13,10 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from jsonschema import Draft202012Validator, SchemaError
+
 from .errors import SemulaError
+from .streaming import assemble, ensure_tool_call_ids
 
 FINISH_REASONS = {"stop", "length", "tool_calls", "content_filter", "function_call"}
 
@@ -29,8 +32,12 @@ def parse_answer(payload: Any) -> dict[str, Any]:
     Accepts a full Chat Completions body (uses ``choices[0]``), a
     ``{"message": {...}}`` object, or the shorthand ``{"content": "text"}``.
     """
+    if isinstance(payload, list):
+        return _from_chunks(payload, None, None)
     if not isinstance(payload, Mapping):
-        raise AnswerInvalid("The answer must be a JSON object.")
+        raise AnswerInvalid("The answer must be a JSON object or a list of stream chunks.")
+    if isinstance(payload.get("chunks"), list):
+        return _from_chunks(payload["chunks"], payload.get("finish_reason"), payload.get("usage"))
     if "choices" in payload:
         choices = payload["choices"]
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], Mapping):
@@ -55,6 +62,38 @@ def parse_answer(payload: Any) -> dict[str, Any]:
             "Send a chat completion body, {'message': {...}}, or {'content': 'text'}."
         )
     return _validate_message(message, finish, usage)
+
+
+def _from_chunks(chunks: list[Any], finish: Any, usage: Any) -> dict[str, Any]:
+    """Accept an answer recorded as a stream, keeping its chunk boundaries (ADR-0008).
+
+    Each item is a plain string (a content piece), a bare delta object, or a full
+    ``chat.completion.chunk``. Boundaries are kept so replay can emit them verbatim.
+    """
+    deltas: list[dict[str, Any]] = []
+    for i, item in enumerate(chunks):
+        if isinstance(item, str):
+            deltas.append({"content": item})
+        elif isinstance(item, Mapping) and "choices" in item:
+            if item.get("usage") and usage is None:
+                usage = item["usage"]
+            choices = item["choices"]
+            if choices:
+                choice = choices[0]
+                finish = choice.get("finish_reason") or finish
+                if choice.get("delta"):
+                    deltas.append(dict(choice["delta"]))
+        elif isinstance(item, Mapping):
+            deltas.append(dict(item))
+        else:
+            raise AnswerInvalid("Each chunk must be a string or an object.", f"chunks[{i}]")
+    deltas = [d for d in deltas if d]
+    if not deltas:
+        raise AnswerInvalid("The stream has no content or tool-call deltas.", "chunks")
+    message = assemble(deltas)
+    stored = _validate_message(message, finish, usage)
+    stored["chunks"] = ensure_tool_call_ids(deltas, stored["message"].get("tool_calls") or [])
+    return stored
 
 
 def _validate_message(message: Any, finish: Any, usage: Any) -> dict[str, Any]:
@@ -137,3 +176,42 @@ def build_completion(stored: Mapping[str, Any], model: str) -> dict[str, Any]:
         ],
         "usage": usage,
     }
+
+
+def validate_tool_calls(stored: Mapping[str, Any], tools: list[dict[str, Any]]) -> None:
+    """Check an answer's tool calls against the tools the request offered.
+
+    A call must name an offered tool and its arguments must satisfy that tool's JSON
+    schema, so an agent-written answer cannot break the app that replays it.
+    """
+    calls = stored["message"].get("tool_calls") or []
+    if not calls:
+        return
+    by_name: dict[str, Any] = {}
+    for tool in tools:
+        fn = tool.get("function") if isinstance(tool.get("function"), Mapping) else tool
+        if isinstance(fn, Mapping) and fn.get("name"):
+            by_name[str(fn["name"])] = fn.get("parameters") or {}
+    if not by_name:
+        raise AnswerInvalid(
+            "The request offered no tools, so the answer cannot call one.", "message.tool_calls"
+        )
+    for i, call in enumerate(calls):
+        name = call["function"]["name"]
+        where = f"message.tool_calls[{i}].function"
+        if name not in by_name:
+            raise AnswerInvalid(
+                f"Unknown tool {name!r}. The request offered: {sorted(by_name)}.", f"{where}.name"
+            )
+        try:
+            validator = Draft202012Validator(by_name[name])
+        except SchemaError:
+            continue  # the app's own schema is broken; do not block the answer on it
+        error = next(iter(validator.iter_errors(json.loads(call["function"]["arguments"]))), None)
+        if error is not None:
+            path = ".".join(str(p) for p in error.absolute_path)
+            raise AnswerInvalid(
+                f"Arguments for {name!r} do not match its schema"
+                f"{' at ' + path if path else ''}: {error.message}",
+                f"{where}.arguments" + (f".{path}" if path else ""),
+            )
