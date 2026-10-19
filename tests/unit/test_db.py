@@ -7,7 +7,6 @@ from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 
 from semula.db import (
-    BASELINE_REVISION,
     DEFAULT_PROJECT,
     DEFAULT_WORKSPACE,
     Database,
@@ -18,6 +17,8 @@ from semula.schema import metadata
 from tests.support.db import fresh_database_url
 
 pytestmark = pytest.mark.unit
+
+HEAD = "0002"  # bump with every new migration
 
 # What the pre-Alembic hand-rolled runner produced at its version 2.
 LEGACY_DDL = """
@@ -58,7 +59,7 @@ def new_db(tmp_path: Path) -> Database:
 
 def test_a_fresh_database_migrates_to_head_and_seeds_the_defaults(tmp_path: Path) -> None:
     db = new_db(tmp_path)
-    assert db.revision() == BASELINE_REVISION
+    assert db.revision() == HEAD
     assert db.query_one("SELECT id FROM workspace")["id"] == DEFAULT_WORKSPACE  # type: ignore[index]
     row = db.query_one("SELECT workspace_id, id FROM project")
     assert (row["workspace_id"], row["id"]) == (DEFAULT_WORKSPACE, DEFAULT_PROJECT)  # type: ignore[index]
@@ -71,7 +72,7 @@ def test_migrate_is_idempotent_and_keeps_data(tmp_path: Path) -> None:
     db.close()
     again = Database(url)
     again.migrate()
-    assert again.revision() == BASELINE_REVISION
+    assert again.revision() == HEAD
     assert again.query_one("SELECT name FROM project")["name"] == "kept"  # type: ignore[index]
     assert len(again.query("SELECT * FROM workspace")) == 1
 
@@ -147,14 +148,14 @@ def test_a_file_made_by_the_old_runner_upgrades_in_place_with_its_data(tmp_path:
     path = sqlite_only(tmp_path)
     make_legacy_file(path)
     db = Database(path)
-    assert db.revision() == BASELINE_REVISION
+    assert db.revision() == HEAD
     assert "schema_version" not in sa.inspect(db.engine).get_table_names()
     assert [r["id"] for r in db.query("SELECT id FROM project ORDER BY id")] == ["default", "mine"]
     entry = db.query_one("SELECT id, pinned FROM entry")
     assert entry["id"] == "E1" and bool(entry["pinned"]) is True  # type: ignore[index]
     # and it is a normal database afterwards: a second open changes nothing
     Database(path).migrate()
-    assert Database(path).revision() == BASELINE_REVISION
+    assert Database(path).revision() == HEAD
 
 
 def test_a_legacy_file_at_an_unknown_version_is_refused_not_guessed(tmp_path: Path) -> None:
@@ -162,3 +163,39 @@ def test_a_legacy_file_at_an_unknown_version_is_refused_not_guessed(tmp_path: Pa
     make_legacy_file(path, version=1)
     with pytest.raises(RuntimeError, match="schema version 1"):
         Database(path)
+
+
+# --- one open request per fingerprint (migration 0002) -------------------------------------
+
+PENDING = (
+    "INSERT INTO pending (id, workspace_id, project_id, fingerprint, exact_fingerprint, "
+    "canonical_request, status, created_at) VALUES "
+    "(:id, 'default', 'default', 'fp', 'x', '{}', :status, '2026-01-01T00:00:00.000Z')"
+)
+
+
+def test_the_database_refuses_two_open_requests_for_one_fingerprint(tmp_path: Path) -> None:
+    db = new_db(tmp_path)
+    db.run(PENDING, {"id": "A", "status": "pending"})
+    with pytest.raises(sa.exc.IntegrityError):
+        db.run(PENDING, {"id": "B", "status": "pending"})
+    # answered requests do not count, so history can repeat the same fingerprint
+    db.run(PENDING, {"id": "C", "status": "answered"})
+    db.run(PENDING, {"id": "D", "status": "answered"})
+    assert len(db.query("SELECT id FROM pending")) == 3
+
+
+def test_upgrading_collapses_duplicate_open_requests_to_the_earliest(tmp_path: Path) -> None:
+    path = sqlite_only(tmp_path)
+    make_legacy_file(path)
+    conn = sqlite3.connect(path)
+    for pid in ("P2", "P1", "P3"):
+        conn.execute(
+            "INSERT INTO pending (id, workspace_id, project_id, fingerprint, exact_fingerprint, "
+            "canonical_request) VALUES (?, 'default', 'default', 'same', 'x', '{}')",
+            (pid,),
+        )
+    conn.commit()
+    conn.close()
+    db = Database(path)
+    assert [r["id"] for r in db.query("SELECT id FROM pending")] == ["P1"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +13,8 @@ from typing import Any
 import sqlalchemy as sa
 from pydantic import ValidationError
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
+from starlette.concurrency import run_in_threadpool
 
 from . import canonical
 from .canonical import (
@@ -49,7 +52,10 @@ class Service:
     def __init__(self, db: Database, settings: Settings) -> None:
         self.db = db
         self.settings = settings
-        self._waiters: dict[str, asyncio.Event] = {}
+        # Held calls waiting on an answer: pending id -> [(their event loop, their event)].
+        # Answers arrive on worker threads, so waking a waiter must go through its loop.
+        self._waiters: dict[str, list[tuple[asyncio.AbstractEventLoop, asyncio.Event]]] = {}
+        self._waiters_lock = threading.Lock()
         self.mode: str = settings.mode
 
     # --- mode -----------------------------------------------------------------------
@@ -521,18 +527,17 @@ class Service:
         """Park a miss. A second identical miss joins the first instead of duplicating."""
         config = self.project_settings(project).fingerprint_config()
         fp = normalised_fingerprint(req, config)
-        row = self.db.one(
-            sa.select(Q.c.id).where(
-                Q.c.workspace_id == DEFAULT_WORKSPACE,
-                Q.c.project_id == project,
-                Q.c.fingerprint == fp,
-                Q.c.status == "pending",
-            )
+        open_request = sa.select(Q.c.id).where(
+            Q.c.workspace_id == DEFAULT_WORKSPACE,
+            Q.c.project_id == project,
+            Q.c.fingerprint == fp,
+            Q.c.status == "pending",
         )
+        row = self.db.one(open_request)
         if row:
-            pid = str(row["id"])
-        else:
-            pid = new_ulid()
+            return str(row["id"])
+        pid = new_ulid()
+        try:
             self.db.execute(
                 sa.insert(Q).values(
                     id=pid,
@@ -543,16 +548,39 @@ class Service:
                     canonical_request=req.to_json(),
                 )
             )
-        self._waiters.setdefault(pid, asyncio.Event())
+        except IntegrityError:  # another miss parked the same request first: join it
+            row = self.db.one(open_request)
+            if row is None:
+                raise
+            return str(row["id"])
         return pid
 
     async def wait_for_answer(self, pending_id: str, timeout: float) -> dict[str, Any] | None:
-        """Wait for an answer. Returns the stored response, or None on timeout."""
-        event = self._waiters.setdefault(pending_id, asyncio.Event())
+        """Wait for an answer. Returns the stored response, or None on timeout.
+
+        The database reads run in a worker thread so a slow query never stalls the event loop.
+        """
+        event = asyncio.Event()
+        with self._waiters_lock:
+            self._waiters.setdefault(pending_id, []).append((asyncio.get_running_loop(), event))
         try:
-            await asyncio.wait_for(event.wait(), timeout)
-        except TimeoutError:
-            return None
+            # Answered before we registered? Then nobody will wake us, so look first.
+            stored = await run_in_threadpool(self._answer_for, pending_id)
+            if stored is None:
+                try:
+                    await asyncio.wait_for(event.wait(), timeout)
+                except TimeoutError:
+                    return None
+                stored = await run_in_threadpool(self._answer_for, pending_id)
+            return stored
+        finally:
+            with self._waiters_lock:
+                waiting = self._waiters.get(pending_id, [])
+                waiting[:] = [w for w in waiting if w[1] is not event]
+                if not waiting:
+                    self._waiters.pop(pending_id, None)
+
+    def _answer_for(self, pending_id: str) -> dict[str, Any] | None:
         row = self.db.one(sa.select(Q.c.entry_id).where(Q.c.id == pending_id))
         if not row or not row["entry_id"]:
             return None
@@ -560,9 +588,11 @@ class Service:
         return json.loads(entry["responses"])[0] if entry else None
 
     def _release(self, pending_id: str) -> None:
-        event = self._waiters.pop(pending_id, None)
-        if event:
-            event.set()
+        """Wake every call held on this request. Safe to call from any thread."""
+        with self._waiters_lock:
+            waiting = list(self._waiters.get(pending_id, []))
+        for loop, event in waiting:
+            loop.call_soon_threadsafe(event.set)
 
     def list_pending(
         self, status: str | None = "pending", project: str | None = None

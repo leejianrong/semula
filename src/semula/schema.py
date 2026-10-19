@@ -103,6 +103,17 @@ pending = sa.Table(
     sa.Column("answered_at", sa.Text),
     _project_fk("pending"),
     sa.Index("idx_pending_status", "workspace_id", "project_id", "status"),
+    # At most one open request per fingerprint, enforced by the database so concurrent
+    # misses (and several server replicas) cannot park duplicates.
+    sa.Index(
+        "uq_pending_open",
+        "workspace_id",
+        "project_id",
+        "fingerprint",
+        unique=True,
+        sqlite_where=sa.text("status = 'pending'"),
+        postgresql_where=sa.text("status = 'pending'"),
+    ),
 )
 
 call_log = sa.Table(
