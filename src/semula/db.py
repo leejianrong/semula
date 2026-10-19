@@ -36,6 +36,7 @@ MIGRATIONS: list[str] = [
         workspace_id TEXT NOT NULL,
         project_id TEXT NOT NULL,
         fingerprint TEXT NOT NULL,
+        exact_fingerprint TEXT NOT NULL,
         canonical_request TEXT NOT NULL,
         responses TEXT NOT NULL,
         version INTEGER NOT NULL DEFAULT 1,
@@ -47,11 +48,13 @@ MIGRATIONS: list[str] = [
             ON DELETE CASCADE
     );
     CREATE INDEX idx_entry_fingerprint ON entry(workspace_id, project_id, fingerprint);
+    CREATE INDEX idx_entry_exact ON entry(workspace_id, project_id, exact_fingerprint);
     CREATE TABLE pending (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
         project_id TEXT NOT NULL,
         fingerprint TEXT NOT NULL,
+        exact_fingerprint TEXT NOT NULL,
         canonical_request TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         entry_id TEXT,
