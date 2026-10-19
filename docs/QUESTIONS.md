@@ -13,7 +13,7 @@ Working name: **semula** (Malay: "originally / from the start"). A record-replay
 | 2 | Scope | What is in milestone 1? | ASSUMED | Local single-user container: `/v1/chat/completions` (+stream, +tool calls), `/v1/models`; projects; replay; record; CLI; MCP; indah dashboard. Out: auth, multi-user, hosted, Responses API, Anthropic Messages API, embeddings endpoint. | PLAN §Scope |
 | 3 | Data model | Entities and identity | ASSUMED | `workspace` > `project` > `cassette entry` (request fingerprint + canonical request + response(s)) ; `call_log` rows for every request (hit, miss, mode, score). Stable slug IDs for projects, ULIDs for entries. Identity survives export/import because the ULID is stored in the exported file. | PLAN §Shape, ADR |
 | 3a | Data model | Tenancy columns in the schema from day 1? | DECIDED F3 | see F3 | ADR |
-| 4 | Storage | Where does data live and can it be diffed? | ASSUMED | SQLite (WAL) file on a mounted volume is the source of truth. `semula export/import` round-trips a project to a directory of JSON/YAML files so cassettes can be committed to git and diffed. Export lands in slice 5, not slice 1. | ADR |
+| 4 | Storage | Where does data live and can it be diffed? | DECIDED (amended by ADR-0009) | SQLite by default, Postgres via `SEMULA_DATABASE_URL`, SQLAlchemy Core + Alembic. A SQLite file on a mounted volume is the local source of truth. `semula export/import` round-trips a project to a directory of JSON/YAML files so cassettes can be committed to git and diffed. Export lands in slice 5, not slice 1. | ADR |
 | 5 | Concurrency | Two writers, one an agent | ASSUMED | Each entry has a `version`; writes carry the expected version (optimistic concurrency), a stale write is rejected with a 409 and the current entry, never silently lost. `pinned` entries reject agent writes unless `force`. | PLAN §Decisions |
 | 6 | Interfaces | Surfaces and one write path | ASSUMED | One service layer; REST admin API (`/api/v1`), CLI (`semula ...`, thin HTTP client, `--json`, meaningful exit codes), MCP (streamable HTTP at `/mcp`, plus `semula mcp` stdio shim), dashboard. All four call the same service functions. Cheap read projection for agents: `list_entries` returns fingerprint, a 200-char request tail, hit count, no bodies. | ADR |
 | 7 | Failure | Miss in replay mode; agent never answers in record mode; bad request | ASSUMED | Replay miss: HTTP 424-style OpenAI error body `semula_no_match` with the nearest candidate + score in the error `param`, never a made-up answer. Record miss: request is parked as `pending` and the HTTP call waits up to `record_timeout` (default 300s), then fails with `semula_record_timeout` and stays pending so a late answer is still saved. Malformed JSON: 400 OpenAI-shaped error. | PLAN §Failure |
@@ -54,6 +54,17 @@ All four recommendations accepted. F2 was extended; the extension is binding.
 ## Standing instruction for indah work (this session only)
 
 For planning today, indah's existing ADRs that rule things out (e.g. ADR-0008 "no built-in auth") are ignored: treat indah as able to grow anything the design needs. Whether to keep indah for the hosted version is decided later (see F2).
+
+## Decided since the register was written
+
+| Date | Decision | Where |
+|---|---|---|
+| 2026-10-19 | The original plan stands: Python/FastAPI, record queue, safe tiered matching, SQLite with `workspace_id` | ADRs 0001-0008 |
+| 2026-10-19 | PRs are merged by the agent as soon as CI is green; `main` is protected (PR-only, all jobs required) | AGENTS.md |
+| 2026-10-19 | SQLAlchemy Core + Alembic now, SQLite local and Postgres hosted; BM25 must sit behind a per-backend interface | ADR-0009 |
+| 2026-10-19 | The free-form dashboard design waits until the headless core is further along; the indah requests prompt was handed to the indah agent, its plan is awaited | SEM-E9, `docs/INDAH-REQUESTS-PROMPT.md` |
+| 2026-10-19 | MCP authorization (OAuth 2.1 resource server: RFC 9728 metadata, token audience validation, scope challenges) is a hosted-only item. RFC 9207 `iss` checks and CIMD are client and authorization-server duties. Today: the shared `SEMULA_API_KEY` only | SEM-53 |
+| 2026-10-19 | Codex MCP registration syntax is unverified; the CLI is the fallback | `docs/agents/PLAYBOOK.md` |
 
 ## Deferred
 
