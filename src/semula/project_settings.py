@@ -45,12 +45,13 @@ class ProjectSettings(BaseModel):
     )
 
     bm25_serve_threshold: float = Field(
-        default=0.97,
+        default=1.0,
         gt=0,
         le=1,
         description=(
             "Word-overlap score (0-1) at or above which a close lexical match is served "
-            "automatically. 1 serves only prompts with the same words."
+            "automatically. The default, 1, serves only prompts with the same words, so "
+            "near-misses go to review until you lower it."
         ),
     )
     bm25_review_threshold: float = Field(
