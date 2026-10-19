@@ -37,6 +37,8 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Auth
 | `upsert_entry` | `POST /api/v1/projects/<id>/entries` (no CLI command yet) |
 | `update_entry`, `delete_entry` | `semula entry set <id> --version N ...`, `semula entry delete <id> --version N` |
 | `test_match` | `semula test-match --prompt "..."` or `--file request.json` |
+| `list_candidates`, `get_candidate` | `semula review list [--all]`, `semula review show <id>` |
+| `approve_candidate`, `reject_candidate` | `semula review approve <id>`, `semula review reject <id>` |
 
 ## 2. The loop
 
@@ -90,7 +92,13 @@ Rules that keep answers replayable:
 
 ## 5. Matching and settings
 
-`test_match` explains a hit or a miss without side effects: the tier (`exact` or `normalised`), the entry, and on a miss the nearest recorded entry with a score. If near-identical prompts keep missing, adjust the project's settings (`update_project_settings`): `scrub_patterns` (regexes to ignore, e.g. `ticket-\d+`), `tail_n` (match only the last N messages), `include_params` (request params that count). Changing these re-keys existing entries.
+`test_match` explains a hit or a miss without side effects: the tier (`exact`, `normalised`, `alias` or `bm25`), the entry and its score, and on a miss the weak `candidates` that would go to review plus the nearest recorded entry. If near-identical prompts keep missing, adjust the project's settings (`update_project_settings`): `scrub_patterns` (regexes to ignore, e.g. `ticket-\d+`), `tail_n` (match only the last N messages), `include_params` (request params that count). Changing these re-keys existing entries.
+
+### Near misses and the review queue
+
+Beyond exact and normalised matches, semula compares words (`bm25` tier). A prompt scoring at or above `bm25_serve_threshold` (default 0.97, so only trivial differences) with the same roles, tools and required params is served. A prompt scoring between `bm25_review_threshold` (default 0.6) and that bar is **never served**: the call is a miss (parked in record mode) and the pairing waits in the review queue.
+
+`list_candidates` shows the queue, best score first; `get_candidate` shows the new request next to the entry it resembles. **Approve** (`approve_candidate`) only when the entry's answer is right for the new prompt, since an approved prompt is then served from that entry, edits included. **Reject** (`reject_candidate`) when it is not: that pairing never reappears. A human normally decides; do it yourself only when asked. Either way, answering the parked request for the new prompt is separate and still needed.
 
 ## 6. Exit codes (CLI)
 

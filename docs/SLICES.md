@@ -1,6 +1,6 @@
 # semula: Slices
 
-Vertical increments, headless first. **The live source of status is Pandan board `SEM` (board 39).** This file is a snapshot of it, regenerated 2026-10-19: 35 of 61 stories done. Slice SEM-E2 confronted the riskiest mechanism: parking a call and answering it from a coding agent.
+Vertical increments, headless first. **The live source of status is Pandan board `SEM` (board 39).** This file is a snapshot of it, regenerated 2026-10-20: 39 of 61 stories done. Slice SEM-E2 confronted the riskiest mechanism: parking a call and answering it from a coding agent.
 
 Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). Cards marked ✔ are done and merged to `main`.
 
@@ -343,7 +343,7 @@ Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). C
 - [x] A fresh agent follows it to record a session
 - [x] Covers Codex too
 
-## SEM-E6 · Smarter matching with human review (0/4)
+## SEM-E6 · Smarter matching with human review (4/4)
 
 **Goal** — Near-miss prompts get answered without ever silently serving the wrong response.
 
@@ -351,45 +351,45 @@ Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). C
 
 **Not in scope** — Embeddings.
 
-### · SEM-30 · Add configurable scrubbers to the normaliser (3 pts)
+### ✔ SEM-30 · Add configurable scrubbers to the normaliser (3 pts)
 
 **Why** — Each app has its own noise.
 
 **Do** — Per-project regex scrub rules applied before hashing and indexing.
 
 **Acceptance**
-- [ ] Rule change applies to new calls
-- [ ] Invalid regex is rejected with a message
+- [x] Rule change applies to new calls
+- [x] Invalid regex is rejected with a message
 
-### · SEM-31 · Add a BM25 tier on SQLite FTS5 (5 pts)
+### ✔ SEM-31 · Add a BM25 tier on SQLite FTS5 (5 pts)
 
 **Why** — Exact variable names and identifiers need lexical matching.
 
 **Do** — Index normalised requests; score threshold per project; tier recorded in call_log.
 
 **Acceptance**
-- [ ] Near-identical prompt hits above threshold
-- [ ] Below threshold falls through
+- [x] Near-identical prompt hits above threshold
+- [x] Below threshold falls through
 
-### · SEM-32 · Create a review queue for weak candidates (3 pts)
+### ✔ SEM-32 · Create a review queue for weak candidates (3 pts)
 
 **Why** — Weak matches should not serve automatically (F4).
 
 **Do** — Store candidate, score and request; call proceeds to miss handling.
 
 **Acceptance**
-- [ ] Candidate appears with score
-- [ ] Call is not answered from the candidate
+- [x] Candidate appears with score
+- [x] Call is not answered from the candidate
 
-### · SEM-33 · Approve or reject a candidate (3 pts)
+### ✔ SEM-33 · Approve or reject a candidate (3 pts)
 
 **Why** — Humans teach semula which near-misses are fine.
 
 **Do** — Approve creates an alias to the entry; reject suppresses that pairing.
 
 **Acceptance**
-- [ ] Approved prompt hits next time
-- [ ] Rejected pair never reappears
+- [x] Approved prompt hits next time
+- [x] Rejected pair never reappears
 
 ## SEM-E7 · Observable, exportable, shippable container (0/6)
 

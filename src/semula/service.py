@@ -19,18 +19,24 @@ from starlette.concurrency import run_in_threadpool
 from . import canonical
 from .canonical import (
     CanonicalRequest,
+    FingerprintConfig,
     exact_fingerprint,
+    lexical_tokens,
     normalised_fingerprint,
     scrub,
+    shape,
 )
 from .config import Settings
 from .db import Database
 from .errors import SemulaError
 from .ids import new_ulid
+from .lexical import make_index, similarity
 from .project_settings import FINGERPRINT_FIELDS, ProjectSettings
 from .responses import parse_answer, validate_tool_calls
 from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE, now_iso
+from .schema import alias as A
 from .schema import call_log as L
+from .schema import candidate as C
 from .schema import entry as E
 from .schema import pending as Q
 from .schema import project as P
@@ -40,12 +46,31 @@ _SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 
 SELECTIONS = ("first", "sequence", "cycle")
 
+LEXICAL_POOL = 10  # entries the lexical index proposes before they are scored
+MAX_CANDIDATES = 3  # weak matches queued for review per missed request
+
 
 @dataclass(frozen=True)
 class Match:
     entry_id: str
     tier: str
     stored: dict[str, Any]
+    score: float = 1.0
+
+
+@dataclass(frozen=True)
+class Candidate:
+    entry_id: str
+    score: float
+    tier: str = "bm25"
+
+
+@dataclass(frozen=True)
+class MatchResult:
+    """A served match, or none plus the weak candidates a human might approve."""
+
+    match: Match | None
+    candidates: list[Candidate]
 
 
 class Service:
@@ -57,6 +82,7 @@ class Service:
         self._waiters: dict[str, list[tuple[asyncio.AbstractEventLoop, asyncio.Event]]] = {}
         self._waiters_lock = threading.Lock()
         self.mode: str = settings.mode
+        self.lexical = make_index(db)
 
     # --- mode -----------------------------------------------------------------------
     def set_mode(self, mode: str) -> str:
@@ -151,9 +177,12 @@ class Service:
                 after = ProjectSettings.model_validate(merged)
             except ValidationError as exc:
                 first = exc.errors()[0]
-                where = ".".join(str(p) for p in first["loc"])
+                where = ".".join(["settings", *(str(p) for p in first["loc"])])
                 raise SemulaError(
-                    422, "invalid_settings", str(first["msg"]), param=f"settings.{where}"
+                    422,
+                    "invalid_settings",
+                    str(first["msg"]).removeprefix("Value error, "),
+                    param=where,
                 ) from exc
             with self.db.begin() as conn:
                 self.db.execute(
@@ -169,7 +198,7 @@ class Service:
     def _rekey(self, slug: str, settings: ProjectSettings, conn: Connection) -> None:
         """Recompute fingerprints after a matching setting changed, from stored requests."""
         config = settings.fingerprint_config()
-        for table in (E, Q):
+        for table in (E, Q, A, C):
             rows = self.db.rows(
                 sa.select(table.c.id, table.c.canonical_request).where(
                     table.c.workspace_id == DEFAULT_WORKSPACE, table.c.project_id == slug
@@ -178,15 +207,14 @@ class Service:
             )
             for row in rows:
                 req = CanonicalRequest.from_json(row["canonical_request"])
+                values = {"fingerprint": normalised_fingerprint(req, config)}
+                if "exact_fingerprint" in table.c:  # a candidate has no exact fingerprint
+                    values["exact_fingerprint"] = exact_fingerprint(req, config)
                 self.db.execute(
-                    sa.update(table)
-                    .where(table.c.id == row["id"])
-                    .values(
-                        fingerprint=normalised_fingerprint(req, config),
-                        exact_fingerprint=exact_fingerprint(req, config),
-                    ),
-                    conn,
+                    sa.update(table).where(table.c.id == row["id"]).values(**values), conn
                 )
+                if table is E:  # scrubbers and tail_n shape the indexed words too
+                    self._index(row["id"], slug, req, config, conn)
 
     def delete_project(self, slug: str) -> None:
         self.require_project(slug)
@@ -196,12 +224,14 @@ class Service:
             sa.select(Q.c.id).where(Q.c.workspace_id == DEFAULT_WORKSPACE, Q.c.project_id == slug)
         )
         with self.db.begin() as conn:
-            # entry and pending rows go with the project (ON DELETE CASCADE); call_log has no FK
+            # entries, pending rows, candidates and aliases go with the project (ON DELETE CASCADE);
+            # call_log has no FK
             self.db.execute(
                 sa.delete(L).where(L.c.workspace_id == DEFAULT_WORKSPACE, L.c.project_id == slug),
                 conn,
             )
             self.db.execute(sa.delete(P).where(*_pk(P, slug)), conn)
+            self.lexical.delete_project(DEFAULT_WORKSPACE, slug, conn)
         for row in parked:
             self._release(row["id"])  # held calls find no answer and time out cleanly
 
@@ -216,26 +246,101 @@ class Service:
 
     # --- matching -------------------------------------------------------------
     def find(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> Match | None:
-        config = self.project_settings(project).fingerprint_config()
-        for tier, column, fp in (
+        return self.lookup(req, project).match
+
+    def lookup(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> MatchResult:
+        """Run the tiers: exact, normalised, approved alias, then lexical (ADR-0003). Pure: it
+        serves nothing and writes nothing, so ``test_match`` can share it."""
+        settings = self.project_settings(project)
+        config = settings.fingerprint_config()
+        match = self._find_exact(req, project, config)
+        if match:
+            return MatchResult(match, [])
+        return self._find_lexical(req, project, settings, config)
+
+    def _find_exact(
+        self, req: CanonicalRequest, project: str, config: FingerprintConfig
+    ) -> Match | None:
+        fp = normalised_fingerprint(req, config)
+        for tier, column, value in (
             ("exact", E.c.exact_fingerprint, exact_fingerprint(req, config)),
-            ("normalised", E.c.fingerprint, normalised_fingerprint(req, config)),
+            ("normalised", E.c.fingerprint, fp),
         ):
             row = self.db.one(
-                sa.select(E.c.id, E.c.responses, E.c.selection, E.c.hit_count)
+                _entry_for_serving()
                 .where(
                     E.c.workspace_id == DEFAULT_WORKSPACE,
                     E.c.project_id == project,
-                    column == fp,
+                    column == value,
                 )
                 .order_by(E.c.created_at, E.c.id)
                 .limit(1)
             )
             if row:
-                responses = json.loads(row["responses"])
-                chosen = responses[_pick(row["selection"], row["hit_count"], len(responses))]
-                return Match(row["id"], tier, chosen)
-        return None
+                return _match(row, tier)
+        approved = self.db.one(
+            _entry_for_serving()
+            .join(A, A.c.entry_id == E.c.id)
+            .where(
+                A.c.workspace_id == DEFAULT_WORKSPACE,
+                A.c.project_id == project,
+                A.c.fingerprint == fp,
+            )
+            .order_by(A.c.created_at, A.c.id)
+            .limit(1)
+        )
+        return _match(approved, "alias") if approved else None
+
+    def _find_lexical(
+        self,
+        req: CanonicalRequest,
+        project: str,
+        settings: ProjectSettings,
+        config: FingerprintConfig,
+    ) -> MatchResult:
+        """Score the index's proposals by word overlap. Serve one only if it clears the
+        project's high bar *and* has the same conversation shape; keep the rest as candidates."""
+        words = lexical_tokens(req, config)
+        hits = self.lexical.search(DEFAULT_WORKSPACE, project, words, config, LEXICAL_POOL)
+        if not hits:
+            return MatchResult(None, [])
+        rows = {
+            r["id"]: r
+            for r in self.db.rows(
+                _entry_for_serving(E.c.canonical_request).where(
+                    E.c.id.in_([h.entry_id for h in hits])
+                )
+            )
+        }
+        rejected = {
+            r["entry_id"]
+            for r in self.db.rows(
+                sa.select(C.c.entry_id).where(
+                    C.c.workspace_id == DEFAULT_WORKSPACE,
+                    C.c.project_id == project,
+                    C.c.fingerprint == normalised_fingerprint(req, config),
+                    C.c.status == "rejected",
+                )
+            )
+        }
+        my_shape = shape(req, config)
+        scored: list[tuple[float, Any, bool]] = []
+        for hit in hits:
+            row = rows.get(hit.entry_id)
+            if row is None or hit.entry_id in rejected:
+                continue
+            other = CanonicalRequest.from_json(row["canonical_request"])
+            score = similarity(words, lexical_tokens(other, config))
+            if score >= settings.bm25_review_threshold:
+                scored.append((score, row, shape(other, config) == my_shape))
+        scored.sort(key=lambda t: -t[0])  # stable: ties keep the index's own order
+        for score, row, same_shape in scored:
+            if same_shape and score >= settings.bm25_serve_threshold:
+                return MatchResult(_match(row, "bm25", score), [])
+        return MatchResult(
+            None,
+            [Candidate(row["id"], round(score, 4)) for score, row, _ in scored[:MAX_CANDIDATES]],
+        )
 
     # --- entries ------------------------------------------------------------------
     def list_entries(
@@ -310,17 +415,21 @@ class Service:
         stored = parse_answer(response)
         validate_tool_calls(stored, req.tools)
         entry_id = new_ulid()
-        self.db.execute(
-            sa.insert(E).values(
-                id=entry_id,
-                workspace_id=DEFAULT_WORKSPACE,
-                project_id=project,
-                fingerprint=fp,
-                exact_fingerprint=exact_fingerprint(req, config),
-                canonical_request=req.to_json(),
-                responses=json.dumps([stored]),
+        with self.db.begin() as conn:
+            self.db.execute(
+                sa.insert(E).values(
+                    id=entry_id,
+                    workspace_id=DEFAULT_WORKSPACE,
+                    project_id=project,
+                    fingerprint=fp,
+                    exact_fingerprint=exact_fingerprint(req, config),
+                    canonical_request=req.to_json(),
+                    responses=json.dumps([stored]),
+                ),
+                conn,
             )
-        )
+            self._index(entry_id, project, req, config, conn)
+            self._supersede(conn, project, fp)
         return self.get_entry(entry_id), True
 
     def get_entry(self, entry_id: str) -> dict[str, Any]:
@@ -455,6 +564,7 @@ class Service:
             )
             if deleted != 1:
                 raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
+            self.lexical.delete(entry_id, conn)  # candidates and aliases cascade
             if forced:
                 self._log_forced(row, "forced_delete", conn)
 
@@ -499,7 +609,8 @@ class Service:
     def test_match(self, req: CanonicalRequest, project: str) -> dict[str, Any]:
         """What would happen to this request right now, without serving, logging or counting."""
         self.require_project(project)
-        match = self.find(req, project)
+        found = self.lookup(req, project)
+        match = found.match
         config = self.project_settings(project).fingerprint_config()
         out: dict[str, Any] = {
             "project": project,
@@ -507,8 +618,11 @@ class Service:
             "matched": match is not None,
             "tier": match.tier if match else None,
             "entry_id": match.entry_id if match else None,
-            "score": 1.0 if match else None,
+            "score": match.score if match else None,
             "fingerprint": normalised_fingerprint(req, config),
+            "candidates": [
+                {"entry_id": c.entry_id, "score": c.score, "tier": c.tier} for c in found.candidates
+            ],
             "nearest": None if match else self.nearest(req, project),
         }
         if match:
@@ -521,6 +635,170 @@ class Service:
 
     def record_hit(self, entry_id: str) -> None:
         self.db.execute(sa.update(E).where(E.c.id == entry_id).values(hit_count=E.c.hit_count + 1))
+
+    # --- lexical index ------------------------------------------------------------
+    def _index(
+        self,
+        entry_id: str,
+        project: str,
+        req: CanonicalRequest,
+        config: FingerprintConfig,
+        conn: Connection,
+    ) -> None:
+        self.lexical.upsert(entry_id, DEFAULT_WORKSPACE, project, lexical_tokens(req, config), conn)
+
+    def sync_index(self) -> None:
+        """Make the lexical index match the entries: add the missing, drop the stale. Cheap
+        when nothing is out of step. Run at startup, which also fills a freshly migrated index."""
+        indexed = self.lexical.indexed_ids()
+        if indexed is None:
+            return
+        rows = self.db.rows(
+            sa.select(E.c.id, E.c.project_id, E.c.canonical_request).where(
+                E.c.workspace_id == DEFAULT_WORKSPACE
+            )
+        )
+        known = {r["id"] for r in rows}
+        configs: dict[str, FingerprintConfig] = {}
+        with self.db.begin() as conn:
+            for row in rows:
+                if row["id"] in indexed:
+                    continue
+                project = row["project_id"]
+                if project not in configs:
+                    configs[project] = self.project_settings(project).fingerprint_config()
+                req = CanonicalRequest.from_json(row["canonical_request"])
+                self._index(row["id"], project, req, configs[project], conn)
+            for stale in indexed - known:
+                self.lexical.delete(stale, conn)
+
+    # --- review queue ---------------------------------------------------------------
+    def record_candidates(
+        self, req: CanonicalRequest, project: str, candidates: list[Candidate]
+    ) -> None:
+        """Queue weak lexical matches for a human. The call itself is still a miss. A pairing
+        already queued or decided is not queued again, so a rejection is permanent."""
+        if not candidates:
+            return
+        config = self.project_settings(project).fingerprint_config()
+        fp = normalised_fingerprint(req, config)
+        known = {
+            r["entry_id"]
+            for r in self.db.rows(
+                sa.select(C.c.entry_id).where(
+                    C.c.workspace_id == DEFAULT_WORKSPACE,
+                    C.c.project_id == project,
+                    C.c.fingerprint == fp,
+                )
+            )
+        }
+        for found in candidates:
+            if found.entry_id in known:
+                continue
+            self.db.execute(
+                sa.insert(C).values(
+                    id=new_ulid(),
+                    workspace_id=DEFAULT_WORKSPACE,
+                    project_id=project,
+                    entry_id=found.entry_id,
+                    fingerprint=fp,
+                    canonical_request=req.to_json(),
+                    score=found.score,
+                    tier=found.tier,
+                    status="open",
+                )
+            )
+
+    def list_candidates(
+        self, project: str | None = None, status: str | None = "open"
+    ) -> list[dict[str, Any]]:
+        conditions = [C.c.workspace_id == DEFAULT_WORKSPACE]
+        if project:
+            self.require_project(project)
+            conditions.append(C.c.project_id == project)
+        if status:
+            conditions.append(C.c.status == status)
+        rows = self.db.rows(
+            sa.select(C, E.c.canonical_request.label("entry_request"))
+            .select_from(C.join(E, E.c.id == C.c.entry_id))
+            .where(*conditions)
+            .order_by(C.c.score.desc(), C.c.id)
+        )
+        return [_candidate_view(r, full=False) for r in rows]
+
+    def get_candidate(self, candidate_id: str) -> dict[str, Any]:
+        row = self._candidate_row(candidate_id)
+        view = _candidate_view(row, full=True)
+        view["entry"] = self.get_entry(row["entry_id"])
+        return view
+
+    def _candidate_row(self, candidate_id: str) -> Any:
+        row = self.db.one(
+            sa.select(C, E.c.canonical_request.label("entry_request"))
+            .select_from(C.join(E, E.c.id == C.c.entry_id))
+            .where(C.c.id == candidate_id, C.c.workspace_id == DEFAULT_WORKSPACE)
+        )
+        if not row:
+            raise SemulaError(404, "candidate_not_found", f"No review candidate {candidate_id}.")
+        return row
+
+    def approve_candidate(self, candidate_id: str) -> dict[str, Any]:
+        """Say the request and the entry mean the same: the request now serves that entry."""
+        row = self._candidate_row(candidate_id)
+        config = self.project_settings(row["project_id"]).fingerprint_config()
+        req = CanonicalRequest.from_json(row["canonical_request"])
+        with self.db.begin() as conn:
+            self._decide(candidate_id, "approved", conn)
+            self.db.execute(
+                sa.insert(A).values(
+                    id=new_ulid(),
+                    workspace_id=row["workspace_id"],
+                    project_id=row["project_id"],
+                    entry_id=row["entry_id"],
+                    fingerprint=row["fingerprint"],
+                    exact_fingerprint=exact_fingerprint(req, config),
+                    canonical_request=row["canonical_request"],
+                ),
+                conn,
+            )
+            self._supersede(conn, row["project_id"], row["fingerprint"])  # others are moot now
+        return self.get_candidate(candidate_id)
+
+    def reject_candidate(self, candidate_id: str) -> dict[str, Any]:
+        """Say they differ. The pairing is remembered and never queued or served again."""
+        self._candidate_row(candidate_id)
+        with self.db.begin() as conn:
+            self._decide(candidate_id, "rejected", conn)
+        return self.get_candidate(candidate_id)
+
+    def _decide(self, candidate_id: str, status: str, conn: Connection) -> None:
+        changed = self.db.execute(
+            sa.update(C)
+            .where(C.c.id == candidate_id, C.c.status == "open")
+            .values(status=status, decided_at=now_iso()),
+            conn,
+        )
+        if changed != 1:
+            current = self.db.one(sa.select(C.c.status).where(C.c.id == candidate_id), conn)
+            raise SemulaError(
+                409,
+                "candidate_decided",
+                f"Candidate {candidate_id} is already {current['status'] if current else 'gone'}.",
+            )
+
+    def _supersede(self, conn: Connection, project: str, fingerprint: str) -> None:
+        """Close open candidates for a request that now has an answer of its own."""
+        self.db.execute(
+            sa.update(C)
+            .where(
+                C.c.workspace_id == DEFAULT_WORKSPACE,
+                C.c.project_id == project,
+                C.c.fingerprint == fingerprint,
+                C.c.status == "open",
+            )
+            .values(status="superseded", decided_at=now_iso()),
+            conn,
+        )
 
     # --- pending queue ----------------------------------------------------------
     def open_pending(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> str:
@@ -647,6 +925,10 @@ class Service:
                 ),
                 conn,
             )
+            req = CanonicalRequest.from_json(row["canonical_request"])
+            config = self.project_settings(row["project_id"]).fingerprint_config()
+            self._index(entry_id, row["project_id"], req, config, conn)
+            self._supersede(conn, row["project_id"], row["fingerprint"])
         self._release(pending_id)
         return entry_id
 
@@ -657,6 +939,7 @@ class Service:
         started: float,
         *,
         tier: str | None = None,
+        score: float | None = None,
         entry_id: str | None = None,
         pending_id: str | None = None,
         project: str = DEFAULT_PROJECT,
@@ -668,6 +951,7 @@ class Service:
                 mode=self.mode,
                 outcome=outcome,
                 tier=tier,
+                score=score,
                 latency_ms=(time.perf_counter() - started) * 1000,
                 entry_id=entry_id,
                 pending_id=pending_id,
@@ -682,6 +966,16 @@ def _pk(table: sa.Table, slug: str) -> tuple[Any, Any]:
 def _tokens(req: CanonicalRequest) -> set[str]:
     text = " ".join(m["content"] for m in req.messages if isinstance(m.get("content"), str))
     return set(re.findall(r"\w+", scrub(text).lower()))
+
+
+def _entry_for_serving(*extra: Any) -> sa.Select[Any]:
+    return sa.select(E.c.id, E.c.responses, E.c.selection, E.c.hit_count, *extra)
+
+
+def _match(row: Any, tier: str, score: float = 1.0) -> Match:
+    responses = json.loads(row["responses"])
+    chosen = responses[_pick(row["selection"], row["hit_count"], len(responses))]
+    return Match(row["id"], tier, chosen, score)
 
 
 def _pick(selection: str, served: int, count: int) -> int:
@@ -711,6 +1005,26 @@ def _entry_view(row: Any, *, full: bool) -> dict[str, Any]:
         view["request"] = {"messages": req.messages, "tools": req.tools}
         view["responses"] = responses
         view["created_at"] = row["created_at"]
+    return view
+
+
+def _candidate_view(row: Any, *, full: bool) -> dict[str, Any]:
+    req = CanonicalRequest.from_json(row["canonical_request"])
+    other = CanonicalRequest.from_json(row["entry_request"])
+    view: dict[str, Any] = {
+        "id": row["id"],
+        "project": row["project_id"],
+        "status": row["status"],
+        "tier": row["tier"],
+        "score": row["score"],
+        "entry_id": row["entry_id"],
+        "created_at": row["created_at"],
+        "decided_at": row["decided_at"],
+        "last_message": (req.messages[-1]["content"][:200] if req.messages else ""),
+        "entry_last_message": (other.messages[-1]["content"][:200] if other.messages else ""),
+    }
+    if full:
+        view["request"] = {"messages": req.messages, "tools": req.tools}
     return view
 
 

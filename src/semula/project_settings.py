@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .canonical import FingerprintConfig
 
@@ -43,6 +43,34 @@ class ProjectSettings(BaseModel):
         gt=0,
         description="Seconds a call is held in record mode (default: server-wide).",
     )
+
+    bm25_serve_threshold: float = Field(
+        default=0.97,
+        gt=0,
+        le=1,
+        description=(
+            "Word-overlap score (0-1) at or above which a close lexical match is served "
+            "automatically. 1 serves only prompts with the same words."
+        ),
+    )
+    bm25_review_threshold: float = Field(
+        default=0.6,
+        gt=0,
+        le=1,
+        description=(
+            "Score below which a lexical match is ignored. Between this and the serve "
+            "threshold it goes to the review queue and the call is still a miss."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _review_at_most_serve(self) -> ProjectSettings:
+        if self.bm25_review_threshold > self.bm25_serve_threshold:
+            raise ValueError(
+                f"bm25_review_threshold ({self.bm25_review_threshold}) cannot exceed "
+                f"bm25_serve_threshold ({self.bm25_serve_threshold})."
+            )
+        return self
 
     @field_validator("scrub_patterns")
     @classmethod

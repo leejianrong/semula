@@ -44,7 +44,7 @@ test-postgres: ## Run unit, integration and e2e tests against a throwaway Postgr
 	docker run -d --rm --name semula-test-pg -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=semula \
 		-p 127.0.0.1:$(PG_PORT):5432 postgres:16-alpine >/dev/null && \
 	trap 'docker stop semula-test-pg >/dev/null' EXIT; \
-	for i in $$(seq 1 40); do docker exec semula-test-pg pg_isready -U postgres -d semula >/dev/null 2>&1 && break; sleep 1; done; \
+	for i in $$(seq 1 40); do docker exec semula-test-pg pg_isready -h 127.0.0.1 -U postgres -d semula >/dev/null 2>&1 && break; sleep 1; done; \
 	SEMULA_TEST_DATABASE_URL=postgresql://postgres:pw@127.0.0.1:$(PG_PORT)/semula \
 		uv run --extra dev --extra e2e pytest -m "unit or integration or e2e" -q
 

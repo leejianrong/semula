@@ -237,6 +237,37 @@ def _entry_delete(args: argparse.Namespace) -> int:
     return _ok(args, {"deleted": args.id}, f"deleted entry {args.id}")
 
 
+def _review_list(args: argparse.Namespace) -> int:
+    params = {"status": "all" if args.all else "open"}
+    if args.project:
+        params["project"] = args.project
+    resp = _call(args, "GET", "/api/v1/candidates", params=params)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    items = resp.json()["candidates"]
+    lines = [
+        f"{c['id']}\t{c['status']}\t{c['score']:.2f}\t{c['project']}\t"
+        f"{c['last_message'].replace(chr(10), ' ')[:60]}  ~  "
+        f"{c['entry_last_message'].replace(chr(10), ' ')[:60]}"
+        for c in items
+    ]
+    return _ok(args, resp.json(), "\n".join(lines) or "no candidates")
+
+
+def _review_show(args: argparse.Namespace) -> int:
+    resp = _call(args, "GET", f"/api/v1/candidates/{args.id}")
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    return _ok(args, resp.json(), json.dumps(resp.json(), indent=2))
+
+
+def _review_decide(args: argparse.Namespace) -> int:
+    resp = _call(args, "POST", f"/api/v1/candidates/{args.id}/{args.decision}")
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    return _ok(args, resp.json(), f"{resp.json()['status']} candidate {args.id}")
+
+
 def _mode(args: argparse.Namespace) -> int:
     resp = (
         _call(args, "GET", "/api/v1/mode")
@@ -261,10 +292,15 @@ def _test_match(args: argparse.Namespace) -> int:
         return _fail(args, resp)
     out = resp.json()
     if out["matched"]:
-        human = f"match: {out['tier']} -> entry {out['entry_id']} (would {out['would']})"
+        human = (
+            f"match: {out['tier']} ({out['score']:.2f}) -> entry {out['entry_id']} "
+            f"(would {out['would']})"
+        )
     else:
         near = out["nearest"]
         hint = f"; nearest {near['entry_id']} score {near['score']}" if near else ""
+        if out["candidates"]:
+            hint += f"; {len(out['candidates'])} weak candidate(s) would go to review"
         human = f"no match (would {out['would']}){hint}"
     return _ok(args, out, human)
 
@@ -360,6 +396,22 @@ def build_parser() -> argparse.ArgumentParser:
     edel.add_argument("--version", type=int, required=True)
     edel.add_argument("--force", action="store_true")
     edel.add_argument("--as-human", action="store_true")
+
+    review = sub.add_parser("review", help="Decide near-miss matches")
+    rsub = review.add_subparsers(dest="review_command", required=True)
+    rlist = add(rsub, "list", _review_list, "List the review queue, best score first")
+    rlist.add_argument("--all", action="store_true", help="include decided candidates")
+    rlist.add_argument("--project", default=None)
+    add(rsub, "show", _review_show, "Show a candidate and the entry it resembles").add_argument(
+        "id"
+    )
+    for decision, help_ in (
+        ("approve", "Serve this prompt from the candidate entry from now on"),
+        ("reject", "Never pair this prompt with that entry"),
+    ):
+        decide = add(rsub, decision, _review_decide, help_)
+        decide.add_argument("id")
+        decide.set_defaults(decision=decision)
 
     mode = add(sub, "mode", _mode, "Show or switch the mode (replay or record)")
     mode.add_argument("mode", nargs="?", choices=["replay", "record"])

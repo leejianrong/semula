@@ -31,6 +31,7 @@ _UUID = re.compile(
 _UNIX_PATH = re.compile(r"(?<![\w:/.])/(?:[\w.@+~-]+/)+[\w.@+~-]+")
 _WIN_PATH = re.compile(r"\b[A-Za-z]:\\(?:[^\\\s\"'<>|]+\\)*[^\\\s\"'<>|]+")
 _SPACE = re.compile(r"\s+")
+_WORD = re.compile(r"\w+")
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,31 @@ def normalised_fingerprint(req: CanonicalRequest, config: FingerprintConfig | No
         for m in _tail(req.messages, config)
     ]
     return _digest(_payload(req, messages, config))
+
+
+def lexical_tokens(req: CanonicalRequest, config: FingerprintConfig | None = None) -> list[str]:
+    """Lower-cased words of the scrubbed message text, in order, for lexical matching.
+
+    Uses the same scrubbers and ``tail_n`` as the fingerprints, so noise that is ignored when
+    hashing is ignored when indexing too. Identifiers such as ``user_id`` stay one token.
+    """
+    words: list[str] = []
+    for message in _tail(req.messages, config):
+        content = message.get("content")
+        if isinstance(content, str):
+            words.extend(_WORD.findall(scrub(content, config).lower()))
+    return words
+
+
+def shape(req: CanonicalRequest, config: FingerprintConfig | None = None) -> str:
+    """The conversation's skeleton: who speaks in what order, which tools are on offer, and the
+    request params the project says must match.
+
+    Two requests with different shapes never share a lexical auto-serve, however alike their words.
+    """
+    roles = [m.get("role", "") for m in _tail(req.messages, config)]
+    params = {k: req.params.get(k) for k in sorted(config.include_params)} if config else {}
+    return _dumps({"roles": roles, "tools": req.tools, "params": params})
 
 
 def _payload(
