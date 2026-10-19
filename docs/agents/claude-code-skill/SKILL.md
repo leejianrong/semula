@@ -17,7 +17,9 @@ Install: copy this folder to `.claude/skills/semula-record/` and connect the MCP
    - text: `{"content": "..."}`
    - tool call: `{"message": {"content": null, "tool_calls": [{"function": {"name": "...", "arguments": {...}}}]}}`, only tools the request offered, arguments valid for that tool's schema
    - stream boundaries: `{"chunks": ["Hel", "lo"]}`
-4. `test_match` on the same prompt should say `would: serve`. Repeat until nothing is pending.
+4. `test_match` on the same prompt should say `would: serve`. For a tool-call answer pass the full request (with `tools`), not just a prompt. Repeat until nothing is pending.
+
+CLI equivalents: `semula mode`, `semula pending`, `semula show <id>`, `semula answer <id> --file answer.json`, `semula test-match --file request.json`. All take `--json`.
 
 ## Rules
 

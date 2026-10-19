@@ -24,25 +24,47 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Auth
 
 **CLI only:** `export SEMULA_URL=http://127.0.0.1:8080` (and `SEMULA_API_KEY` if set). Add `--json` to any command for machine-readable output.
 
+### MCP tool to CLI command
+
+| MCP tool | CLI |
+|---|---|
+| `get_status`, `set_mode` | `semula mode` (shows it), `semula mode record` / `semula mode replay`. Mode must be `record` for calls to be parked. |
+| `list_projects`, `create_project` | `semula project list`, `semula project create <id>` |
+| `get_project_settings`, `update_project_settings` | `semula project settings <id>`, `semula project settings <id> --set '{"tail_n": 2}'` |
+| `list_pending`, `get_pending` | `semula pending`, `semula show <id>` |
+| `answer_pending` | `semula answer <id> --text "..."` or `--file answer.json` or `--stdin` |
+| `list_entries`, `get_entry` | `semula entry list <project>`, `semula entry show <id>` (its `version` is in the output) |
+| `upsert_entry` | `POST /api/v1/projects/<id>/entries` (no CLI command yet) |
+| `update_entry`, `delete_entry` | `semula entry set <id> --version N ...`, `semula entry delete <id> --version N` |
+| `test_match` | `semula test-match --prompt "..."` or `--file request.json` |
+
 ## 2. The loop
 
-1. **See what is waiting.** `get_status` shows the mode and counts. Recording needs mode `record` (`set_mode`); in `replay` nothing is parked.
+1. **See what is waiting.** `get_status` (CLI: `semula mode`, then `semula pending`) shows the mode and what is parked. Recording needs mode `record`; in `replay` nothing is parked.
 2. **List.** `list_pending` (CLI: `semula pending`). Oldest first. Held calls time out after 300 s by default, but a late answer is still saved.
 3. **Read the whole request.** `get_pending <id>` (CLI: `semula show <id>`). Read the system prompt: it says what format the app expects. If `tools` are listed, those are the only tools you may call.
 4. **Answer.** `answer_pending <id> <answer>` (CLI: `semula answer <id> --text "..."` or `--file f.json` / `--stdin`).
-5. **Verify.** `test_match` with the same request should now report `would: serve`.
+5. **Verify.** `test_match` with the same request should now report `would: serve`. `--prompt` sends one user message and **no tools**, so to check a tool-call answer pass the full request body, including `tools`, with `--file request.json` (a chat completion body: `{"messages": [...], "tools": [...]}`).
 6. **Repeat** until `list_pending` is empty.
 
-If your answer is rejected, the call **stays held**. The error names a `code` and a `param`; fix that field and send it again.
+If your answer is rejected, the call **stays held**. The error names a `code` and a `param`; fix that field and send it again. On the CLI a rejection exits with `4` and prints `error: invalid_answer: <message> (at <param>)` to stderr; with `--json` stderr is `{"error": {"code": ..., "message": ..., "param": ..., "status": 422}}`.
 
 ## 3. How to answer
 
 | Situation | Send |
 |---|---|
 | Plain text | `{"content": "..."}` |
-| Tool call | `{"message": {"content": null, "tool_calls": [{"function": {"name": "get_weather", "arguments": {"city": "Kuala Lumpur"}}}]}}` |
+| Tool call | `{"message": {"content": null, "tool_calls": [{"function": {"name": "get_weather", "arguments": {"city": "Kuala Lumpur"}}}]}}`. `arguments` may be an object or a JSON string; semula stores it as the JSON string OpenAI clients expect. Optional arguments you have no reason to set can be left out. |
 | A stream with exact chunk boundaries | `{"chunks": ["Hel", "lo ", "world"]}` |
 | Several answers (pick by call order) | answer once, then `update_entry` with `add_response` and `selection: "sequence"` or `"cycle"` |
+
+`--text` sends plain text, and templates in it are expanded at replay like any other. When the app wants JSON inside `content`, write the JSON as a string, templates included, in a file:
+
+```json
+{"content": "{\"status\": \"ok\", \"checked_at\": \"{{now}}\", \"request_id\": \"{{uuid}}\"}"}
+```
+
+`semula answer <id> --file answer.json`. A template can echo the request, too: `{{request.model}}` becomes whatever model name the app asked for, which is useful when the app prints or asserts it.
 
 Rules that keep answers replayable:
 
