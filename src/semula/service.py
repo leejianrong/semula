@@ -9,9 +9,10 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import ValidationError
+
 from .canonical import (
     CanonicalRequest,
-    FingerprintConfig,
     exact_fingerprint,
     normalised_fingerprint,
 )
@@ -19,6 +20,7 @@ from .config import Settings
 from .db import DEFAULT_PROJECT, DEFAULT_WORKSPACE, Database
 from .errors import SemulaError
 from .ids import new_ulid
+from .project_settings import FINGERPRINT_FIELDS, ProjectSettings
 from .responses import parse_answer, validate_tool_calls
 
 _SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
@@ -36,7 +38,6 @@ class Service:
         self.db = db
         self.settings = settings
         self._waiters: dict[str, asyncio.Event] = {}
-        self._config = FingerprintConfig()
 
     # --- projects -----------------------------------------------------------------
     def create_project(self, slug: str, name: str | None = None) -> dict[str, Any]:
@@ -73,6 +74,7 @@ class Service:
     def get_project(self, slug: str) -> dict[str, Any]:
         for project in self.list_projects():
             if project["id"] == slug:
+                project["settings"] = self.project_settings(slug).model_dump()
                 return project
         raise SemulaError(404, "project_not_found", f"No project '{slug}'.", param="project")
 
@@ -80,14 +82,65 @@ class Service:
         self.get_project(slug)
         return slug
 
-    def update_project(self, slug: str, name: str | None) -> dict[str, Any]:
-        self.require_project(slug)
+    def project_settings(self, slug: str) -> ProjectSettings:
+        row = self.db.query_one(
+            "SELECT settings FROM project WHERE workspace_id=? AND id=?", (DEFAULT_WORKSPACE, slug)
+        )
+        if not row:
+            raise SemulaError(404, "project_not_found", f"No project '{slug}'.", param="project")
+        return ProjectSettings.model_validate(json.loads(row["settings"]))
+
+    def update_project(
+        self, slug: str, name: str | None = None, settings: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Rename and/or patch settings. A ``null`` value resets that setting to its default."""
+        before = self.project_settings(slug)
         if name:
             self.db.execute(
                 "UPDATE project SET name=? WHERE workspace_id=? AND id=?",
                 (name, DEFAULT_WORKSPACE, slug),
             )
+        if settings:
+            merged = before.model_dump(exclude_defaults=True)
+            for key, value in settings.items():
+                if value is None:
+                    merged.pop(key, None)
+                else:
+                    merged[key] = value
+            try:
+                after = ProjectSettings.model_validate(merged)
+            except ValidationError as exc:
+                first = exc.errors()[0]
+                where = ".".join(str(p) for p in first["loc"])
+                raise SemulaError(
+                    422, "invalid_settings", str(first["msg"]), param=f"settings.{where}"
+                ) from exc
+            self.db.execute(
+                "UPDATE project SET settings=? WHERE workspace_id=? AND id=?",
+                (after.model_dump_json(exclude_defaults=True), DEFAULT_WORKSPACE, slug),
+            )
+            if any(getattr(before, f) != getattr(after, f) for f in FINGERPRINT_FIELDS):
+                self._rekey(slug, after)
         return self.get_project(slug)
+
+    def _rekey(self, slug: str, settings: ProjectSettings) -> None:
+        """Recompute fingerprints after a matching setting changed, from stored requests."""
+        config = settings.fingerprint_config()
+        for table in ("entry", "pending"):
+            rows = self.db.query(
+                f"SELECT id, canonical_request FROM {table} WHERE workspace_id=? AND project_id=?",  # noqa: S608
+                (DEFAULT_WORKSPACE, slug),
+            )
+            for row in rows:
+                req = CanonicalRequest.from_json(row["canonical_request"])
+                self.db.execute(
+                    f"UPDATE {table} SET fingerprint=?, exact_fingerprint=? WHERE id=?",  # noqa: S608
+                    (
+                        normalised_fingerprint(req, config),
+                        exact_fingerprint(req, config),
+                        row["id"],
+                    ),
+                )
 
     def delete_project(self, slug: str) -> None:
         self.require_project(slug)
@@ -113,20 +166,18 @@ class Service:
     # --- models -----------------------------------------------------------------
     def list_models(self, project: str = DEFAULT_PROJECT) -> list[str]:
         """Model ids for /v1/models: the project ``models`` setting, else the env default."""
-        row = self.db.query_one(
-            "SELECT settings FROM project WHERE workspace_id=? AND id=?",
-            (DEFAULT_WORKSPACE, project),
-        )
-        configured = json.loads(row["settings"]).get("models") if row else None
-        if isinstance(configured, list) and configured:
-            return [str(m) for m in configured]
-        return list(self.settings.models)
+        configured = self.project_settings(project).models
+        return list(configured) if configured else list(self.settings.models)
+
+    def record_timeout(self, project: str) -> float:
+        return self.project_settings(project).record_timeout or self.settings.record_timeout
 
     # --- matching -------------------------------------------------------------
     def find(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> Match | None:
+        config = self.project_settings(project).fingerprint_config()
         for tier, column, fp in (
-            ("exact", "exact_fingerprint", exact_fingerprint(req, self._config)),
-            ("normalised", "fingerprint", normalised_fingerprint(req, self._config)),
+            ("exact", "exact_fingerprint", exact_fingerprint(req, config)),
+            ("normalised", "fingerprint", normalised_fingerprint(req, config)),
         ):
             row = self.db.query_one(
                 f"SELECT id, responses FROM entry WHERE workspace_id=? AND project_id=? "  # noqa: S608
@@ -143,7 +194,8 @@ class Service:
     # --- pending queue ----------------------------------------------------------
     def open_pending(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> str:
         """Park a miss. A second identical miss joins the first instead of duplicating."""
-        fp = normalised_fingerprint(req, self._config)
+        config = self.project_settings(project).fingerprint_config()
+        fp = normalised_fingerprint(req, config)
         row = self.db.query_one(
             "SELECT id FROM pending WHERE workspace_id=? AND project_id=? AND fingerprint=? "
             "AND status='pending'",
@@ -161,7 +213,7 @@ class Service:
                     DEFAULT_WORKSPACE,
                     project,
                     fp,
-                    exact_fingerprint(req, self._config),
+                    exact_fingerprint(req, config),
                     req.to_json(),
                 ),
             )

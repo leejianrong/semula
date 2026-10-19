@@ -36,7 +36,10 @@ def get_project(project_id: str, request: Request) -> dict[str, Any]:
 @router.patch("/projects/{project_id}")
 async def update_project(project_id: str, request: Request) -> dict[str, Any]:
     body = await _json(request)
-    return _service(request).update_project(project_id, body.get("name"))
+    settings = body.get("settings")
+    if settings is not None and not isinstance(settings, dict):
+        raise SemulaError(400, "invalid_request", "'settings' must be an object.", param="settings")
+    return _service(request).update_project(project_id, body.get("name"), settings)
 
 
 @router.delete("/projects/{project_id}", status_code=204)

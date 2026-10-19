@@ -54,14 +54,14 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
         )
 
     pending_id = service.open_pending(req, project)
-    stored = await service.wait_for_answer(pending_id, service.settings.record_timeout)
+    stored = await service.wait_for_answer(pending_id, service.record_timeout(project))
     if stored is None:
         service.log_call("record_timeout", started, pending_id=pending_id, project=project)
         raise SemulaError(
             504,
             "semula_record_timeout",
             f"No agent answered pending request {pending_id} within "
-            f"{service.settings.record_timeout:g}s. It stays pending; "
+            f"{service.record_timeout(project):g}s. It stays pending; "
             "a late answer is still saved.",
             err_type="semula_error",
         )
