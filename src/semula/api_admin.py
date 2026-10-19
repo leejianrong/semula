@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+from collections.abc import AsyncIterator
 from functools import partial
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool as offload
 
 from . import canonical
@@ -156,6 +160,71 @@ def list_pending(
 @router.get("/pending/{pending_id}")
 def get_pending(pending_id: str, request: Request) -> dict[str, Any]:
     return _service(request).get_pending(pending_id)
+
+
+@router.get("/projects/{project_id}/export")
+def export_project(project_id: str, request: Request) -> dict[str, Any]:
+    """A ``semula/1`` bundle of the project's entries and approved aliases."""
+    return _service(request).export_project(project_id)
+
+
+@router.post("/import")
+async def import_project(request: Request) -> dict[str, Any]:
+    """Body: ``{"bundle": {...}, "project"?: id, "force"?: bool}``. Idempotent."""
+    body = await _json(request)
+    if "bundle" not in body:
+        raise SemulaError(400, "invalid_request", "Send {'bundle': {...}}.", param="bundle")
+    project = body.get("project")
+    if project is not None and not isinstance(project, str):
+        raise SemulaError(400, "invalid_request", "'project' must be a string.", param="project")
+    return await offload(
+        partial(
+            _service(request).import_project,
+            body["bundle"],
+            project,
+            force=bool(body.get("force", False)),
+        )
+    )
+
+
+@router.get("/log")
+def list_calls(
+    request: Request,
+    project: str | None = None,
+    outcome: str | None = None,
+    limit: int = 50,
+    before_id: int | None = None,
+) -> dict[str, Any]:
+    """Recent calls, newest first (retention applies: 30 days or 50k rows by default)."""
+    return {"calls": _service(request).list_calls(project, outcome, limit, before_id)}
+
+
+@router.get("/log/stream")
+async def log_stream(request: Request, project: str | None = None) -> StreamingResponse:
+    """Server-sent events: one ``call`` event per call as it is logged. A ``: connected``
+    comment marks the moment the subscription is live, ``: keepalive`` every 15 s."""
+    service = _service(request)
+    if project:
+        await offload(service.require_project, project)
+
+    async def events() -> AsyncIterator[str]:
+        with service.events.subscribe() as sub:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(sub.get(), 15)
+                except TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                if project and event.get("project") != project:
+                    continue
+                yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/candidates")

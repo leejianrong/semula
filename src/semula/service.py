@@ -8,6 +8,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -23,17 +24,19 @@ from .canonical import (
     exact_fingerprint,
     lexical_tokens,
     normalised_fingerprint,
-    scrub,
+    redact_request,
     shape,
 )
 from .config import Settings
 from .db import Database
 from .errors import SemulaError
+from .events import EventBus
+from .exchange import FORMAT
 from .ids import new_ulid
 from .lexical import make_index, similarity
 from .project_settings import FINGERPRINT_FIELDS, ProjectSettings
 from .responses import parse_answer, validate_tool_calls
-from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE, now_iso
+from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE, iso, now_iso
 from .schema import alias as A
 from .schema import call_log as L
 from .schema import candidate as C
@@ -48,6 +51,8 @@ SELECTIONS = ("first", "sequence", "cycle")
 
 LEXICAL_POOL = 10  # entries the lexical index proposes before they are scored
 MAX_CANDIDATES = 3  # weak matches queued for review per missed request
+PRUNE_EVERY = 200  # call-log rows between retention sweeps
+SETTINGS_TTL = 1.0  # seconds a project's settings are reused between reads
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,8 @@ class MatchResult:
 
     match: Match | None
     candidates: list[Candidate]
+    # The most similar recorded entry whatever its score, to explain a miss. Never served.
+    nearest: dict[str, Any] | None = None
 
 
 class Service:
@@ -83,6 +90,9 @@ class Service:
         self._waiters_lock = threading.Lock()
         self.mode: str = settings.mode
         self.lexical = make_index(db)
+        self.events = EventBus()
+        self._settings_cache: dict[str, tuple[float, ProjectSettings]] = {}
+        self._logged = 0
 
     # --- mode -----------------------------------------------------------------------
     def set_mode(self, mode: str) -> str:
@@ -150,20 +160,29 @@ class Service:
         raise SemulaError(404, "project_not_found", f"No project '{slug}'.", param="project")
 
     def require_project(self, slug: str) -> str:
-        self.get_project(slug)
+        self.project_settings(slug)
         return slug
 
     def project_settings(self, slug: str) -> ProjectSettings:
+        """A project's settings. Read on every call, so cached for ``SETTINGS_TTL`` seconds;
+        a change made here is visible at once, one made by another replica within the TTL."""
+        cached = self._settings_cache.get(slug)
+        if cached and time.monotonic() - cached[0] < SETTINGS_TTL:
+            return cached[1]
         row = self.db.one(sa.select(P.c.settings).where(*_pk(P, slug)))
         if not row:
+            self._settings_cache.pop(slug, None)
             raise SemulaError(404, "project_not_found", f"No project '{slug}'.", param="project")
-        return ProjectSettings.model_validate(json.loads(row["settings"]))
+        settings = ProjectSettings.model_validate(json.loads(row["settings"]))
+        self._settings_cache[slug] = (time.monotonic(), settings)
+        return settings
 
     def update_project(
         self, slug: str, name: str | None = None, settings: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Rename and/or patch settings. A ``null`` value resets that setting to its default."""
         before = self.project_settings(slug)
+        self._settings_cache.pop(slug, None)
         if name:
             self.db.execute(sa.update(P).where(*_pk(P, slug)).values(name=name))
         if settings:
@@ -193,6 +212,7 @@ class Service:
                 )
                 if any(getattr(before, f) != getattr(after, f) for f in FINGERPRINT_FIELDS):
                     self._rekey(slug, after, conn)
+        self._settings_cache.pop(slug, None)
         return self.get_project(slug)
 
     def _rekey(self, slug: str, settings: ProjectSettings, conn: Connection) -> None:
@@ -206,8 +226,12 @@ class Service:
                 conn,
             )
             for row in rows:
-                req = CanonicalRequest.from_json(row["canonical_request"])
-                values = {"fingerprint": normalised_fingerprint(req, config)}
+                req = redact_request(CanonicalRequest.from_json(row["canonical_request"]), config)
+                values = {
+                    "fingerprint": normalised_fingerprint(req, config),
+                    # a stricter redaction list also cleans what was stored before it
+                    "canonical_request": req.to_json(),
+                }
                 if "exact_fingerprint" in table.c:  # a candidate has no exact fingerprint
                     values["exact_fingerprint"] = exact_fingerprint(req, config)
                 self.db.execute(
@@ -218,6 +242,7 @@ class Service:
 
     def delete_project(self, slug: str) -> None:
         self.require_project(slug)
+        self._settings_cache.pop(slug, None)
         if slug == DEFAULT_PROJECT:
             raise SemulaError(409, "default_project", "The default project cannot be deleted.")
         parked = self.db.rows(
@@ -304,14 +329,6 @@ class Service:
         hits = self.lexical.search(DEFAULT_WORKSPACE, project, words, config, LEXICAL_POOL)
         if not hits:
             return MatchResult(None, [])
-        rows = {
-            r["id"]: r
-            for r in self.db.rows(
-                _entry_for_serving(E.c.canonical_request).where(
-                    E.c.id.in_([h.entry_id for h in hits])
-                )
-            )
-        }
         rejected = {
             r["entry_id"]
             for r in self.db.rows(
@@ -323,23 +340,38 @@ class Service:
                 )
             )
         }
+        scored = sorted(
+            (
+                (similarity(words, hit.tokens), hit.entry_id)
+                for hit in hits
+                if hit.entry_id not in rejected
+            ),
+            key=lambda t: -t[0],  # stable: ties keep the index's own order
+        )
+        scored = [(score, entry_id) for score, entry_id in scored if score > 0]
+        if not scored:
+            return MatchResult(None, [])
         my_shape = shape(req, config)
-        scored: list[tuple[float, Any, bool]] = []
-        for hit in hits:
-            row = rows.get(hit.entry_id)
-            if row is None or hit.entry_id in rejected:
-                continue
-            other = CanonicalRequest.from_json(row["canonical_request"])
-            score = similarity(words, lexical_tokens(other, config))
-            if score >= settings.bm25_review_threshold:
-                scored.append((score, row, shape(other, config) == my_shape))
-        scored.sort(key=lambda t: -t[0])  # stable: ties keep the index's own order
-        for score, row, same_shape in scored:
-            if same_shape and score >= settings.bm25_serve_threshold:
+        for score, entry_id in scored:
+            if score < settings.bm25_serve_threshold:
+                break
+            row = self.db.one(_entry_for_serving(E.c.canonical_request).where(E.c.id == entry_id))
+            if (
+                row
+                and shape(CanonicalRequest.from_json(row["canonical_request"]), config) == my_shape
+            ):
                 return MatchResult(_match(row, "bm25", score), [])
+        best_score, best_id = scored[0]
+        best = self.db.one(sa.select(E.c.canonical_request).where(E.c.id == best_id))
+        last = ""
+        if best:
+            messages = CanonicalRequest.from_json(best["canonical_request"]).messages
+            last = messages[-1]["content"][:200] if messages else ""
+        weak = [(s, i) for s, i in scored if s >= settings.bm25_review_threshold]
         return MatchResult(
             None,
-            [Candidate(row["id"], round(score, 4)) for score, row, _ in scored[:MAX_CANDIDATES]],
+            [Candidate(entry_id, round(score, 4)) for score, entry_id in weak[:MAX_CANDIDATES]],
+            {"entry_id": best_id, "score": round(best_score, 3), "last_message": last},
         )
 
     # --- entries ------------------------------------------------------------------
@@ -423,7 +455,7 @@ class Service:
                     project_id=project,
                     fingerprint=fp,
                     exact_fingerprint=exact_fingerprint(req, config),
-                    canonical_request=req.to_json(),
+                    canonical_request=redact_request(req, config).to_json(),
                     responses=json.dumps([stored]),
                 ),
                 conn,
@@ -580,32 +612,6 @@ class Service:
             conn,
         )
 
-    def nearest(self, req: CanonicalRequest, project: str) -> dict[str, Any] | None:
-        """The most similar recorded entry, by word overlap. For humans and agents to debug a
-        miss; it never serves an answer."""
-        wanted = _tokens(req)
-        if not wanted:
-            return None
-        best: tuple[float, Any] | None = None
-        rows = self.db.rows(
-            sa.select(E.c.id, E.c.canonical_request)
-            .where(E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == project)
-            .order_by(E.c.id)
-            .limit(5000)
-        )
-        for row in rows:
-            other = _tokens(CanonicalRequest.from_json(row["canonical_request"]))
-            if not other:
-                continue
-            score = len(wanted & other) / len(wanted | other)
-            if score > 0 and (best is None or score > best[0]):
-                best = (score, row)
-        if best is None:
-            return None
-        score, row = best
-        last = CanonicalRequest.from_json(row["canonical_request"]).messages[-1]["content"]
-        return {"entry_id": row["id"], "score": round(score, 3), "last_message": last[:200]}
-
     def test_match(self, req: CanonicalRequest, project: str) -> dict[str, Any]:
         """What would happen to this request right now, without serving, logging or counting."""
         self.require_project(project)
@@ -623,7 +629,7 @@ class Service:
             "candidates": [
                 {"entry_id": c.entry_id, "score": c.score, "tier": c.tier} for c in found.candidates
             ],
-            "nearest": None if match else self.nearest(req, project),
+            "nearest": None if match else found.nearest,
         }
         if match:
             out["would"] = "serve"
@@ -632,9 +638,6 @@ class Service:
         else:
             out["would"] = "park" if self.mode == "record" else "no_match_error"
         return out
-
-    def record_hit(self, entry_id: str) -> None:
-        self.db.execute(sa.update(E).where(E.c.id == entry_id).values(hit_count=E.c.hit_count + 1))
 
     # --- lexical index ------------------------------------------------------------
     def _index(
@@ -672,6 +675,234 @@ class Service:
             for stale in indexed - known:
                 self.lexical.delete(stale, conn)
 
+    # --- export and import ----------------------------------------------------
+    def export_project(self, slug: str) -> dict[str, Any]:
+        """Everything authored in a project as a ``semula/1`` bundle: entries (ULIDs kept) and
+        approved aliases. Runtime state (hit counts, pending, the call log, the review queue)
+        is left out so an unchanged project exports unchanged and diffs stay quiet."""
+        project = self.get_project(slug)
+        mine = (E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == slug)
+        entries = [
+            {
+                "id": r["id"],
+                "request": json.loads(r["canonical_request"]),
+                "responses": json.loads(r["responses"]),
+                "selection": r["selection"],
+                "pinned": bool(r["pinned"]),
+                "version": r["version"],
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            }
+            for r in self.db.rows(sa.select(E).where(*mine).order_by(E.c.id))
+        ]
+        aliases = [
+            {
+                "id": r["id"],
+                "entry_id": r["entry_id"],
+                "request": json.loads(r["canonical_request"]),
+                "created_at": r["created_at"],
+            }
+            for r in self.db.rows(
+                sa.select(A)
+                .where(A.c.workspace_id == DEFAULT_WORKSPACE, A.c.project_id == slug)
+                .order_by(A.c.id)
+            )
+        ]
+        return {
+            "format": FORMAT,
+            "project": {
+                "id": slug,
+                "name": project["name"],
+                "settings": self.project_settings(slug).model_dump(exclude_defaults=True),
+            },
+            "entries": entries,
+            "aliases": aliases,
+        }
+
+    def import_project(
+        self, bundle: Any, project: str | None = None, *, force: bool = False
+    ) -> dict[str, Any]:
+        """Apply a bundle, all or nothing. Entries are matched by ULID: new ones are added,
+        changed ones updated (a pinned entry is left alone unless ``force``), identical ones
+        skipped, so importing twice changes nothing. Nothing is ever deleted. A project that
+        does not exist is created with the bundle's settings; an existing one keeps its own."""
+        manifest, entries, aliases = _parse_bundle(bundle)
+        slug = project or str(manifest["project"]["id"])
+        if not _SLUG.fullmatch(slug):
+            raise SemulaError(
+                422, "invalid_project_id", f"'{slug}' is not a valid project id.", param="project"
+            )
+        report: dict[str, Any] = {
+            "project": slug,
+            "created_project": False,
+            "entries": {"created": 0, "updated": 0, "unchanged": 0, "skipped_pinned": []},
+            "aliases": {"created": 0, "updated": 0, "unchanged": 0},
+        }
+        with self.db.begin() as conn:
+            if not self.db.one(sa.select(P.c.id).where(*_pk(P, slug)), conn):
+                settings = _bundle_settings(manifest["project"].get("settings"))
+                self.db.execute(
+                    sa.insert(P).values(
+                        workspace_id=DEFAULT_WORKSPACE,
+                        id=slug,
+                        name=manifest["project"].get("name") or slug,
+                        settings=settings.model_dump_json(exclude_defaults=True),
+                    ),
+                    conn,
+                )
+                report["created_project"] = True
+            config = self._config_in(slug, conn)
+            for item in entries:
+                self._import_entry(item, slug, config, force, report["entries"], conn)
+            known = {
+                r["id"]
+                for r in self.db.rows(
+                    sa.select(E.c.id).where(
+                        E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == slug
+                    ),
+                    conn,
+                )
+            }
+            for item in aliases:
+                if item["entry_id"] not in known:
+                    raise SemulaError(
+                        422,
+                        "invalid_bundle",
+                        f"Alias {item['id']} points at entry {item['entry_id']}, which is in "
+                        "neither the bundle nor the project.",
+                        param="aliases",
+                    )
+                self._import_alias(item, slug, config, report["aliases"], conn)
+        return report
+
+    def _config_in(self, slug: str, conn: Connection) -> FingerprintConfig:
+        row = self.db.one(sa.select(P.c.settings).where(*_pk(P, slug)), conn)
+        raw = json.loads(row["settings"]) if row else {}
+        return ProjectSettings.model_validate(raw).fingerprint_config()
+
+    def _import_entry(
+        self,
+        item: dict[str, Any],
+        slug: str,
+        config: FingerprintConfig,
+        force: bool,
+        tally: dict[str, Any],
+        conn: Connection,
+    ) -> None:
+        req = CanonicalRequest.from_json(json.dumps(item["request"]))
+        responses = []
+        for number, raw in enumerate(item["responses"]):
+            try:
+                stored = parse_answer(raw)
+                validate_tool_calls(stored, req.tools)
+            except SemulaError as exc:
+                raise SemulaError(
+                    422,
+                    "invalid_bundle",
+                    f"Entry {item['id']}, response {number}: {exc.message}",
+                    param="entries",
+                ) from exc
+            responses.append(stored)
+        selection = item.get("selection", "first")
+        if selection not in SELECTIONS:
+            raise SemulaError(
+                422,
+                "invalid_bundle",
+                f"Entry {item['id']}: selection must be one of {list(SELECTIONS)}.",
+                param="entries",
+            )
+        stored_req = redact_request(req, config)
+        values: dict[str, Any] = {
+            "fingerprint": normalised_fingerprint(req, config),
+            "exact_fingerprint": exact_fingerprint(req, config),
+            "canonical_request": stored_req.to_json(),
+            "responses": json.dumps(responses),
+            "selection": selection,
+            "pinned": bool(item.get("pinned", False)),
+        }
+        row = self.db.one(sa.select(E).where(E.c.id == item["id"]), conn)
+        if row and (row["workspace_id"], row["project_id"]) != (DEFAULT_WORKSPACE, slug):
+            raise SemulaError(
+                409,
+                "entry_in_other_project",
+                f"Entry {item['id']} already exists in project '{row['project_id']}'.",
+                param="entries",
+            )
+        if row is None:
+            extra = {k: item[k] for k in ("version", "created_at", "updated_at") if k in item}
+            self.db.execute(
+                sa.insert(E).values(
+                    id=item["id"],
+                    workspace_id=DEFAULT_WORKSPACE,
+                    project_id=slug,
+                    **values,
+                    **extra,
+                ),
+                conn,
+            )
+            tally["created"] += 1
+        elif all(
+            row[k] == v for k, v in values.items() if k not in ("fingerprint", "exact_fingerprint")
+        ):
+            tally["unchanged"] += 1
+            return
+        elif row["pinned"] and not force:
+            tally["skipped_pinned"].append(item["id"])
+            return
+        else:
+            self.db.execute(
+                sa.update(E)
+                .where(E.c.id == item["id"])
+                .values(**values, version=E.c.version + 1, updated_at=now_iso()),
+                conn,
+            )
+            tally["updated"] += 1
+        self._index(item["id"], slug, req, config, conn)
+        self._supersede(conn, slug, values["fingerprint"])
+
+    def _import_alias(
+        self,
+        item: dict[str, Any],
+        slug: str,
+        config: FingerprintConfig,
+        tally: dict[str, int],
+        conn: Connection,
+    ) -> None:
+        req = CanonicalRequest.from_json(json.dumps(item["request"]))
+        values = {
+            "entry_id": item["entry_id"],
+            "fingerprint": normalised_fingerprint(req, config),
+            "exact_fingerprint": exact_fingerprint(req, config),
+            "canonical_request": redact_request(req, config).to_json(),
+        }
+        row = self.db.one(sa.select(A).where(A.c.id == item["id"]), conn)
+        if row and (row["workspace_id"], row["project_id"]) != (DEFAULT_WORKSPACE, slug):
+            raise SemulaError(
+                409,
+                "alias_in_other_project",
+                f"Alias {item['id']} already exists in project '{row['project_id']}'.",
+                param="aliases",
+            )
+        if row is None:
+            extra = {"created_at": item["created_at"]} if "created_at" in item else {}
+            self.db.execute(
+                sa.insert(A).values(
+                    id=item["id"],
+                    workspace_id=DEFAULT_WORKSPACE,
+                    project_id=slug,
+                    **values,
+                    **extra,
+                ),
+                conn,
+            )
+            tally["created"] += 1
+        elif all(row[k] == v for k, v in values.items()):
+            tally["unchanged"] += 1
+        else:
+            self.db.execute(sa.update(A).where(A.c.id == item["id"]).values(**values), conn)
+            tally["updated"] += 1
+        self._supersede(conn, slug, values["fingerprint"])
+
     # --- review queue ---------------------------------------------------------------
     def record_candidates(
         self, req: CanonicalRequest, project: str, candidates: list[Candidate]
@@ -702,7 +933,7 @@ class Service:
                     project_id=project,
                     entry_id=found.entry_id,
                     fingerprint=fp,
-                    canonical_request=req.to_json(),
+                    canonical_request=redact_request(req, config).to_json(),
                     score=found.score,
                     tier=found.tier,
                     status="open",
@@ -823,7 +1054,7 @@ class Service:
                     project_id=project,
                     fingerprint=fp,
                     exact_fingerprint=exact_fingerprint(req, config),
-                    canonical_request=req.to_json(),
+                    canonical_request=redact_request(req, config).to_json(),
                 )
             )
         except IntegrityError:  # another miss parked the same request first: join it
@@ -943,29 +1174,135 @@ class Service:
         entry_id: str | None = None,
         pending_id: str | None = None,
         project: str = DEFAULT_PROJECT,
+        count_hit: bool = False,
     ) -> None:
-        self.db.execute(
-            sa.insert(L).values(
-                workspace_id=DEFAULT_WORKSPACE,
-                project_id=project,
-                mode=self.mode,
-                outcome=outcome,
-                tier=tier,
-                score=score,
-                latency_ms=(time.perf_counter() - started) * 1000,
-                entry_id=entry_id,
-                pending_id=pending_id,
-            )
+        """Log one call, tell live subscribers, and now and then enforce retention. With
+        ``count_hit`` the entry's hit count moves in the same transaction (one commit, not two)."""
+        values = {
+            "workspace_id": DEFAULT_WORKSPACE,
+            "project_id": project,
+            "ts": now_iso(),
+            "mode": self.mode,
+            "outcome": outcome,
+            "tier": tier,
+            "score": score,
+            "latency_ms": (time.perf_counter() - started) * 1000,
+            "entry_id": entry_id,
+            "pending_id": pending_id,
+        }
+        with self.db.begin() as conn:
+            if count_hit and entry_id:
+                self.db.execute(
+                    sa.update(E).where(E.c.id == entry_id).values(hit_count=E.c.hit_count + 1), conn
+                )
+            key = conn.execute(sa.insert(L).values(**values)).inserted_primary_key
+        self.events.publish({"type": "call", "id": key[0] if key else None, **_log_view(values)})
+        self._logged += 1
+        if self._logged % PRUNE_EVERY == 0:
+            self.prune_log()
+
+    def list_calls(
+        self,
+        project: str | None = None,
+        outcome: str | None = None,
+        limit: int = 50,
+        before_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Recent calls, newest first. ``before_id`` pages backwards."""
+        conditions = [L.c.workspace_id == DEFAULT_WORKSPACE]
+        if project:
+            self.require_project(project)
+            conditions.append(L.c.project_id == project)
+        if outcome:
+            conditions.append(L.c.outcome == outcome)
+        if before_id is not None:
+            conditions.append(L.c.id < before_id)
+        rows = self.db.rows(
+            sa.select(L).where(*conditions).order_by(L.c.id.desc()).limit(max(1, min(limit, 500)))
         )
+        return [{"id": r["id"], **_log_view(r)} for r in rows]
+
+    def prune_log(self) -> int:
+        """Drop calls older than the retention window, then the oldest beyond the row cap."""
+        cutoff = iso(datetime.now(UTC) - timedelta(days=self.settings.log_retention_days))
+        mine = L.c.workspace_id == DEFAULT_WORKSPACE
+        with self.db.begin() as conn:
+            deleted = self.db.execute(sa.delete(L).where(mine, L.c.ts < cutoff), conn)
+            edge = self.db.one(
+                sa.select(L.c.id)
+                .where(mine)
+                .order_by(L.c.id.desc())
+                .offset(max(1, self.settings.log_max_rows) - 1)
+                .limit(1),
+                conn,
+            )
+            if edge:
+                deleted += self.db.execute(sa.delete(L).where(mine, L.c.id < edge["id"]), conn)
+        return deleted
+
+
+def _log_view(row: Any) -> dict[str, Any]:
+    keys = ("ts", "project_id", "mode", "outcome", "tier", "score", "latency_ms", "entry_id")
+    view = {k: row[k] for k in keys}
+    view["project"] = view.pop("project_id")
+    view["pending_id"] = row["pending_id"]
+    return view
+
+
+def _bundle_settings(raw: Any) -> ProjectSettings:
+    try:
+        return ProjectSettings.model_validate(raw or {})
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        where = ".".join(["project", "settings", *(str(p) for p in first["loc"])])
+        raise SemulaError(
+            422, "invalid_bundle", str(first["msg"]).removeprefix("Value error, "), param=where
+        ) from exc
+
+
+def _parse_bundle(bundle: Any) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Check a bundle's shape before anything is written; raise ``invalid_bundle`` if wrong."""
+
+    def bad(message: str, param: str | None = None) -> SemulaError:
+        return SemulaError(422, "invalid_bundle", message, param=param)
+
+    if not isinstance(bundle, dict):
+        raise bad("The bundle must be a JSON object.")
+    if bundle.get("format") != FORMAT:
+        raise bad(
+            f"Unsupported format {bundle.get('format')!r}; this semula reads '{FORMAT}'.", "format"
+        )
+    project = bundle.get("project")
+    if not isinstance(project, dict) or not isinstance(project.get("id"), str):
+        raise bad("'project' needs an 'id'.", "project")
+    lists: list[list[dict[str, Any]]] = []
+    for kind, required in (
+        ("entries", ("id", "request", "responses")),
+        ("aliases", ("id", "entry_id", "request")),
+    ):
+        items = bundle.get(kind, [])
+        if not isinstance(items, list):
+            raise bad(f"'{kind}' must be a list.", kind)
+        seen: set[str] = set()
+        for item in items:
+            if not isinstance(item, dict) or any(k not in item for k in required):
+                raise bad(f"Every item in '{kind}' needs {list(required)}.", kind)
+            request = item["request"]
+            if not isinstance(request, dict) or not isinstance(request.get("messages"), list):
+                raise bad(f"{kind[:-1].capitalize()} {item['id']} has no request messages.", kind)
+            if kind == "entries" and (
+                not isinstance(item["responses"], list) or not item["responses"]
+            ):
+                raise bad(f"Entry {item['id']} needs a non-empty 'responses' list.", kind)
+            if item["id"] in seen:
+                raise bad(f"Duplicate id {item['id']} in '{kind}'.", kind)
+            seen.add(item["id"])
+        lists.append(items)
+    return {"project": project}, lists[0], lists[1]
 
 
 def _pk(table: sa.Table, slug: str) -> tuple[Any, Any]:
     return (table.c.workspace_id == DEFAULT_WORKSPACE, table.c.id == slug)
-
-
-def _tokens(req: CanonicalRequest) -> set[str]:
-    text = " ".join(m["content"] for m in req.messages if isinstance(m.get("content"), str))
-    return set(re.findall(r"\w+", scrub(text).lower()))
 
 
 def _entry_for_serving(*extra: Any) -> sa.Select[Any]:

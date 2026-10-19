@@ -55,6 +55,9 @@ def make_engine(url: str) -> Engine:
         dbapi.isolation_level = None
         cursor = dbapi.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
+        # In WAL mode NORMAL cannot corrupt the file; a power cut may lose the last commits,
+        # which is fine for a recording tool and saves an fsync on every call.
+        cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()

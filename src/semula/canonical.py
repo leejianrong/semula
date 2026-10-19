@@ -34,13 +34,32 @@ _SPACE = re.compile(r"\s+")
 _WORD = re.compile(r"\w+")
 
 
+REDACTED = "[REDACTED]"
+
+# Obvious credentials, redacted from stored requests unless a project turns this off.
+BUILTIN_REDACTIONS = (
+    r"\bsk-[A-Za-z0-9_-]{20,}",  # OpenAI, Anthropic and compatible API keys
+    r"\bAKIA[0-9A-Z]{16}\b",  # AWS access key ids
+    r"\bgh[pousr]_[A-Za-z0-9]{36,}\b",  # GitHub tokens
+    r"\bxox[baprs]-[A-Za-z0-9-]{10,}",  # Slack tokens
+    r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}",  # Authorization header values pasted into a prompt
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
+)
+
+
 @dataclass(frozen=True)
 class FingerprintConfig:
-    """Per-project matching settings (ADR-0007). Defaults apply until V3 exposes them."""
+    """Per-project matching settings (ADR-0007).
+
+    ``redactions`` are secrets: they are replaced by ``[REDACTED]`` in what is stored, and by
+    the same text when fingerprinting, so a live request, its stored copy and a later re-key
+    all agree and the secret never has to be kept to match on it.
+    """
 
     tail_n: int | None = None
     extra_scrubs: tuple[str, ...] = ()
     include_params: tuple[str, ...] = ()
+    redactions: tuple[str, ...] = ()
 
 
 IGNORABLE_PARAMS = ("model", "temperature", "top_p", "max_tokens", "stream", "user", "seed")
@@ -65,6 +84,7 @@ class CanonicalRequest:
 
 def scrub(text: str, config: FingerprintConfig | None = None) -> str:
     """Replace values that change between runs of the same logical prompt."""
+    text = redact_text(text, config.redactions if config else ())
     text = _UUID.sub("[UUID]", text)
     text = _TIMESTAMP.sub("[TIMESTAMP]", text)
     text = _WIN_PATH.sub("[FILE_PATH]", text)
@@ -72,6 +92,31 @@ def scrub(text: str, config: FingerprintConfig | None = None) -> str:
     for pattern in config.extra_scrubs if config else ():
         text = re.sub(pattern, "[SCRUBBED]", text)
     return _SPACE.sub(" ", text).strip()
+
+
+def redact_text(text: str, patterns: tuple[str, ...]) -> str:
+    for pattern in patterns:
+        text = re.sub(pattern, REDACTED, text)
+    return text
+
+
+def redact_request(req: CanonicalRequest, config: FingerprintConfig | None) -> CanonicalRequest:
+    """A copy safe to store: every string in the messages and tools is redacted. Fingerprints
+    are taken from the original, so matching is unaffected."""
+    if not config or not config.redactions:
+        return req
+    patterns = config.redactions
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, str):
+            return redact_text(value, patterns)
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        return value
+
+    return CanonicalRequest(walk(req.messages), walk(req.tools), req.params)
 
 
 def from_openai(body: Mapping[str, Any]) -> CanonicalRequest:

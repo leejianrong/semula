@@ -19,6 +19,8 @@ async def test_defaults_are_visible_and_documented_by_the_api(replay: httpx.Asyn
         "models": None,
         "tail_n": None,
         "scrub_patterns": [],
+        "redact_patterns": [],
+        "redact_defaults": True,
         "include_params": [],
         "record_timeout": None,
         "bm25_serve_threshold": 1.0,
@@ -85,6 +87,7 @@ async def test_null_resets_a_setting_to_its_default(replay: httpx.AsyncClient) -
     [
         ({"tail_n": 0}, "settings.tail_n"),
         ({"scrub_patterns": ["("]}, "settings.scrub_patterns"),
+        ({"redact_patterns": ["("]}, "settings.redact_patterns"),
         ({"include_params": ["colour"]}, "settings.include_params.0"),
         ({"record_timeout": -1}, "settings.record_timeout"),
         ({"nope": 1}, "settings.nope"),

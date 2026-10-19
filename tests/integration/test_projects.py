@@ -1,5 +1,4 @@
 import asyncio
-import json
 
 import httpx
 import pytest
@@ -118,10 +117,7 @@ async def test_unknown_project_is_a_clear_404_not_a_fallback(replay: httpx.Async
 
 async def test_models_are_per_project(replay: httpx.AsyncClient) -> None:
     await replay.post("/api/v1/projects", json={"id": "alpha"})
-    db = replay._transport.app.state.db  # type: ignore[attr-defined]
-    db.run(
-        "UPDATE project SET settings=:s WHERE id='alpha'", {"s": json.dumps({"models": ["m-a"]})}
-    )
+    await replay.patch("/api/v1/projects/alpha", json={"settings": {"models": ["m-a"]}})
     alpha = (await replay.get("/v1/projects/alpha/models")).json()["data"]
     default = (await replay.get("/v1/models")).json()["data"]
     assert [m["id"] for m in alpha] == ["m-a"] and [m["id"] for m in default] == ["semula"]

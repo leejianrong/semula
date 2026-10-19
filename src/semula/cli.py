@@ -20,9 +20,10 @@ import json
 import os
 import sys
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import httpx
+if TYPE_CHECKING:  # httpx is only imported by commands that talk to a server: `serve` starts faster
+    import httpx
 
 EXIT_OK, EXIT_ERROR, EXIT_USAGE, EXIT_NOT_FOUND, EXIT_REJECTED, EXIT_AUTH = 0, 1, 2, 3, 4, 5
 DEFAULT_URL = "http://127.0.0.1:8080"
@@ -30,6 +31,8 @@ DEFAULT_URL = "http://127.0.0.1:8080"
 
 # --- plumbing ---------------------------------------------------------------------------
 def _call(args: argparse.Namespace, method: str, path: str, **kwargs: Any) -> httpx.Response:
+    import httpx
+
     headers = dict(kwargs.pop("headers", {}))
     key = os.environ.get("SEMULA_API_KEY")
     if key:  # from the environment only, so the secret never appears in argv
@@ -237,6 +240,61 @@ def _entry_delete(args: argparse.Namespace) -> int:
     return _ok(args, {"deleted": args.id}, f"deleted entry {args.id}")
 
 
+def _call_line(c: dict[str, Any]) -> str:
+    tier = c["tier"] or "-"
+    score = f" {c['score']:.2f}" if c["score"] is not None else ""
+    latency = f"{c['latency_ms']:.0f}ms" if c["latency_ms"] is not None else "-"
+    entry = c["entry_id"] or c["pending_id"] or "-"
+    return (
+        f"{c['ts'][11:23]}  {c['project']:<12} {c['outcome']:<14} {tier}{score}  {latency}  {entry}"
+    )
+
+
+def _log(args: argparse.Namespace) -> int:
+    params: dict[str, Any] = {"limit": args.limit}
+    for key in ("project", "outcome"):
+        if getattr(args, key):
+            params[key] = getattr(args, key)
+    resp = _call(args, "GET", "/api/v1/log", params=params)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    calls = resp.json()["calls"]
+    return _ok(args, resp.json(), "\n".join(_call_line(c) for c in calls) or "no calls")
+
+
+def _tail(args: argparse.Namespace) -> int:
+    """Follow calls as they happen. With --json, one JSON object per line. Ctrl-C to stop."""
+    import httpx
+
+    params = {"project": args.project} if args.project else {}
+    headers = {}
+    if os.environ.get("SEMULA_API_KEY"):
+        headers["Authorization"] = f"Bearer {os.environ['SEMULA_API_KEY']}"
+    seen = 0
+    try:
+        with httpx.stream(
+            "GET",
+            args.url.rstrip("/") + "/api/v1/log/stream",
+            params=params,
+            headers=headers,
+            timeout=httpx.Timeout(10.0, read=None),
+        ) as resp:
+            if resp.status_code != 200:
+                resp.read()
+                return _fail(args, resp)
+            for line in resp.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                event = json.loads(line[6:])
+                print(json.dumps(event) if args.json else _call_line(event), flush=True)
+                seen += 1
+                if args.count and seen >= args.count:
+                    break
+    except KeyboardInterrupt:
+        pass
+    return EXIT_OK
+
+
 def _review_list(args: argparse.Namespace) -> int:
     params = {"status": "all" if args.all else "open"}
     if args.project:
@@ -266,6 +324,50 @@ def _review_decide(args: argparse.Namespace) -> int:
     if resp.status_code != 200:
         return _fail(args, resp)
     return _ok(args, resp.json(), f"{resp.json()['status']} candidate {args.id}")
+
+
+def _export(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .exchange import write_bundle
+
+    resp = _call(args, "GET", f"/api/v1/projects/{args.project}/export")
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    counts = write_bundle(resp.json(), Path(args.dir))
+    out = {"project": args.project, "dir": args.dir, **counts}
+    human = f"exported {counts['entries']} entries and {counts['aliases']} aliases to {args.dir}"
+    return _ok(args, out, human)
+
+
+def _import(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .exchange import BundleError, read_bundle
+
+    try:
+        bundle = read_bundle(Path(args.dir))
+    except BundleError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_REJECTED
+    body: dict[str, Any] = {"bundle": bundle, "force": args.force}
+    if args.project:
+        body["project"] = args.project
+    resp = _call(args, "POST", "/api/v1/import", json=body)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    out = resp.json()
+    e, a = out["entries"], out["aliases"]
+    human = (
+        f"imported into '{out['project']}'{' (created)' if out['created_project'] else ''}: "
+        f"entries +{e['created']} ~{e['updated']} ={e['unchanged']}, "
+        f"aliases +{a['created']} ~{a['updated']} ={a['unchanged']}"
+    )
+    if e["skipped_pinned"]:
+        human += f"\nskipped {len(e['skipped_pinned'])} pinned entries (use --force): " + ", ".join(
+            e["skipped_pinned"]
+        )
+    return _ok(args, out, human)
 
 
 def _mode(args: argparse.Namespace) -> int:
@@ -397,6 +499,15 @@ def build_parser() -> argparse.ArgumentParser:
     edel.add_argument("--force", action="store_true")
     edel.add_argument("--as-human", action="store_true")
 
+    log = add(sub, "log", _log, "Show recent calls, newest first")
+    log.add_argument("--project", default=None)
+    log.add_argument("--outcome", default=None, help="hit, miss, recorded, record_timeout")
+    log.add_argument("--limit", type=int, default=20)
+
+    tail = add(sub, "tail", _tail, "Follow calls live (one JSON object per line with --json)")
+    tail.add_argument("--project", default=None)
+    tail.add_argument("--count", type=int, default=0, help="stop after this many calls")
+
     review = sub.add_parser("review", help="Decide near-miss matches")
     rsub = review.add_subparsers(dest="review_command", required=True)
     rlist = add(rsub, "list", _review_list, "List the review queue, best score first")
@@ -412,6 +523,14 @@ def build_parser() -> argparse.ArgumentParser:
         decide = add(rsub, decision, _review_decide, help_)
         decide.add_argument("id")
         decide.set_defaults(decision=decision)
+
+    export = add(sub, "export", _export, "Write a project's entries to a directory of JSON files")
+    export.add_argument("project")
+    export.add_argument("--dir", required=True, help="created if missing; commit it to git")
+    imp = add(sub, "import", _import, "Load an exported directory (safe to repeat)")
+    imp.add_argument("dir")
+    imp.add_argument("--project", default=None, help="import under this id instead of the file's")
+    imp.add_argument("--force", action="store_true", help="also overwrite pinned entries")
 
     mode = add(sub, "mode", _mode, "Show or switch the mode (replay or record)")
     mode.add_argument("mode", nargs="?", choices=["replay", "record"])
@@ -429,7 +548,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return int(args.func(args))
-    except httpx.ConnectError:
+    except Exception as exc:
+        httpx = sys.modules.get("httpx")  # not loaded means it cannot be an httpx error
+        if httpx is None or not isinstance(exc, httpx.ConnectError):
+            raise
         print(f"error: cannot reach semula at {args.url}. Is it running?", file=sys.stderr)
         return EXIT_ERROR
 

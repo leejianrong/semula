@@ -11,12 +11,18 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .canonical import FingerprintConfig
+from .canonical import BUILTIN_REDACTIONS, FingerprintConfig
 
 Param = Literal["model", "temperature", "top_p", "max_tokens", "stream", "user", "seed"]
 
 # Settings that change how requests are fingerprinted; changing one re-keys the project.
-FINGERPRINT_FIELDS = ("tail_n", "scrub_patterns", "include_params")
+FINGERPRINT_FIELDS = (
+    "tail_n",
+    "scrub_patterns",
+    "include_params",
+    "redact_patterns",
+    "redact_defaults",
+)
 
 
 class ProjectSettings(BaseModel):
@@ -30,6 +36,18 @@ class ProjectSettings(BaseModel):
     )
     scrub_patterns: list[str] = Field(
         default_factory=list, description="Extra regexes whose matches are ignored when matching."
+    )
+    redact_patterns: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Regexes for secrets. Matches become [REDACTED] in everything stored (existing "
+            "recordings too) and are ignored when matching, so a changing secret does not miss."
+        ),
+    )
+    redact_defaults: bool = Field(
+        default=True,
+        description="Also redact common credentials: API keys, GitHub and Slack tokens, bearer "
+        "tokens, private keys.",
     )
     include_params: list[Param] = Field(
         default_factory=list,
@@ -73,7 +91,7 @@ class ProjectSettings(BaseModel):
             )
         return self
 
-    @field_validator("scrub_patterns")
+    @field_validator("scrub_patterns", "redact_patterns")
     @classmethod
     def _compile(cls, patterns: list[str]) -> list[str]:
         for pattern in patterns:
@@ -88,4 +106,8 @@ class ProjectSettings(BaseModel):
             tail_n=self.tail_n,
             extra_scrubs=tuple(self.scrub_patterns),
             include_params=tuple(self.include_params),
+            redactions=(
+                *(BUILTIN_REDACTIONS if self.redact_defaults else ()),
+                *self.redact_patterns,
+            ),
         )

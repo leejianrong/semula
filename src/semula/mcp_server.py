@@ -97,6 +97,8 @@ def build_mcp(service: Service) -> FastMCP:
         """Patch a project's settings; a null value resets that setting. Keys: models, tail_n
         (match only the last N messages), scrub_patterns (regexes to ignore when matching),
         include_params (request params that count, e.g. ['temperature']), record_timeout,
+        redact_patterns (regexes for secrets: stored as [REDACTED] and ignored when matching),
+        redact_defaults (also redact common API keys and tokens; default true),
         bm25_serve_threshold (0-1 word overlap at which a close match is served; default 1, so
         near-misses go to review),
         bm25_review_threshold (0-1 floor for the review queue; default 0.6).
@@ -193,6 +195,15 @@ def build_mcp(service: Service) -> FastMCP:
         if not isinstance(request.get("messages"), list):
             raise SemulaError(400, "invalid_request", "The request needs a 'messages' list.")
         return service.test_match(canonical.from_openai(request), project)
+
+    @tool
+    def list_calls(
+        project: str | None = None, outcome: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """Recent calls through semula, newest first: time, project, mode, outcome (hit, miss,
+        recorded, record_timeout), tier (exact, normalised, alias, bm25), score, latency and the
+        entry. Use it to see why an app's calls are missing or timing out."""
+        return service.list_calls(project, outcome, limit)
 
     @tool
     def list_candidates(

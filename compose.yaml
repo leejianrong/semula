@@ -1,0 +1,57 @@
+# Run semula with Docker Compose.
+#
+#   docker compose up -d --wait semula                       SQLite on a named volume (default)
+#   docker compose --profile postgres up -d --wait semula-pg  the same app on Postgres
+#
+# Data lives in the volumes below, never in the image: `docker compose down` keeps it,
+# `docker compose down -v` deletes it. Ports bind to loopback; publish them wider only
+# together with SEMULA_API_KEY.
+services:
+  semula:
+    build: .
+    image: semula:local
+    ports:
+      - "127.0.0.1:${SEMULA_HOST_PORT:-8080}:8080"
+    volumes:
+      - semula-data:/data # the SQLite file; the container runs as uid 10001
+    environment:
+      SEMULA_MODE: ${SEMULA_MODE:-replay} # replay, or record to let an agent answer misses
+      SEMULA_API_KEY: ${SEMULA_API_KEY:-} # set this before exposing the port
+    restart: unless-stopped
+
+  semula-pg:
+    profiles: [postgres]
+    build:
+      context: .
+      args:
+        UV_EXTRAS: "--extra postgres" # the Postgres driver is an opt-in extra
+    image: semula:local-postgres
+    ports:
+      - "127.0.0.1:${SEMULA_PG_HOST_PORT:-8081}:8080"
+    environment:
+      SEMULA_MODE: ${SEMULA_MODE:-replay}
+      SEMULA_API_KEY: ${SEMULA_API_KEY:-}
+      SEMULA_DATABASE_URL: postgresql://semula:${POSTGRES_PASSWORD:-semula}@db:5432/semula
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    profiles: [postgres]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: semula
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-semula}
+      POSTGRES_DB: semula
+    volumes:
+      - semula-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U semula -d semula"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  semula-data:
+  semula-pg:

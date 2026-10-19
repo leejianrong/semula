@@ -63,6 +63,7 @@ feature (FTS5).
   the `mode` flag (per process, not persisted) and held-call wake-ups (a held call is woken only
   in the process that holds it; an answer written on another replica is seen when its waiter next
   checks, so cross-replica release needs a notification channel). Both are hosted-design items.
+- A project's settings are cached in-process for one second (`SETTINGS_TTL`) to keep replay fast; a change is visible at once on the replica that made it and within a second on others. The event bus (live log) is likewise in-process: a hosted deployment needs a shared channel.
 - Migrations run at startup. Several replicas starting together would race; hosted deployment
   should run `upgrade` once before rolling out (an advisory lock is a possible later addition).
 - The `LIKE` text filter is now case-insensitive on both backends (`ILIKE`); on large Postgres

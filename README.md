@@ -2,7 +2,7 @@
 
 **A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
 
-> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing, pinning, an MCP server and a full CLI work too. Fuzzy matching and the dashboard are still to come. Follow progress on the [slices](docs/SLICES.md).
+> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing, pinning, an MCP server and a full CLI work too. Near-miss matching with a review queue, a call log with live tail, redaction, export/import and a slim container work too. The dashboard and optional embeddings are still to come. Follow progress on the [slices](docs/SLICES.md).
 
 ```mermaid
 flowchart LR
@@ -81,7 +81,22 @@ SEMULA_DATABASE_URL=postgresql://user:pass@host:5432/semula uv run semula serve
 
 Migrations (Alembic) run at startup on both. A SQLite file made by an earlier semula is upgraded in place. In the image: `docker build --build-arg UV_EXTRAS="--extra postgres" .`. `make test-postgres` runs the whole suite against a throwaway Postgres container. See [ADR-0009](docs/adr/0009-sqlalchemy-core-alembic-postgres-path.md).
 
-Or run the container: `make docker` (Docker; picks the first free port from 8080).
+### Container
+
+```bash
+docker compose up -d --wait semula                          # SQLite on a named volume
+docker compose --profile postgres up -d --wait semula-pg    # the same app on Postgres
+```
+
+[`compose.yaml`](compose.yaml) is the reference. The image (about 240 MB, a non-root user, starts in under 2 s) keeps all state under `/data`: mount a volume there (`-v semula-data:/data`) and recordings survive upgrades and restarts. A bind mount must be writable by uid 10001 (`chown 10001 ./data`). With Postgres, `/data` is unused and the database holds everything. Set `SEMULA_API_KEY` before publishing the port beyond loopback. `make docker` runs a throwaway container on the first free port; `make image-check` enforces the size and cold-start budgets.
+
+### Export and import
+
+`semula export <project> --dir cassettes/` writes one JSON file per entry (ULIDs kept, sorted keys, so git diffs are clean) plus approved aliases; `semula import cassettes/` loads them into any server, creating the project if needed. Import matches by id, updates what changed, skips what did not, and never deletes, so it is safe to repeat (pinned entries are left alone without `--force`). Runtime state (hit counts, the call log, the review queue) is not exported. Stored requests are redacted (API keys and similar by default, plus `redact_patterns` per project), so the files are safe to commit; recorded *answers* are not redacted, so read them before you push.
+
+### Watching calls
+
+`semula tail` follows calls live (`--json` for one object per line), `semula log` lists recent ones, and `GET /api/v1/log/stream` is the same feed as server-sent events. The log keeps 30 days or 50,000 rows (`SEMULA_LOG_RETENTION_DAYS`, `SEMULA_LOG_MAX_ROWS`) and never stores request headers.
 
 ## Documents
 

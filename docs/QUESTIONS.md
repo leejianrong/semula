@@ -66,6 +66,8 @@ For planning today, indah's existing ADRs that rule things out (e.g. ADR-0008 "n
 | 2026-10-19 | MCP authorization (OAuth 2.1 resource server: RFC 9728 metadata, token audience validation, scope challenges) is a hosted-only item. RFC 9207 `iss` checks and CIMD are client and authorization-server duties. Today: the shared `SEMULA_API_KEY` only | SEM-53 |
 | 2026-10-19 | Codex MCP registration syntax is unverified; the CLI is the fallback | `docs/agents/PLAYBOOK.md` |
 | 2026-10-20 | Lexical tier: FTS5 retrieves, word-overlap scores; auto-serve default 1.0 (near-misses go to review; lower it per project once tuned) plus a same-shape guard; review floor 0.6 | ADR-0003 amendment |
+| 2026-10-20 | Redaction patterns double as scrubs when fingerprinting, so the live request, its redacted stored copy and a later re-key agree; built-in credential patterns are on by default; recorded answers are not redacted | ADR-0007 amendment |
+| 2026-10-20 | Replay budgets: exact and normalised p95 < 15 ms; the lexical tier and misses < 30 ms (they search the index). Image < 350 MB, cold start < 2 s (container start to healthy, MCP built after startup) | `tests/perf`, `scripts/check_image.sh` |
 | 2026-10-20 | MCP exposes approve and reject to agents, with a description telling them to wait for a human unless asked | `docs/agents/PLAYBOOK.md` |
 
 ## Deferred

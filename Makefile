@@ -4,7 +4,7 @@
 PORT ?= 8080
 FREE_PORT := python3 -c 'import socket,sys\np=int(sys.argv[1])\nwhile True:\n    s=socket.socket()\n    try:\n        s.bind(("127.0.0.1",p)); s.close(); print(p); break\n    except OSError:\n        s.close(); p+=1' $(PORT)
 
-.PHONY: run docker help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: run docker image-check bench help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -33,6 +33,12 @@ lint: ## Lint and format-check (no changes)
 
 typecheck: ## Type-check with mypy (strict)
 	uv run mypy
+
+image-check: ## Build the image and enforce its size, cold-start and /data budgets (needs Docker)
+	scripts/check_image.sh semula:check
+
+bench: ## Replay latency on a 1k-entry project; fails over the 15 ms p95 budget
+	uv run pytest -m perf -s -q
 
 test-fast: ## Fast layer: unit + integration, no infra
 	uv run pytest -m "unit or integration" -q

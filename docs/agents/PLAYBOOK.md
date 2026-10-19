@@ -37,6 +37,8 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Auth
 | `upsert_entry` | `POST /api/v1/projects/<id>/entries` (no CLI command yet) |
 | `update_entry`, `delete_entry` | `semula entry set <id> --version N ...`, `semula entry delete <id> --version N` |
 | `test_match` | `semula test-match --prompt "..."` or `--file request.json` |
+| `list_calls` | `semula log [--project P] [--outcome miss]`; `semula tail` follows live (`--json` for one object per line) |
+| (no MCP tool) | `semula export <project> --dir DIR`, `semula import DIR`: cassettes as files for git |
 | `list_candidates`, `get_candidate` | `semula review list [--all]`, `semula review show <id>` |
 | `approve_candidate`, `reject_candidate` | `semula review approve <id>`, `semula review reject <id>` |
 
@@ -93,6 +95,10 @@ Rules that keep answers replayable:
 ## 5. Matching and settings
 
 `test_match` explains a hit or a miss without side effects: the tier (`exact`, `normalised`, `alias` or `bm25`), the entry and its score, and on a miss the weak `candidates` that would go to review plus the nearest recorded entry. If near-identical prompts keep missing, adjust the project's settings (`update_project_settings`): `scrub_patterns` (regexes to ignore, e.g. `ticket-\d+`), `tail_n` (match only the last N messages), `include_params` (request params that count). Changing these re-keys existing entries.
+
+### Secrets
+
+Stored requests are redacted: common credentials (API keys, GitHub and Slack tokens, bearer tokens, private keys) by default, plus any regex in the project's `redact_patterns`. A match becomes `[REDACTED]` in everything stored, existing recordings included, and is ignored when matching, so a prompt whose secret changes still hits. Your *answers* are not redacted: do not put real secrets in them.
 
 ### Near misses and the review queue
 
