@@ -39,20 +39,27 @@ class FingerprintConfig:
 
     tail_n: int | None = None
     extra_scrubs: tuple[str, ...] = ()
+    include_params: tuple[str, ...] = ()
+
+
+IGNORABLE_PARAMS = ("model", "temperature", "top_p", "max_tokens", "stream", "user", "seed")
 
 
 @dataclass(frozen=True)
 class CanonicalRequest:
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]] = field(default_factory=list)
+    params: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> str:
-        return _dumps({"messages": self.messages, "tools": self.tools})
+        return _dumps({"messages": self.messages, "tools": self.tools, "params": self.params})
 
     @classmethod
     def from_json(cls, raw: str) -> CanonicalRequest:
         data = json.loads(raw)
-        return cls(messages=data["messages"], tools=data.get("tools", []))
+        return cls(
+            messages=data["messages"], tools=data.get("tools", []), params=data.get("params", {})
+        )
 
 
 def scrub(text: str, config: FingerprintConfig | None = None) -> str:
@@ -71,11 +78,12 @@ def from_openai(body: Mapping[str, Any]) -> CanonicalRequest:
     messages = [_message(m) for m in body.get("messages", [])]
     tools = [_canonical_json(t) for t in body.get("tools") or []]
     tools.sort(key=_tool_name)
-    return CanonicalRequest(messages=messages, tools=tools)
+    params = {k: body[k] for k in IGNORABLE_PARAMS if k in body}
+    return CanonicalRequest(messages=messages, tools=tools, params=params)
 
 
 def exact_fingerprint(req: CanonicalRequest, config: FingerprintConfig | None = None) -> str:
-    return _digest({"messages": _tail(req.messages, config), "tools": req.tools})
+    return _digest(_payload(req, _tail(req.messages, config), config))
 
 
 def normalised_fingerprint(req: CanonicalRequest, config: FingerprintConfig | None = None) -> str:
@@ -83,7 +91,16 @@ def normalised_fingerprint(req: CanonicalRequest, config: FingerprintConfig | No
         {**m, "content": scrub(m["content"], config)} if isinstance(m.get("content"), str) else m
         for m in _tail(req.messages, config)
     ]
-    return _digest({"messages": messages, "tools": req.tools})
+    return _digest(_payload(req, messages, config))
+
+
+def _payload(
+    req: CanonicalRequest, messages: list[dict[str, Any]], config: FingerprintConfig | None
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"messages": messages, "tools": req.tools}
+    if config and config.include_params:
+        payload["params"] = {k: req.params.get(k) for k in sorted(config.include_params)}
+    return payload
 
 
 def _tail(messages: list[dict[str, Any]], config: FingerprintConfig | None) -> list[dict[str, Any]]:

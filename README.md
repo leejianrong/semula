@@ -2,7 +2,7 @@
 
 **A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
 
-> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, MCP, fuzzy matching and the dashboard are still to come. Follow progress on the [slices](docs/SLICES.md).
+> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing and pinning work too. MCP, fuzzy matching and the dashboard are still to come. Follow progress on the [slices](docs/SLICES.md).
 
 ```mermaid
 flowchart LR
@@ -44,6 +44,17 @@ uv run semula answer <id> --text "hi from the agent"
 ```
 
 The held call returns. Ask the same thing again, even with a different model name or a new timestamp in the prompt, and the stored answer comes back at once. Restart with `SEMULA_MODE=replay` and it works offline; unknown prompts return an error instead of a made-up answer.
+
+### Projects, editing and settings
+
+Keep recordings apart per project and pick one per call with a header or the URL:
+
+```bash
+uv run semula project create my-app
+curl -H 'X-Semula-Project: my-app' http://127.0.0.1:8080/v1/chat/completions ...   # or /v1/projects/my-app/chat/completions
+```
+
+Entries can hold several responses (`selection`: `first`, `sequence` or `cycle`), be edited with optimistic versions (a stale write gets a 409 with the current entry), and be pinned so an agent cannot overwrite a human fix. Responses may contain `{{now}}`, `{{uuid}}` and `{{request.model}}`, expanded fresh on every replay. Per-project matching settings (`tail_n`, `scrub_patterns`, `include_params`, `models`, `record_timeout`) are set with `PATCH /api/v1/projects/<id>`; `GET` shows the defaults.
 
 Or run the container: `make docker` (Docker; picks the first free port from 8080).
 

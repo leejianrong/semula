@@ -79,6 +79,8 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_call_log_ts ON call_log(workspace_id, project_id, ts);
     """,
+    # 2: how an entry picks among several stored responses (ADR-0005, SEM-21).
+    "ALTER TABLE entry ADD COLUMN selection TEXT NOT NULL DEFAULT 'first'",
 ]
 
 

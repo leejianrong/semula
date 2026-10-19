@@ -9,11 +9,16 @@ from tests.integration.conftest import chat
 pytestmark = pytest.mark.integration
 
 
-async def record_answer(client: httpx.AsyncClient, body: dict[str, object], answer: object) -> dict:
+async def record_answer(
+    client: httpx.AsyncClient, body: dict[str, object], answer: object, project: str | None = None
+) -> dict:
     """Send a call in record mode, answer it through the admin API, return the completion."""
-    call = asyncio.create_task(client.post("/v1/chat/completions", json=body))
+    headers = {"X-Semula-Project": project} if project else {}
+    call = asyncio.create_task(client.post("/v1/chat/completions", json=body, headers=headers))
     for _ in range(100):
-        pending = (await client.get("/api/v1/pending")).json()["pending"]
+        pending = (
+            await client.get("/api/v1/pending", params={"project": project} if project else {})
+        ).json()["pending"]
         if pending:
             break
         await asyncio.sleep(0.01)

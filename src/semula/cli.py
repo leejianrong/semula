@@ -102,6 +102,35 @@ def _answer(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _project_list(args: argparse.Namespace) -> int:
+    resp = _call(args, "GET", "/api/v1/projects")
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    projects = resp.json()["projects"]
+    if args.json:
+        print(json.dumps(projects))
+    else:
+        for p in projects:
+            print(f"{p['id']}\t{p['name']}\tentries={p['entries']}\tpending={p['pending']}")
+    return EXIT_OK
+
+
+def _project_create(args: argparse.Namespace) -> int:
+    resp = _call(args, "POST", "/api/v1/projects", json={"id": args.id, "name": args.name})
+    if resp.status_code != 201:
+        return _fail(args, resp)
+    print(json.dumps(resp.json()) if args.json else f"created project {args.id}")
+    return EXIT_OK
+
+
+def _project_delete(args: argparse.Namespace) -> int:
+    resp = _call(args, "DELETE", f"/api/v1/projects/{args.id}")
+    if resp.status_code != 204:
+        return _fail(args, resp)
+    print(json.dumps({"deleted": args.id}) if args.json else f"deleted project {args.id}")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="semula", description="Record-replay fake LLM server.")
     parser.add_argument(
@@ -130,6 +159,18 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--file", help="read a JSON answer from a file")
     source.add_argument("--stdin", action="store_true", help="read a JSON answer from stdin")
     answer.set_defaults(func=_answer)
+
+    project = sub.add_parser("project", help="Manage projects")
+    psub = project.add_subparsers(dest="project_command", required=True)
+    plist = psub.add_parser("list", help="List projects")
+    plist.set_defaults(func=_project_list)
+    pcreate = psub.add_parser("create", help="Create a project")
+    pcreate.add_argument("id", help="slug: lowercase letters, digits, hyphens")
+    pcreate.add_argument("--name", default=None)
+    pcreate.set_defaults(func=_project_create)
+    pdelete = psub.add_parser("delete", help="Delete a project and all its entries")
+    pdelete.add_argument("id")
+    pdelete.set_defaults(func=_project_delete)
     return parser
 
 
