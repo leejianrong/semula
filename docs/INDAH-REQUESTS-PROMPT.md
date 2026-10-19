@@ -78,7 +78,7 @@ Sizes are my rough estimates (S about a day, M a few days, L a week or more). Pl
 ## Priorities and constraints from semula
 
 - **Order I expect:** E1 and E2 first, because the live log and pending queue need both. Then E3 and E4. Then E5 to E8. The H items come after, and only partly, depending on the stay-or-leave decision. Challenge this order if you see a better one.
-- semula's headless core is built first, so the dashboard is not blocked on you for the first slices. Expect your first usable drop to be wanted in roughly the third of semula's slices (`semula/SLICES.md`, epics SEM-E2 to SEM-E7).
+- semula's headless core is built first, so the dashboard is not blocked on you for the first slices. Expect your first usable drop to be wanted in roughly the third of semula's slices (`docs/SLICES.md` in the semula repo, epics SEM-E2 to SEM-E7).
 - **Mounting:** indah must run as a sub-app inside semula's Starlette/FastAPI app on one port, under `/ui`, sharing the process with the `/v1`, `/api/v1` and `/mcp` routes. Check that this works with the shell's absolute paths and with E4 routing, and say what changes if not.
 - **Live data volume:** the log tail can reach tens of events per second during a test run. Say how E1 and E2 should coalesce so the existing frame padding and proxy behaviour do not hurt (see your own `Q-frame-coalesce`).
 - **Python only on the server.** The shell stays pre-built. If E3 needs a bundled editor (for example CodeMirror), say which, its size and licence, and what it does to the wheel size.
