@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -19,6 +19,7 @@ class Settings:
     port: int = 8080
     chunk_size: int = 24
     models: tuple[str, ...] = ("semula",)
+    api_key: str | None = field(default=None, repr=False)
 
     @property
     def db_path(self) -> Path:
@@ -36,6 +37,7 @@ class Settings:
             host=os.environ.get("SEMULA_HOST", "127.0.0.1"),
             port=int(os.environ.get("SEMULA_PORT", "8080")),
             chunk_size=int(os.environ.get("SEMULA_CHUNK_SIZE", "24")),
+            api_key=os.environ.get("SEMULA_API_KEY") or None,
             models=tuple(
                 m.strip() for m in os.environ.get("SEMULA_MODELS", "semula").split(",") if m.strip()
             ),

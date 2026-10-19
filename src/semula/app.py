@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__, api_admin, api_openai
+from .auth import ApiKeyMiddleware
 from .config import Settings
 from .db import Database
 from .errors import SemulaError
@@ -56,4 +57,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(api_openai.router)
     app.include_router(api_admin.router)
+    if settings.api_key:
+        app.add_middleware(ApiKeyMiddleware, key=settings.api_key)
     return app

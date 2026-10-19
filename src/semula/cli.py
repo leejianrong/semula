@@ -27,13 +27,25 @@ def _serve(args: argparse.Namespace) -> int:
 
     settings = Settings.from_env()
     host = args.host or settings.host
+    if not settings.api_key and host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"warning: listening on {host} with no SEMULA_API_KEY; anyone who can reach this "
+            "port can read and change recordings.",
+            file=sys.stderr,
+        )
     port = args.port if args.port is not None else settings.port
     uvicorn.run(create_app(settings), host=host, port=port, log_level="info")
     return EXIT_OK
 
 
 def _call(args: argparse.Namespace, method: str, path: str, **kwargs: Any) -> httpx.Response:
-    return httpx.request(method, args.url.rstrip("/") + path, timeout=30.0, **kwargs)
+    headers = dict(kwargs.pop("headers", {}))
+    key = os.environ.get("SEMULA_API_KEY")
+    if key:  # from the environment only, so the secret never appears in argv
+        headers["Authorization"] = f"Bearer {key}"
+    return httpx.request(
+        method, args.url.rstrip("/") + path, timeout=30.0, headers=headers, **kwargs
+    )
 
 
 def _fail(args: argparse.Namespace, resp: httpx.Response) -> int:
