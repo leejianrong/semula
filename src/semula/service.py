@@ -25,6 +25,7 @@ from .canonical import (
     lexical_tokens,
     normalised_fingerprint,
     redact_request,
+    roles_of,
     shape,
 )
 from .config import Settings
@@ -367,12 +368,31 @@ class Service:
         if best:
             messages = CanonicalRequest.from_json(best["canonical_request"]).messages
             last = messages[-1]["content"][:200] if messages else ""
-        weak = [(s, i) for s, i in scored if s >= settings.bm25_review_threshold]
+        weak = self._same_turns(
+            [(s, i) for s, i in scored if s >= settings.bm25_review_threshold], req, config
+        )
         return MatchResult(
             None,
             [Candidate(entry_id, round(score, 4)) for score, entry_id in weak[:MAX_CANDIDATES]],
             {"entry_id": best_id, "score": round(best_score, 3), "last_message": last},
         )
+
+    def _same_turns(
+        self, weak: list[tuple[float, str]], req: CanonicalRequest, config: FingerprintConfig
+    ) -> list[tuple[float, str]]:
+        """Keep review candidates whose conversation has the same speakers in the same order."""
+        if not weak:
+            return weak
+        rows = self.db.rows(
+            sa.select(E.c.id, E.c.canonical_request).where(E.c.id.in_([i for _, i in weak]))
+        )
+        mine = roles_of(req, config)
+        same = {
+            r["id"]
+            for r in rows
+            if roles_of(CanonicalRequest.from_json(r["canonical_request"]), config) == mine
+        }
+        return [(s, i) for s, i in weak if i in same]
 
     # --- entries ------------------------------------------------------------------
     def list_entries(

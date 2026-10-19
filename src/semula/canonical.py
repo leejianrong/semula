@@ -154,13 +154,19 @@ def lexical_tokens(req: CanonicalRequest, config: FingerprintConfig | None = Non
     return words
 
 
+def roles_of(req: CanonicalRequest, config: FingerprintConfig | None = None) -> list[str]:
+    """Who speaks, in order (after ``tail_n``). Two conversations with different turns are
+    different questions however many words they share."""
+    return [m.get("role", "") for m in _tail(req.messages, config)]
+
+
 def shape(req: CanonicalRequest, config: FingerprintConfig | None = None) -> str:
     """The conversation's skeleton: who speaks in what order, which tools are on offer, and the
     request params the project says must match.
 
     Two requests with different shapes never share a lexical auto-serve, however alike their words.
     """
-    roles = [m.get("role", "") for m in _tail(req.messages, config)]
+    roles = roles_of(req, config)
     params = {k: req.params.get(k) for k in sorted(config.include_params)} if config else {}
     return _dumps({"roles": roles, "tools": req.tools, "params": params})
 

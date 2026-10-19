@@ -366,3 +366,30 @@ async def test_recording_an_answer_through_the_queue_still_works_with_candidates
     await seed(record)
     first = await record_answer(record, ask(UNRELATED), {"content": "Bonjour"})
     assert first["choices"][0]["message"]["content"] == "Bonjour"
+
+
+async def test_only_conversations_with_the_same_turns_are_queued_for_review(
+    replay: httpx.AsyncClient,
+) -> None:
+    """Found driving the tool end to end: every call in a project shares its system prompt, so
+    a one-message prompt looked 80-90% like each longer conversation that contains it. Those
+    are never the same question, and they buried the one pairing worth reviewing."""
+    system = {"role": "system", "content": "You are a careful code reviewer. Reply tersely."}
+
+    def convo(*turns: tuple[str, str]) -> dict:
+        return {"messages": [system, *({"role": r, "content": c} for r, c in turns)]}
+
+    first = convo(("user", BASE))
+    longer = convo(("user", BASE), ("assistant", "ok"), ("user", "now fix it"))
+    for request, answer in ((first, "one"), (longer, "two")):
+        resp = await replay.post(
+            "/api/v1/projects/default/entries",
+            json={"request": request, "response": {"content": answer}},
+        )
+        assert resp.status_code == 201, resp.text
+    await replay.post("/v1/chat/completions", json=convo(("user", WEAK)))
+    found = await candidates(replay)
+    assert [c["entry_id"] for c in found] == [
+        (await replay.get("/api/v1/projects/default/entries")).json()["entries"][0]["id"]
+    ]
+    assert len(found) == 1
