@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__, api_admin, api_openai
 from .config import Settings
@@ -23,6 +25,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(SemulaError)
     async def _semula_error(_: Request, exc: SemulaError) -> JSONResponse:
         return JSONResponse(exc.body(), status_code=exc.status)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+        code = {404: "not_found", 405: "method_not_allowed"}.get(exc.status_code, "http_error")
+        return JSONResponse(
+            SemulaError(exc.status_code, code, str(exc.detail)).body(), status_code=exc.status_code
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        first = exc.errors()[0] if exc.errors() else {}
+        param = ".".join(str(p) for p in first.get("loc", ()))
+        message = first.get("msg", "Invalid request.")
+        return JSONResponse(
+            SemulaError(422, "invalid_request", message, param=param or None).body(),
+            status_code=422,
+        )
+
+    @app.exception_handler(Exception)
+    async def _unexpected(_: Request, exc: Exception) -> JSONResponse:
+        error = SemulaError(
+            500, "internal_error", "Unexpected server error.", err_type="server_error"
+        )
+        return JSONResponse(error.body(), status_code=500)
 
     @app.get("/health")
     def health() -> dict[str, str]:

@@ -35,6 +35,18 @@ class Service:
         self._waiters: dict[str, asyncio.Event] = {}
         self._config = FingerprintConfig()
 
+    # --- models -----------------------------------------------------------------
+    def list_models(self, project: str = DEFAULT_PROJECT) -> list[str]:
+        """Model ids for /v1/models: the project ``models`` setting, else the env default."""
+        row = self.db.query_one(
+            "SELECT settings FROM project WHERE workspace_id=? AND id=?",
+            (DEFAULT_WORKSPACE, project),
+        )
+        configured = json.loads(row["settings"]).get("models") if row else None
+        if isinstance(configured, list) and configured:
+            return [str(m) for m in configured]
+        return list(self.settings.models)
+
     # --- matching -------------------------------------------------------------
     def find(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> Match | None:
         for tier, column, fp in (

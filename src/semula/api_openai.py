@@ -69,9 +69,27 @@ def _respond(
     return StreamingResponse(events, media_type="text/event-stream")
 
 
+def _model(model_id: str) -> dict[str, Any]:
+    return {"id": model_id, "object": "model", "created": 0, "owned_by": "semula"}
+
+
 @router.get("/models")
-async def models() -> dict[str, Any]:
-    return {"object": "list", "data": [{"id": "semula", "object": "model", "owned_by": "semula"}]}
+async def models(request: Request) -> dict[str, Any]:
+    service: Service = request.app.state.service
+    return {"object": "list", "data": [_model(m) for m in service.list_models()]}
+
+
+@router.get("/models/{model_id:path}")
+async def retrieve_model(model_id: str, request: Request) -> dict[str, Any]:
+    service: Service = request.app.state.service
+    if model_id not in service.list_models():
+        raise SemulaError(
+            404,
+            "model_not_found",
+            f"The model '{model_id}' does not exist.",
+            param="model",
+        )
+    return _model(model_id)
 
 
 async def _read_body(request: Request) -> dict[str, Any]:
