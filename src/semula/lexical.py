@@ -13,6 +13,7 @@ module.
 
 from __future__ import annotations
 
+import unicodedata
 from collections import Counter
 from collections.abc import Sequence
 from typing import NamedTuple, Protocol
@@ -25,13 +26,15 @@ from .db import Database
 from .schema import entry as E
 
 FTS_TABLE = "entry_fts"
-MAX_QUERY_TOKENS = 256
+QUERY_TERMS = 12  # the rarest words of a prompt are enough to find its neighbours
+VOCAB_PROBE = 40  # longer words tend to be rarer: only these have their frequency looked up
 SCAN_LIMIT = 5000
 
 
 class LexicalHit(NamedTuple):
     entry_id: str
     rank: float  # backend-specific, only meaningful for ordering (best first)
+    tokens: list[str]  # the entry's indexed words, so scoring needs no second read
 
 
 class LexicalIndex(Protocol):
@@ -125,18 +128,48 @@ class Fts5Index:
         config: FingerprintConfig,
         limit: int,
     ) -> list[LexicalHit]:
-        words = list(dict.fromkeys(tokens))[:MAX_QUERY_TOKENS]
+        words = self._rarest(list(dict.fromkeys(tokens)))
         if not words:
             return []
         query = " OR ".join(f'"{w}"' for w in words)  # tokens are \w+, so quoting is enough
         rows = self.db.rows(
             sa.text(
-                "SELECT entry_id, bm25(entry_fts) AS score FROM entry_fts "
+                "SELECT entry_id, text, bm25(entry_fts) AS score FROM entry_fts "
                 "WHERE entry_fts MATCH :query AND workspace_id = :w AND project_id = :p "
                 "ORDER BY score LIMIT :limit"
             ).bindparams(query=query, w=workspace_id, p=project_id, limit=limit)
         )
-        return [LexicalHit(str(r["entry_id"]), float(r["score"])) for r in rows]
+        return [
+            LexicalHit(str(r["entry_id"]), float(r["score"]), str(r["text"]).split()) for r in rows
+        ]
+
+    def _rarest(self, words: list[str]) -> list[str]:
+        """The words most likely to find this prompt's neighbours: lowest document frequency
+        first. A word the index has never seen cannot match and is dropped. Without the vocab
+        table (an index made before it existed) the first words are used."""
+        if not words:
+            return []
+        words = sorted(words, key=len, reverse=True)[:VOCAB_PROBE]
+        try:
+            rows = self.db.rows(
+                sa.select(sa.column("term"), sa.column("doc"))
+                .select_from(sa.table("entry_fts_vocab"))
+                .where(sa.column("term").in_([_fold(w) for w in words]))
+            )
+        except sa.exc.OperationalError:
+            return words[:QUERY_TERMS]
+        frequency = {str(r["term"]): int(r["doc"]) for r in rows}
+        known = [w for w in words if _fold(w) in frequency]
+        known.sort(key=lambda w: (frequency[_fold(w)], -len(w)))
+        return known[:QUERY_TERMS]
+
+
+def _fold(word: str) -> str:
+    """The form FTS5's tokenizer indexes: lower case, accents removed."""
+    if word.isascii():
+        return word.lower()
+    decomposed = unicodedata.normalize("NFKD", word.lower())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
 class ScanIndex:
@@ -188,7 +221,7 @@ class ScanIndex:
             other = lexical_tokens(CanonicalRequest.from_json(row["canonical_request"]), config)
             shared = len(wanted & set(other))
             if shared:
-                scored.append(LexicalHit(str(row["id"]), -float(shared)))
+                scored.append(LexicalHit(str(row["id"]), -float(shared), other))
         scored.sort(key=lambda h: h.rank)
         return scored[:limit]
 

@@ -83,7 +83,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d semula"
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d semula"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
@@ -96,6 +96,24 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen --extra dev --extra e2e
       - run: uv run pytest -m "unit or integration or e2e" -q
+
+  # Budgets: replay latency on a 1k-entry project, and the container image (size, cold start,
+  # non-root, data on /data). Failing either fails CI.
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - run: uv run pytest -m perf -s -q
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/check_image.sh semula:ci
 
   # Heavy layer: the real app over loopback driven by the OpenAI SDK, network blocked.
   e2e:

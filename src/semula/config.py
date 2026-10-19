@@ -18,6 +18,8 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8080
     chunk_size: int = 24
+    log_retention_days: int = 30
+    log_max_rows: int = 50_000
     models: tuple[str, ...] = ("semula",)
     api_key: str | None = field(default=None, repr=False)
     database_url: str | None = field(default=None, repr=False)  # may hold a password
@@ -43,6 +45,8 @@ class Settings:
             host=os.environ.get("SEMULA_HOST", "127.0.0.1"),
             port=int(os.environ.get("SEMULA_PORT", "8080")),
             chunk_size=int(os.environ.get("SEMULA_CHUNK_SIZE", "24")),
+            log_retention_days=int(os.environ.get("SEMULA_LOG_RETENTION_DAYS", "30")),
+            log_max_rows=int(os.environ.get("SEMULA_LOG_MAX_ROWS", "50000")),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
             database_url=os.environ.get("SEMULA_DATABASE_URL") or None,
             models=tuple(

@@ -68,6 +68,7 @@ markers = [
     "unit: fast, isolated tests with no I/O beyond a temp dir",
     "integration: in-process app against a temp SQLite file; no network, no Docker",
     "e2e: the real container driven by real SDK clients (CI, needs Docker)",
+    "perf: latency budgets on a 1k-entry project (own CI job; `make bench` to print the table)",
 ]
 asyncio_mode = "auto"
 

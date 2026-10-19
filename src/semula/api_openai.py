@@ -44,7 +44,6 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     found = await offload(service.lookup, req, project)
     match = found.match
     if match:
-        await offload(service.record_hit, match.entry_id)
         await offload(
             partial(
                 service.log_call,
@@ -54,6 +53,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 score=match.score,
                 entry_id=match.entry_id,
                 project=project,
+                count_hit=True,
             )
         )
         return _respond(service, body, match.stored, model)
@@ -66,7 +66,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             "semula_no_match",
             "No recorded answer matches this request, and semula is in replay mode.",
             err_type="semula_error",
-            extra={"nearest": await offload(service.nearest, req, project)},
+            extra={"nearest": found.nearest},
         )
 
     pending_id = await offload(service.open_pending, req, project)

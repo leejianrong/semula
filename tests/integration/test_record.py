@@ -32,7 +32,13 @@ async def test_identical_concurrent_misses_share_one_pending_row(record: httpx.A
         asyncio.create_task(record.post("/v1/chat/completions", json=chat("same")))
         for _ in range(3)
     ]
-    await asyncio.sleep(0.05)
+    pending: list[dict] = []
+    for _ in range(200):  # wait for the first miss to park; a slow database can take a while
+        pending = (await record.get("/api/v1/pending")).json()["pending"]
+        if pending:
+            break
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.3)  # let the other two arrive and join it
     pending = (await record.get("/api/v1/pending")).json()["pending"]
     assert len(pending) == 1
     await record.post(f"/api/v1/pending/{pending[0]['id']}/answer", json={"content": "once"})

@@ -26,8 +26,12 @@ NAMING = {
 metadata = sa.MetaData(naming_convention=NAMING)
 
 
+def iso(moment: datetime) -> str:
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
 def now_iso() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return iso(datetime.now(UTC))
 
 
 def _ts(name: str) -> sa.Column[str]:

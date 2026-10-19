@@ -2,18 +2,89 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
+from typing import Any
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import Receive, Scope, Send
 
 from . import __version__, api_admin, api_openai
 from .auth import ApiKeyMiddleware
 from .config import Settings
 from .db import Database
 from .errors import SemulaError
-from .mcp_server import build_mcp
 from .service import Service
+
+MCP_READY_TIMEOUT = 30.0
+
+
+class LazyMcp:
+    """The MCP app at ``/mcp``, built after startup.
+
+    Importing fastmcp is the largest single cost of starting the server (about 0.8 s) and
+    replay never needs it. So the server comes up first, and this builds the MCP app in the
+    background; a request to ``/mcp`` waits for it. One task enters and leaves the MCP app's
+    lifespan, as its task group requires.
+    """
+
+    def __init__(self, service: Service) -> None:
+        self._service = service
+        self._ready = asyncio.Event()
+        self._stop = asyncio.Event()
+        self._app: Any = None
+        self._started = False
+
+    def _build(self) -> Any:
+        from .mcp_server import build_mcp
+
+        return build_mcp(self._service).http_app(path="/")
+
+    async def run(self, parent: FastAPI) -> None:
+        self._started = True
+        try:
+            app = await asyncio.to_thread(self._build)
+            async with app.lifespan(parent):
+                self._app = app
+                self._ready.set()
+                await self._stop.wait()
+        except Exception:  # leave /mcp answering 503 rather than hanging
+            logging.getLogger("semula").exception("The MCP endpoint failed to start.")
+        finally:
+            self._ready.set()
+
+    async def stop(self) -> None:
+        self._stop.set()
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if self._started:
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self._ready.wait(), MCP_READY_TIMEOUT)
+        if self._app is None:
+            body = json.dumps(
+                SemulaError(
+                    503,
+                    "mcp_unavailable",
+                    "The MCP endpoint is not ready.",
+                    err_type="server_error",
+                ).body()
+            ).encode()
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 503,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
+        await self._app(scope, receive, send)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -21,8 +92,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     db = Database(settings.resolved_database_url)
     service = Service(db, settings)
     service.sync_index()
-    mcp_app = build_mcp(service).http_app(path="/")
-    app = FastAPI(title="semula", version=__version__, lifespan=mcp_app.lifespan)
+    mcp = LazyMcp(service)
+
+    @asynccontextmanager
+    async def lifespan(parent: FastAPI) -> AsyncIterator[None]:
+        task = asyncio.create_task(mcp.run(parent))
+        try:
+            yield
+        finally:
+            await mcp.stop()
+            await task
+
+    app = FastAPI(title="semula", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.db = db
     app.state.service = service
@@ -61,7 +142,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(api_openai.router)
     app.include_router(api_admin.router)
-    app.mount("/mcp", mcp_app)
+    app.mount("/mcp", mcp)
     if settings.api_key:
         app.add_middleware(ApiKeyMiddleware, key=settings.api_key)
     return app

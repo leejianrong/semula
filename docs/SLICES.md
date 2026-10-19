@@ -1,6 +1,6 @@
 # semula: Slices
 
-Vertical increments, headless first. **The live source of status is Pandan board `SEM` (board 39).** This file is a snapshot of it, regenerated 2026-10-20: 39 of 61 stories done. Slice SEM-E2 confronted the riskiest mechanism: parking a call and answering it from a coding agent.
+Vertical increments, headless first. **The live source of status is Pandan board `SEM` (board 39).** This file is a snapshot of it, regenerated 2026-10-20: 45 of 61 stories done. Slice SEM-E2 confronted the riskiest mechanism: parking a call and answering it from a coding agent.
 
 Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). Cards marked ✔ are done and merged to `main`.
 
@@ -391,7 +391,7 @@ Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). C
 - [x] Approved prompt hits next time
 - [x] Rejected pair never reappears
 
-## SEM-E7 · Observable, exportable, shippable container (0/6)
+## SEM-E7 · Observable, exportable, shippable container (6/6)
 
 **Goal** — Operators can see what happened, take cassettes into git, and ship a small image.
 
@@ -399,65 +399,65 @@ Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). C
 
 **Not in scope** — Hosted deployment.
 
-### · SEM-34 · Record every call in the call log with retention (2 pts)
+### ✔ SEM-34 · Record every call in the call log with retention (2 pts)
 
 **Why** — You cannot debug what you did not log.
 
 **Do** — Row per call: time, project, mode, tier, score, latency, entry id; prune at 30 days or 50k rows.
 
 **Acceptance**
-- [ ] Retention enforced by a test
-- [ ] No Authorization header stored
+- [x] Retention enforced by a test
+- [x] No Authorization header stored
 
-### · SEM-35 · Add an in-process event bus and SSE log tail (3 pts)
+### ✔ SEM-35 · Add an in-process event bus and SSE log tail (3 pts)
 
 **Why** — Live views and CLI tail need a stream.
 
 **Do** — Publish call events; GET /api/v1/log/stream; semula tail.
 
 **Acceptance**
-- [ ] Tail shows a call within 1 s
-- [ ] Slow consumers do not block the proxy
+- [x] Tail shows a call within 1 s
+- [x] Slow consumers do not block the proxy
 
-### · SEM-36 · Redact headers and listed patterns before storage (3 pts)
+### ✔ SEM-36 · Redact headers and listed patterns before storage (3 pts)
 
 **Why** — Recorded prompts can contain secrets.
 
 **Do** — Drop sensitive headers; apply configurable regex redaction to stored requests.
 
 **Acceptance**
-- [ ] Listed pattern never appears in the database
-- [ ] Redaction does not alter the fingerprint of the live request
+- [x] Listed pattern never appears in the database
+- [x] Redaction does not alter the fingerprint of the live request
 
-### · SEM-37 · Export and import a project as files (5 pts)
+### ✔ SEM-37 · Export and import a project as files (5 pts)
 
 **Why** — Cassettes should be committed to git and diffed.
 
 **Do** — Directory of JSON/YAML with format: semula/1 and ULIDs preserved.
 
 **Acceptance**
-- [ ] Round trip is lossless
-- [ ] Re-import is idempotent
+- [x] Round trip is lossless
+- [x] Re-import is idempotent
 
-### · SEM-38 · Slim the image and document the volume (3 pts)
+### ✔ SEM-38 · Slim the image and document the volume (3 pts)
 
 **Why** — Local tool must be quick to pull and run.
 
 **Do** — Multi-stage build, non-root user, /data volume, compose example.
 
 **Acceptance**
-- [ ] Image under 350 MB
-- [ ] Cold start under 2 s
+- [x] Image under 350 MB
+- [x] Cold start under 2 s
 
-### · SEM-39 · Benchmark replay latency (3 pts)
+### ✔ SEM-39 · Benchmark replay latency (3 pts)
 
 **Why** — Success numbers must be measured.
 
 **Do** — Benchmark script over a 1k-entry project; wire into CI as a budget.
 
 **Acceptance**
-- [ ] p95 under 15 ms without embeddings
-- [ ] CI fails if the budget is exceeded
+- [x] p95 under 15 ms without embeddings
+- [x] CI fails if the budget is exceeded
 
 ## SEM-E8 · Optional semantic matching (0/3)
 

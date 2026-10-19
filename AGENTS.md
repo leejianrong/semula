@@ -14,7 +14,7 @@ Cut LLM API cost in dev and test by turning a coding-agent subscription into a r
 
 - Setup: `uv sync --extra dev` (or `make setup`), then `make hooks` once.
 - Gate before pushing: `make check` (ruff, mypy strict, fast tests). `make help` lists everything.
-- Fast layer = tests marked `unit` or `integration`: no network, no Docker, temp SQLite only. `e2e` boots the real container and runs in CI only. Never let a slow test into the fast layer.
+- Fast layer = tests marked `unit` or `integration`: no network, no Docker, temp SQLite only. `e2e` boots the real container and runs in CI only. Never let a slow test into the fast layer. `perf` (`make bench`) holds the replay latency budget and `make image-check` the image budgets (Docker); both run as their own CI jobs.
 - Work is tracked on Pandan board **SEM** (board 39, use the `pandan` skill). Pick a card, branch per slice off fresh `main`, land via PR with green CI. No direct pushes to `main`.
 - Every bug or flake gets a failing test first, then the fix.
 - All surfaces (REST, CLI, MCP, dashboard) call one service layer; never write the database from a surface (ADR-0005).
