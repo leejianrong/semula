@@ -1,3 +1,5 @@
+import re
+
 import httpx
 import pytest
 
@@ -205,3 +207,49 @@ async def test_streaming_uses_the_selected_response(record: httpx.AsyncClient) -
         json.loads(line[6:])["choices"][0]["delta"].get("content") or "" for line in lines[:-1]
     )
     assert text == "two"
+
+
+# --- templating (SEM-22) --------------------------------------------------------------
+
+
+async def test_templates_expand_fresh_on_every_replay(record: httpx.AsyncClient) -> None:
+    await record_answer(
+        record, chat("tpl"), {"content": "run {{uuid}} at {{now}} on {{request.model}} {{keep}}"}
+    )
+    first = await content_of(record, "tpl")
+    second = await content_of(record, "tpl")
+    assert first != second
+    assert first.endswith("on gpt-test {{keep}}")
+    # the stored answer keeps the template, so editing later still sees it
+    listed = (await record.get("/api/v1/projects/default/entries")).json()["entries"][0]
+    stored = (await record.get(f"/api/v1/entries/{listed['id']}")).json()["responses"][0]
+    assert "{{uuid}}" in stored["message"]["content"]
+
+
+async def test_templates_expand_in_streams_and_tool_arguments(record: httpx.AsyncClient) -> None:
+    import json
+
+    answer = {
+        "message": {
+            "content": None,
+            "tool_calls": [{"function": {"name": "log", "arguments": '{"id":"{{uuid}}"}'}}],
+        }
+    }
+    await record_answer(record, chat("tool tpl", tools=[LOG_TOOL]), answer)
+    resp = await record.post("/v1/chat/completions", json=chat("tool tpl", tools=[LOG_TOOL]))
+    args = json.loads(
+        resp.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+    )
+    assert re.fullmatch(r"[0-9a-f-]{36}", args["id"])
+
+    async with record.stream(
+        "POST", "/v1/chat/completions", json=chat("tool tpl", tools=[LOG_TOOL], stream=True)
+    ) as streamed:
+        raw = "".join([line async for line in streamed.aiter_lines()])
+    assert "{{uuid}}" not in raw
+
+
+LOG_TOOL = {
+    "type": "function",
+    "function": {"name": "log", "parameters": {"type": "object", "properties": {"id": {}}}},
+}

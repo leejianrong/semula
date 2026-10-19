@@ -14,6 +14,7 @@ from .errors import SemulaError
 from .responses import build_completion
 from .service import Service
 from .streaming import sse_events
+from .templating import expand_stored
 
 router = APIRouter(prefix="/v1")
 
@@ -72,6 +73,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
 def _respond(
     service: Service, body: dict[str, Any], stored: dict[str, Any], model: str
 ) -> JSONResponse | StreamingResponse:
+    stored = expand_stored(stored, model)
     if not body.get("stream"):
         return JSONResponse(build_completion(stored, model))
     options = body.get("stream_options")
