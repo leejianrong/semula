@@ -17,6 +17,7 @@ import httpx
 import pytest
 
 from semula.cli import main
+from tests.support.db import fresh_database_url
 from tests.support.server import running_server
 
 openai = pytest.importorskip("openai")
@@ -47,8 +48,9 @@ def client(url: str) -> openai.OpenAI:
 
 def test_record_once_then_replay_offline(tmp_path: Path, block_outbound: None) -> None:
     data = tmp_path / "data"
+    database_url = fresh_database_url(data)  # one database for both server runs
 
-    with running_server(data, mode="record", record_timeout=20.0) as url:
+    with running_server(data, database_url=database_url, mode="record", record_timeout=20.0) as url:
         answered = threading.Event()
 
         def agent() -> None:
@@ -67,7 +69,7 @@ def test_record_once_then_replay_offline(tmp_path: Path, block_outbound: None) -
         assert answered.wait(5)
         assert recorded.choices[0].message.content == "One line."
 
-    with running_server(data, mode="replay") as url:
+    with running_server(data, database_url=database_url, mode="replay") as url:
         sdk = client(url)
         started = time.perf_counter()
         replayed = sdk.chat.completions.create(model="another-model", messages=PROMPT)
