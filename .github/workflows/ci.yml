@@ -71,6 +71,32 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: uv run pip-audit
 
+  # The same suites on Postgres (ADR-0009). Each test gets a private schema.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: pw
+          POSTGRES_DB: semula
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d semula"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      SEMULA_TEST_DATABASE_URL: postgresql://postgres:pw@localhost:5432/semula
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev --extra e2e
+      - run: uv run pytest -m "unit or integration or e2e" -q
+
   # Heavy layer: the real app over loopback driven by the OpenAI SDK, network blocked.
   e2e:
     runs-on: ubuntu-latest

@@ -26,3 +26,10 @@ def _close_databases(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
     for db in opened:
         db.close()
+
+
+def pytest_report_header(config: pytest.Config) -> str:
+    import os
+
+    url = os.environ.get("SEMULA_TEST_DATABASE_URL")
+    return f"semula test database: {'postgresql' if url else 'sqlite'}"

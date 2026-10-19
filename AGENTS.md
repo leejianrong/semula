@@ -18,6 +18,7 @@ Cut LLM API cost in dev and test by turning a coding-agent subscription into a r
 - Work is tracked on Pandan board **SEM** (board 39, use the `pandan` skill). Pick a card, branch per slice off fresh `main`, land via PR with green CI. No direct pushes to `main`.
 - Every bug or flake gets a failing test first, then the fix.
 - All surfaces (REST, CLI, MCP, dashboard) call one service layer; never write the database from a surface (ADR-0005).
+- Database: SQLAlchemy Core + Alembic, SQLite locally and Postgres hosted (ADR-0009). Change `schema.py` and add an Alembic revision together (a test fails if they drift); no raw SQL in the service; keep handlers non-blocking. `make test-postgres` runs everything on Postgres (needs Docker).
 - Add a runtime dependency only in the slice that first needs it, and check its licence and offline behaviour.
 - Never commit secrets, `.env`, or a `data/` directory. Recorded prompts can contain secrets, so never put real recordings in fixtures.
 - The dashboard is built on indah (`/home/jian/projects/abang-ai/indah`) after the headless core. Needs for indah go in `docs/INDAH-REQUESTS-PROMPT.md`; do not file indah cards without asking.

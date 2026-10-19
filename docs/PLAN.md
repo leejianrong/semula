@@ -70,7 +70,7 @@ Agents and humans share one write path. When they conflict, the human wins: a hu
 | S1 | One process, one port: `/v1` LLM API, `/api/v1` admin, `/mcp`, later `/ui`. | 0001 |
 | S2 | Record queue: a miss writes a `pending` row; the HTTP call waits up to `record_timeout`; an answer (validated) releases it and saves an entry; a late answer is still saved. | 0002 |
 | S3 | Matcher cascade: exact fingerprint, then normalised fingerprint, then BM25 (FTS5). Weak candidates enter the review queue. Embeddings are an optional tier that only feeds review by default. | 0003, 0007 |
-| S4 | Storage: SQLite (WAL) with numbered migrations and `workspace_id` on every table. Export/import to files carrying ULIDs. | 0004 |
+| S4 | Storage: SQLAlchemy Core over SQLite locally and Postgres when hosted, Alembic migrations, `workspace_id` on every table. Export/import to files carrying ULIDs. | 0004, 0009 |
 | S5 | One service layer; REST, CLI, MCP and the dashboard are thin callers. Optimistic concurrency with entry versions. | 0005 |
 | S6 | Streaming: store the assembled message plus chunk boundaries when recorded from a stream; replay by re-chunking or verbatim. | 0008 |
 | S7 | Dashboard: indah mounted at `/ui`, designed freely, gaps fed back to indah. | 0006 |
@@ -109,7 +109,7 @@ Agents and humans share one write path. When they conflict, the human wins: a hu
 - **Concurrency.** Writes carry the expected entry version; a stale write is a 409 with the current entry. Pinned entries reject agent writes unless forced.
 - **Security.** Local mode binds loopback by default, no auth, optional `SEMULA_API_KEY`. Authorization headers are never stored. Stored request bodies pass a configurable redaction step because recorded prompts can hold secrets.
 - **Dependencies.** FastAPI, Uvicorn, FastMCP, SQLite FTS5, optional `fastembed`, indah for the dashboard. Go and PyTorch were rejected (ADR-0001).
-- **Versioning.** Migrations from day one; export files carry `format: semula/1`.
+- **Versioning.** Alembic migrations from day one; export files carry `format: semula/1`.
 
 ## indah readiness for the dashboard
 

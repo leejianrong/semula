@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-19
 - Deciders: Jian (owner)
+- Amended by: [ADR-0009](0009-sqlalchemy-core-alembic-postgres-path.md) (SQLAlchemy Core, Alembic and the Postgres path)
 
 ## Context
 
