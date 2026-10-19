@@ -2,7 +2,7 @@
 
 **A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
 
-> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing and pinning work too. MCP, fuzzy matching and the dashboard are still to come. Follow progress on the [slices](docs/SLICES.md).
+> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing, pinning, an MCP server and a full CLI work too. Fuzzy matching and the dashboard are still to come. Follow progress on the [slices](docs/SLICES.md).
 
 ```mermaid
 flowchart LR
@@ -55,6 +55,18 @@ curl -H 'X-Semula-Project: my-app' http://127.0.0.1:8080/v1/chat/completions ...
 ```
 
 Entries can hold several responses (`selection`: `first`, `sequence` or `cycle`), be edited with optimistic versions (a stale write gets a 409 with the current entry), and be pinned so an agent cannot overwrite a human fix. Responses may contain `{{now}}`, `{{uuid}}` and `{{request.model}}`, expanded fresh on every replay. Per-project matching settings (`tail_n`, `scrub_patterns`, `include_params`, `models`, `record_timeout`) are set with `PATCH /api/v1/projects/<id>`; `GET` shows the defaults.
+
+### Let your coding agent drive it
+
+semula serves MCP at `/mcp/` (streamable HTTP) and as a stdio server (`semula mcp`). With Claude Code:
+
+```bash
+claude mcp add --transport http semula http://127.0.0.1:8080/mcp/
+```
+
+The agent then lists parked calls, answers them, pre-records entries, edits and pins, and checks matches with `test_match`. The loop, answer formats and error handling are in the [agent playbook](docs/agents/PLAYBOOK.md); a ready-made Claude Code skill is in [`docs/agents/claude-code-skill/`](docs/agents/claude-code-skill/SKILL.md). Every CLI command takes `--json`; exit codes are `0` ok, `1` unreachable, `2` usage, `3` not found, `4` rejected, `5` authentication.
+
+To protect a server that is reachable beyond localhost, set `SEMULA_API_KEY`. `/v1`, `/api` and `/mcp` then require `Authorization: Bearer <key>` (or `X-API-Key`); `/health` stays open. The CLI reads the key from the same environment variable.
 
 Or run the container: `make docker` (Docker; picks the first free port from 8080).
 

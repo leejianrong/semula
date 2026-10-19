@@ -11,10 +11,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from . import canonical
 from .canonical import (
     CanonicalRequest,
     exact_fingerprint,
     normalised_fingerprint,
+    scrub,
 )
 from .config import Settings
 from .db import DEFAULT_PROJECT, DEFAULT_WORKSPACE, Database
@@ -41,6 +43,18 @@ class Service:
         self.db = db
         self.settings = settings
         self._waiters: dict[str, asyncio.Event] = {}
+        self.mode: str = settings.mode
+
+    # --- mode -----------------------------------------------------------------------
+    def set_mode(self, mode: str) -> str:
+        """Switch between replay and record at runtime. Not persisted: a restart returns to
+        ``SEMULA_MODE``."""
+        if mode not in ("replay", "record"):
+            raise SemulaError(
+                422, "invalid_mode", "mode must be 'replay' or 'record'.", param="mode"
+            )
+        self.mode = mode
+        return mode
 
     # --- projects -----------------------------------------------------------------
     def create_project(self, slug: str, name: str | None = None) -> dict[str, Any]:
@@ -215,6 +229,66 @@ class Service:
             "entries": [_entry_view(r, full=False) for r in rows],
         }
 
+    def upsert_entry(
+        self,
+        project: str,
+        request_body: dict[str, Any],
+        response: Any,
+        *,
+        version: int | None = None,
+        actor: str = "agent",
+        force: bool = False,
+    ) -> tuple[dict[str, Any], bool]:
+        """Author an entry without waiting for a miss. Returns (entry, created).
+
+        If an entry already matches this request, the caller must pass its current
+        ``version``; the response then replaces the entry's responses.
+        """
+        self.require_project(project)
+        if not isinstance(request_body.get("messages"), list):
+            raise SemulaError(
+                422, "invalid_request", "The request needs a 'messages' list.", param="request"
+            )
+        req = CanonicalRequest.from_json(canonical.from_openai(request_body).to_json())
+        config = self.project_settings(project).fingerprint_config()
+        fp = normalised_fingerprint(req, config)
+        existing = self.db.query_one(
+            "SELECT id FROM entry WHERE workspace_id=? AND project_id=? AND fingerprint=? "
+            "ORDER BY created_at LIMIT 1",
+            (DEFAULT_WORKSPACE, project, fp),
+        )
+        if existing:
+            if version is None:
+                raise SemulaError(
+                    409,
+                    "entry_exists",
+                    f"An entry already matches this request ({existing['id']}). "
+                    "Pass its current 'version' to replace its response.",
+                    param="version",
+                    extra={"current": self.get_entry(existing["id"])},
+                )
+            entry = self.update_entry(
+                existing["id"], version, {"response": response}, actor=actor, force=force
+            )
+            return entry, False
+        stored = parse_answer(response)
+        validate_tool_calls(stored, req.tools)
+        entry_id = new_ulid()
+        self.db.execute(
+            "INSERT INTO entry (id, workspace_id, project_id, fingerprint, exact_fingerprint, "
+            "canonical_request, responses) VALUES (?,?,?,?,?,?,?)",
+            (
+                entry_id,
+                DEFAULT_WORKSPACE,
+                project,
+                fp,
+                exact_fingerprint(req, config),
+                req.to_json(),
+                json.dumps([stored]),
+            ),
+        )
+        return self.get_entry(entry_id), True
+
     def get_entry(self, entry_id: str) -> dict[str, Any]:
         return _entry_view(self._entry_row(entry_id), full=True)
 
@@ -343,8 +417,56 @@ class Service:
         self.db.execute(
             "INSERT INTO call_log (workspace_id, project_id, mode, outcome, entry_id) "
             "VALUES (?,?,?,?,?)",
-            (row["workspace_id"], row["project_id"], self.settings.mode, outcome, row["id"]),
+            (row["workspace_id"], row["project_id"], self.mode, outcome, row["id"]),
         )
+
+    def nearest(self, req: CanonicalRequest, project: str) -> dict[str, Any] | None:
+        """The most similar recorded entry, by word overlap. For humans and agents to debug a
+        miss; it never serves an answer."""
+        wanted = _tokens(req)
+        if not wanted:
+            return None
+        best: tuple[float, Any] | None = None
+        rows = self.db.query(
+            "SELECT id, canonical_request FROM entry WHERE workspace_id=? AND project_id=? "
+            "LIMIT 5000",
+            (DEFAULT_WORKSPACE, project),
+        )
+        for row in rows:
+            other = _tokens(CanonicalRequest.from_json(row["canonical_request"]))
+            if not other:
+                continue
+            score = len(wanted & other) / len(wanted | other)
+            if score > 0 and (best is None or score > best[0]):
+                best = (score, row)
+        if best is None:
+            return None
+        score, row = best
+        last = CanonicalRequest.from_json(row["canonical_request"]).messages[-1]["content"]
+        return {"entry_id": row["id"], "score": round(score, 3), "last_message": last[:200]}
+
+    def test_match(self, req: CanonicalRequest, project: str) -> dict[str, Any]:
+        """What would happen to this request right now, without serving, logging or counting."""
+        self.require_project(project)
+        match = self.find(req, project)
+        config = self.project_settings(project).fingerprint_config()
+        out: dict[str, Any] = {
+            "project": project,
+            "mode": self.mode,
+            "matched": match is not None,
+            "tier": match.tier if match else None,
+            "entry_id": match.entry_id if match else None,
+            "score": 1.0 if match else None,
+            "fingerprint": normalised_fingerprint(req, config),
+            "nearest": None if match else self.nearest(req, project),
+        }
+        if match:
+            out["would"] = "serve"
+            content = match.stored["message"].get("content") or ""
+            out["response_preview"] = content[:200]
+        else:
+            out["would"] = "park" if self.mode == "record" else "no_match_error"
+        return out
 
     def record_hit(self, entry_id: str) -> None:
         self.db.execute("UPDATE entry SET hit_count = hit_count + 1 WHERE id=?", (entry_id,))
@@ -466,7 +588,7 @@ class Service:
             (
                 DEFAULT_WORKSPACE,
                 project,
-                self.settings.mode,
+                self.mode,
                 outcome,
                 tier,
                 (time.perf_counter() - started) * 1000,
@@ -474,6 +596,11 @@ class Service:
                 pending_id,
             ),
         )
+
+
+def _tokens(req: CanonicalRequest) -> set[str]:
+    text = " ".join(m["content"] for m in req.messages if isinstance(m.get("content"), str))
+    return set(re.findall(r"\w+", scrub(text).lower()))
 
 
 def _pick(selection: str, served: int, count: int) -> int:

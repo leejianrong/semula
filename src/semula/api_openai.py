@@ -45,13 +45,14 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
         service.log_call("hit", started, tier=match.tier, entry_id=match.entry_id, project=project)
         return _respond(service, body, match.stored, model)
 
-    if service.settings.mode == "replay":
+    if service.mode == "replay":
         service.log_call("miss", started, project=project)
         raise SemulaError(
             424,
             "semula_no_match",
             "No recorded answer matches this request, and semula is in replay mode.",
             err_type="semula_error",
+            extra={"nearest": service.nearest(req, project)},
         )
 
     pending_id = service.open_pending(req, project)

@@ -8,19 +8,23 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__, api_admin, api_openai
+from .auth import ApiKeyMiddleware
 from .config import Settings
 from .db import Database
 from .errors import SemulaError
+from .mcp_server import build_mcp
 from .service import Service
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     db = Database(settings.db_path)
-    app = FastAPI(title="semula", version=__version__)
+    service = Service(db, settings)
+    mcp_app = build_mcp(service).http_app(path="/")
+    app = FastAPI(title="semula", version=__version__, lifespan=mcp_app.lifespan)
     app.state.settings = settings
     app.state.db = db
-    app.state.service = Service(db, settings)
+    app.state.service = service
 
     @app.exception_handler(SemulaError)
     async def _semula_error(_: Request, exc: SemulaError) -> JSONResponse:
@@ -52,8 +56,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "version": __version__, "mode": settings.mode}
+        return {"status": "ok", "version": __version__, "mode": app.state.service.mode}
 
     app.include_router(api_openai.router)
     app.include_router(api_admin.router)
+    app.mount("/mcp", mcp_app)
+    if settings.api_key:
+        app.add_middleware(ApiKeyMiddleware, key=settings.api_key)
     return app
