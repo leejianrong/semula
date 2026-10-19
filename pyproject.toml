@@ -23,7 +23,14 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 # Runtime dependencies are added by the slice that first needs them (ADR-0001).
-dependencies = []
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+semula = "semula.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/leejianrong/semula"
@@ -34,10 +41,10 @@ Issues = "https://github.com/leejianrong/semula/issues"
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
-    "httpx>=0.27",
     "ruff>=0.6",
     "mypy>=1.11",
     "pip-audit>=2.7",
+    "openai>=1.50",
 ]
 
 [tool.hatch.build.targets.wheel]
