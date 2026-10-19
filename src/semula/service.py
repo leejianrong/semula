@@ -5,11 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
 
+import sqlalchemy as sa
 from pydantic import ValidationError
+from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
+from starlette.concurrency import run_in_threadpool
 
 from . import canonical
 from .canonical import (
@@ -19,11 +24,16 @@ from .canonical import (
     scrub,
 )
 from .config import Settings
-from .db import DEFAULT_PROJECT, DEFAULT_WORKSPACE, Database
+from .db import Database
 from .errors import SemulaError
 from .ids import new_ulid
 from .project_settings import FINGERPRINT_FIELDS, ProjectSettings
 from .responses import parse_answer, validate_tool_calls
+from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE, now_iso
+from .schema import call_log as L
+from .schema import entry as E
+from .schema import pending as Q
+from .schema import project as P
 
 _SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 
@@ -42,7 +52,10 @@ class Service:
     def __init__(self, db: Database, settings: Settings) -> None:
         self.db = db
         self.settings = settings
-        self._waiters: dict[str, asyncio.Event] = {}
+        # Held calls waiting on an answer: pending id -> [(their event loop, their event)].
+        # Answers arrive on worker threads, so waking a waiter must go through its loop.
+        self._waiters: dict[str, list[tuple[asyncio.AbstractEventLoop, asyncio.Event]]] = {}
+        self._waiters_lock = threading.Lock()
         self.mode: str = settings.mode
 
     # --- mode -----------------------------------------------------------------------
@@ -66,25 +79,40 @@ class Service:
                 "starting with a letter or digit.",
                 param="id",
             )
-        if self.db.query_one(
-            "SELECT 1 FROM project WHERE workspace_id=? AND id=?", (DEFAULT_WORKSPACE, slug)
-        ):
+        if self.db.one(sa.select(P.c.id).where(*_pk(P, slug))):
             raise SemulaError(409, "project_exists", f"Project '{slug}' already exists.")
         self.db.execute(
-            "INSERT INTO project (workspace_id, id, name) VALUES (?,?,?)",
-            (DEFAULT_WORKSPACE, slug, name or slug),
+            sa.insert(P).values(workspace_id=DEFAULT_WORKSPACE, id=slug, name=name or slug)
         )
         return self.get_project(slug)
 
     def list_projects(self) -> list[dict[str, Any]]:
-        rows = self.db.query(
-            "SELECT p.id, p.name, p.created_at, "
-            "(SELECT COUNT(*) FROM entry e WHERE e.workspace_id=p.workspace_id "
-            " AND e.project_id=p.id) AS entries, "
-            "(SELECT COUNT(*) FROM pending q WHERE q.workspace_id=p.workspace_id "
-            " AND q.project_id=p.id AND q.status='pending') AS pending "
-            "FROM project p WHERE p.workspace_id=? ORDER BY p.id",
-            (DEFAULT_WORKSPACE,),
+        entries = (
+            sa.select(sa.func.count())
+            .select_from(E)
+            .where(E.c.workspace_id == P.c.workspace_id, E.c.project_id == P.c.id)
+            .scalar_subquery()
+        )
+        parked = (
+            sa.select(sa.func.count())
+            .select_from(Q)
+            .where(
+                Q.c.workspace_id == P.c.workspace_id,
+                Q.c.project_id == P.c.id,
+                Q.c.status == "pending",
+            )
+            .scalar_subquery()
+        )
+        rows = self.db.rows(
+            sa.select(
+                P.c.id,
+                P.c.name,
+                P.c.created_at,
+                entries.label("entries"),
+                parked.label("pending"),
+            )
+            .where(P.c.workspace_id == DEFAULT_WORKSPACE)
+            .order_by(P.c.id)
         )
         return [dict(r) for r in rows]
 
@@ -100,9 +128,7 @@ class Service:
         return slug
 
     def project_settings(self, slug: str) -> ProjectSettings:
-        row = self.db.query_one(
-            "SELECT settings FROM project WHERE workspace_id=? AND id=?", (DEFAULT_WORKSPACE, slug)
-        )
+        row = self.db.one(sa.select(P.c.settings).where(*_pk(P, slug)))
         if not row:
             raise SemulaError(404, "project_not_found", f"No project '{slug}'.", param="project")
         return ProjectSettings.model_validate(json.loads(row["settings"]))
@@ -113,10 +139,7 @@ class Service:
         """Rename and/or patch settings. A ``null`` value resets that setting to its default."""
         before = self.project_settings(slug)
         if name:
-            self.db.execute(
-                "UPDATE project SET name=? WHERE workspace_id=? AND id=?",
-                (name, DEFAULT_WORKSPACE, slug),
-            )
+            self.db.execute(sa.update(P).where(*_pk(P, slug)).values(name=name))
         if settings:
             merged = before.model_dump(exclude_defaults=True)
             for key, value in settings.items():
@@ -132,53 +155,55 @@ class Service:
                 raise SemulaError(
                     422, "invalid_settings", str(first["msg"]), param=f"settings.{where}"
                 ) from exc
-            self.db.execute(
-                "UPDATE project SET settings=? WHERE workspace_id=? AND id=?",
-                (after.model_dump_json(exclude_defaults=True), DEFAULT_WORKSPACE, slug),
-            )
-            if any(getattr(before, f) != getattr(after, f) for f in FINGERPRINT_FIELDS):
-                self._rekey(slug, after)
+            with self.db.begin() as conn:
+                self.db.execute(
+                    sa.update(P)
+                    .where(*_pk(P, slug))
+                    .values(settings=after.model_dump_json(exclude_defaults=True)),
+                    conn,
+                )
+                if any(getattr(before, f) != getattr(after, f) for f in FINGERPRINT_FIELDS):
+                    self._rekey(slug, after, conn)
         return self.get_project(slug)
 
-    def _rekey(self, slug: str, settings: ProjectSettings) -> None:
+    def _rekey(self, slug: str, settings: ProjectSettings, conn: Connection) -> None:
         """Recompute fingerprints after a matching setting changed, from stored requests."""
         config = settings.fingerprint_config()
-        for table in ("entry", "pending"):
-            rows = self.db.query(
-                f"SELECT id, canonical_request FROM {table} WHERE workspace_id=? AND project_id=?",  # noqa: S608
-                (DEFAULT_WORKSPACE, slug),
+        for table in (E, Q):
+            rows = self.db.rows(
+                sa.select(table.c.id, table.c.canonical_request).where(
+                    table.c.workspace_id == DEFAULT_WORKSPACE, table.c.project_id == slug
+                ),
+                conn,
             )
             for row in rows:
                 req = CanonicalRequest.from_json(row["canonical_request"])
                 self.db.execute(
-                    f"UPDATE {table} SET fingerprint=?, exact_fingerprint=? WHERE id=?",  # noqa: S608
-                    (
-                        normalised_fingerprint(req, config),
-                        exact_fingerprint(req, config),
-                        row["id"],
+                    sa.update(table)
+                    .where(table.c.id == row["id"])
+                    .values(
+                        fingerprint=normalised_fingerprint(req, config),
+                        exact_fingerprint=exact_fingerprint(req, config),
                     ),
+                    conn,
                 )
 
     def delete_project(self, slug: str) -> None:
         self.require_project(slug)
         if slug == DEFAULT_PROJECT:
             raise SemulaError(409, "default_project", "The default project cannot be deleted.")
-        for pid in [
-            r["id"]
-            for r in self.db.query(
-                "SELECT id FROM pending WHERE workspace_id=? AND project_id=?",
-                (DEFAULT_WORKSPACE, slug),
+        parked = self.db.rows(
+            sa.select(Q.c.id).where(Q.c.workspace_id == DEFAULT_WORKSPACE, Q.c.project_id == slug)
+        )
+        with self.db.begin() as conn:
+            # entry and pending rows go with the project (ON DELETE CASCADE); call_log has no FK
+            self.db.execute(
+                sa.delete(L).where(L.c.workspace_id == DEFAULT_WORKSPACE, L.c.project_id == slug),
+                conn,
             )
-        ]:
-            event = self._waiters.pop(pid, None)
-            if event:
-                event.set()  # release held calls; they will find no answer and time out cleanly
-        self.db.execute(
-            "DELETE FROM call_log WHERE workspace_id=? AND project_id=?", (DEFAULT_WORKSPACE, slug)
-        )
-        self.db.execute(
-            "DELETE FROM project WHERE workspace_id=? AND id=?", (DEFAULT_WORKSPACE, slug)
-        )
+            self.db.execute(sa.delete(P).where(*_pk(P, slug)), conn)
+        for row in parked:
+            self._release(row["id"])  # held calls find no answer and time out cleanly
 
     # --- models -----------------------------------------------------------------
     def list_models(self, project: str = DEFAULT_PROJECT) -> list[str]:
@@ -193,13 +218,18 @@ class Service:
     def find(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> Match | None:
         config = self.project_settings(project).fingerprint_config()
         for tier, column, fp in (
-            ("exact", "exact_fingerprint", exact_fingerprint(req, config)),
-            ("normalised", "fingerprint", normalised_fingerprint(req, config)),
+            ("exact", E.c.exact_fingerprint, exact_fingerprint(req, config)),
+            ("normalised", E.c.fingerprint, normalised_fingerprint(req, config)),
         ):
-            row = self.db.query_one(
-                "SELECT id, responses, selection, hit_count FROM entry "  # noqa: S608
-                f"WHERE workspace_id=? AND project_id=? AND {column}=? ORDER BY created_at LIMIT 1",
-                (DEFAULT_WORKSPACE, project, fp),
+            row = self.db.one(
+                sa.select(E.c.id, E.c.responses, E.c.selection, E.c.hit_count)
+                .where(
+                    E.c.workspace_id == DEFAULT_WORKSPACE,
+                    E.c.project_id == project,
+                    column == fp,
+                )
+                .order_by(E.c.created_at, E.c.id)
+                .limit(1)
             )
             if row:
                 responses = json.loads(row["responses"])
@@ -213,16 +243,17 @@ class Service:
     ) -> dict[str, Any]:
         """A lean projection: no request or response bodies, cheap for agents to scan."""
         self.require_project(project)
-        where, params = "workspace_id=? AND project_id=?", [DEFAULT_WORKSPACE, project]
+        conditions = [E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == project]
         if q:
-            where += " AND canonical_request LIKE ? ESCAPE '\\'"
-            params.append(
-                "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-            )
-        total = self.db.query_one(f"SELECT COUNT(*) AS n FROM entry WHERE {where}", params)  # noqa: S608
-        rows = self.db.query(
-            f"SELECT * FROM entry WHERE {where} ORDER BY id LIMIT ? OFFSET ?",  # noqa: S608
-            [*params, max(1, min(limit, 500)), max(0, offset)],
+            escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            conditions.append(E.c.canonical_request.ilike(f"%{escaped}%", escape="\\"))
+        total = self.db.one(sa.select(sa.func.count().label("n")).select_from(E).where(*conditions))
+        rows = self.db.rows(
+            sa.select(E)
+            .where(*conditions)
+            .order_by(E.c.id)
+            .limit(max(1, min(limit, 500)))
+            .offset(max(0, offset))
         )
         return {
             "total": int(total["n"]) if total else 0,
@@ -252,10 +283,15 @@ class Service:
         req = CanonicalRequest.from_json(canonical.from_openai(request_body).to_json())
         config = self.project_settings(project).fingerprint_config()
         fp = normalised_fingerprint(req, config)
-        existing = self.db.query_one(
-            "SELECT id FROM entry WHERE workspace_id=? AND project_id=? AND fingerprint=? "
-            "ORDER BY created_at LIMIT 1",
-            (DEFAULT_WORKSPACE, project, fp),
+        existing = self.db.one(
+            sa.select(E.c.id)
+            .where(
+                E.c.workspace_id == DEFAULT_WORKSPACE,
+                E.c.project_id == project,
+                E.c.fingerprint == fp,
+            )
+            .order_by(E.c.created_at, E.c.id)
+            .limit(1)
         )
         if existing:
             if version is None:
@@ -275,17 +311,15 @@ class Service:
         validate_tool_calls(stored, req.tools)
         entry_id = new_ulid()
         self.db.execute(
-            "INSERT INTO entry (id, workspace_id, project_id, fingerprint, exact_fingerprint, "
-            "canonical_request, responses) VALUES (?,?,?,?,?,?,?)",
-            (
-                entry_id,
-                DEFAULT_WORKSPACE,
-                project,
-                fp,
-                exact_fingerprint(req, config),
-                req.to_json(),
-                json.dumps([stored]),
-            ),
+            sa.insert(E).values(
+                id=entry_id,
+                workspace_id=DEFAULT_WORKSPACE,
+                project_id=project,
+                fingerprint=fp,
+                exact_fingerprint=exact_fingerprint(req, config),
+                canonical_request=req.to_json(),
+                responses=json.dumps([stored]),
+            )
         )
         return self.get_entry(entry_id), True
 
@@ -293,8 +327,8 @@ class Service:
         return _entry_view(self._entry_row(entry_id), full=True)
 
     def _entry_row(self, entry_id: str) -> Any:
-        row = self.db.query_one(
-            "SELECT * FROM entry WHERE id=? AND workspace_id=?", (entry_id, DEFAULT_WORKSPACE)
+        row = self.db.one(
+            sa.select(E).where(E.c.id == entry_id, E.c.workspace_id == DEFAULT_WORKSPACE)
         )
         if not row:
             raise SemulaError(404, "entry_not_found", f"No entry {entry_id}.")
@@ -384,22 +418,30 @@ class Service:
                 f"selection must be one of {list(SELECTIONS)}.",
                 param="selection",
             )
-        pinned = row["pinned"]
+        pinned = bool(row["pinned"])
         if "pinned" in changes:
             if not isinstance(changes["pinned"], bool):
                 raise SemulaError(
                     422, "invalid_pinned", "pinned must be true or false.", param="pinned"
                 )
-            pinned = int(changes["pinned"])
-        cursor = self.db.execute(
-            "UPDATE entry SET responses=?, selection=?, pinned=?, version=version+1, "
-            "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND version=?",
-            (json.dumps(responses), selection, pinned, entry_id, version),
-        )
-        if cursor.rowcount != 1:  # lost a race between the check and the write
-            raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
-        if forced:
-            self._log_forced(row, "forced_write")
+            pinned = changes["pinned"]
+        with self.db.begin() as conn:
+            changed = self.db.execute(
+                sa.update(E)
+                .where(E.c.id == entry_id, E.c.version == version)
+                .values(
+                    responses=json.dumps(responses),
+                    selection=selection,
+                    pinned=pinned,
+                    version=E.c.version + 1,
+                    updated_at=now_iso(),
+                ),
+                conn,
+            )
+            if changed != 1:  # lost a race between the check and the write
+                raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
+            if forced:
+                self._log_forced(row, "forced_write", conn)
         return self.get_entry(entry_id)
 
     def delete_entry(
@@ -407,17 +449,25 @@ class Service:
     ) -> None:
         row = self._entry_row(entry_id)
         forced = self._guard_write(row, version, actor, force, "deleting")
-        cursor = self.db.execute("DELETE FROM entry WHERE id=? AND version=?", (entry_id, version))
-        if cursor.rowcount != 1:
-            raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
-        if forced:
-            self._log_forced(row, "forced_delete")
+        with self.db.begin() as conn:
+            deleted = self.db.execute(
+                sa.delete(E).where(E.c.id == entry_id, E.c.version == version), conn
+            )
+            if deleted != 1:
+                raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
+            if forced:
+                self._log_forced(row, "forced_delete", conn)
 
-    def _log_forced(self, row: Any, outcome: str) -> None:
+    def _log_forced(self, row: Any, outcome: str, conn: Connection) -> None:
         self.db.execute(
-            "INSERT INTO call_log (workspace_id, project_id, mode, outcome, entry_id) "
-            "VALUES (?,?,?,?,?)",
-            (row["workspace_id"], row["project_id"], self.mode, outcome, row["id"]),
+            sa.insert(L).values(
+                workspace_id=row["workspace_id"],
+                project_id=row["project_id"],
+                mode=self.mode,
+                outcome=outcome,
+                entry_id=row["id"],
+            ),
+            conn,
         )
 
     def nearest(self, req: CanonicalRequest, project: str) -> dict[str, Any] | None:
@@ -427,10 +477,11 @@ class Service:
         if not wanted:
             return None
         best: tuple[float, Any] | None = None
-        rows = self.db.query(
-            "SELECT id, canonical_request FROM entry WHERE workspace_id=? AND project_id=? "
-            "LIMIT 5000",
-            (DEFAULT_WORKSPACE, project),
+        rows = self.db.rows(
+            sa.select(E.c.id, E.c.canonical_request)
+            .where(E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == project)
+            .order_by(E.c.id)
+            .limit(5000)
         )
         for row in rows:
             other = _tokens(CanonicalRequest.from_json(row["canonical_request"]))
@@ -469,68 +520,95 @@ class Service:
         return out
 
     def record_hit(self, entry_id: str) -> None:
-        self.db.execute("UPDATE entry SET hit_count = hit_count + 1 WHERE id=?", (entry_id,))
+        self.db.execute(sa.update(E).where(E.c.id == entry_id).values(hit_count=E.c.hit_count + 1))
 
     # --- pending queue ----------------------------------------------------------
     def open_pending(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> str:
         """Park a miss. A second identical miss joins the first instead of duplicating."""
         config = self.project_settings(project).fingerprint_config()
         fp = normalised_fingerprint(req, config)
-        row = self.db.query_one(
-            "SELECT id FROM pending WHERE workspace_id=? AND project_id=? AND fingerprint=? "
-            "AND status='pending'",
-            (DEFAULT_WORKSPACE, project, fp),
+        open_request = sa.select(Q.c.id).where(
+            Q.c.workspace_id == DEFAULT_WORKSPACE,
+            Q.c.project_id == project,
+            Q.c.fingerprint == fp,
+            Q.c.status == "pending",
         )
+        row = self.db.one(open_request)
         if row:
-            pid = str(row["id"])
-        else:
-            pid = new_ulid()
+            return str(row["id"])
+        pid = new_ulid()
+        try:
             self.db.execute(
-                "INSERT INTO pending (id, workspace_id, project_id, fingerprint, "
-                "exact_fingerprint, canonical_request) VALUES (?,?,?,?,?,?)",
-                (
-                    pid,
-                    DEFAULT_WORKSPACE,
-                    project,
-                    fp,
-                    exact_fingerprint(req, config),
-                    req.to_json(),
-                ),
+                sa.insert(Q).values(
+                    id=pid,
+                    workspace_id=DEFAULT_WORKSPACE,
+                    project_id=project,
+                    fingerprint=fp,
+                    exact_fingerprint=exact_fingerprint(req, config),
+                    canonical_request=req.to_json(),
+                )
             )
-        self._waiters.setdefault(pid, asyncio.Event())
+        except IntegrityError:  # another miss parked the same request first: join it
+            row = self.db.one(open_request)
+            if row is None:
+                raise
+            return str(row["id"])
         return pid
 
     async def wait_for_answer(self, pending_id: str, timeout: float) -> dict[str, Any] | None:
-        """Wait for an answer. Returns the stored response, or None on timeout."""
-        event = self._waiters.setdefault(pending_id, asyncio.Event())
+        """Wait for an answer. Returns the stored response, or None on timeout.
+
+        The database reads run in a worker thread so a slow query never stalls the event loop.
+        """
+        event = asyncio.Event()
+        with self._waiters_lock:
+            self._waiters.setdefault(pending_id, []).append((asyncio.get_running_loop(), event))
         try:
-            await asyncio.wait_for(event.wait(), timeout)
-        except TimeoutError:
-            return None
-        row = self.db.query_one("SELECT entry_id FROM pending WHERE id=?", (pending_id,))
+            # Answered before we registered? Then nobody will wake us, so look first.
+            stored = await run_in_threadpool(self._answer_for, pending_id)
+            if stored is None:
+                try:
+                    await asyncio.wait_for(event.wait(), timeout)
+                except TimeoutError:
+                    return None
+                stored = await run_in_threadpool(self._answer_for, pending_id)
+            return stored
+        finally:
+            with self._waiters_lock:
+                waiting = self._waiters.get(pending_id, [])
+                waiting[:] = [w for w in waiting if w[1] is not event]
+                if not waiting:
+                    self._waiters.pop(pending_id, None)
+
+    def _answer_for(self, pending_id: str) -> dict[str, Any] | None:
+        row = self.db.one(sa.select(Q.c.entry_id).where(Q.c.id == pending_id))
         if not row or not row["entry_id"]:
             return None
-        entry = self.db.query_one("SELECT responses FROM entry WHERE id=?", (row["entry_id"],))
+        entry = self.db.one(sa.select(E.c.responses).where(E.c.id == row["entry_id"]))
         return json.loads(entry["responses"])[0] if entry else None
+
+    def _release(self, pending_id: str) -> None:
+        """Wake every call held on this request. Safe to call from any thread."""
+        with self._waiters_lock:
+            waiting = list(self._waiters.get(pending_id, []))
+        for loop, event in waiting:
+            loop.call_soon_threadsafe(event.set)
 
     def list_pending(
         self, status: str | None = "pending", project: str | None = None
     ) -> list[dict[str, Any]]:
-        sql = "SELECT * FROM pending WHERE workspace_id=?"
-        params: list[Any] = [DEFAULT_WORKSPACE]
+        conditions = [Q.c.workspace_id == DEFAULT_WORKSPACE]
         if status:
-            sql += " AND status=?"
-            params.append(status)
+            conditions.append(Q.c.status == status)
         if project:
             self.require_project(project)
-            sql += " AND project_id=?"
-            params.append(project)
-        rows = self.db.query(sql + " ORDER BY id", params)
+            conditions.append(Q.c.project_id == project)
+        rows = self.db.rows(sa.select(Q).where(*conditions).order_by(Q.c.id))
         return [_pending_view(r, full=False) for r in rows]
 
     def get_pending(self, pending_id: str) -> dict[str, Any]:
-        row = self.db.query_one(
-            "SELECT * FROM pending WHERE id=? AND workspace_id=?", (pending_id, DEFAULT_WORKSPACE)
+        row = self.db.one(
+            sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == DEFAULT_WORKSPACE)
         )
         if not row:
             raise SemulaError(404, "pending_not_found", f"No pending request {pending_id}.")
@@ -538,8 +616,8 @@ class Service:
 
     def answer_pending(self, pending_id: str, payload: Any) -> str:
         """Validate an answer, save it as an entry, and release any held calls."""
-        row = self.db.query_one(
-            "SELECT * FROM pending WHERE id=? AND workspace_id=?", (pending_id, DEFAULT_WORKSPACE)
+        row = self.db.one(
+            sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == DEFAULT_WORKSPACE)
         )
         if not row:
             raise SemulaError(404, "pending_not_found", f"No pending request {pending_id}.")
@@ -548,27 +626,28 @@ class Service:
         stored = parse_answer(payload)
         validate_tool_calls(stored, CanonicalRequest.from_json(row["canonical_request"]).tools)
         entry_id = new_ulid()
-        self.db.execute(
-            "INSERT INTO entry (id, workspace_id, project_id, fingerprint, exact_fingerprint, "
-            "canonical_request, responses) VALUES (?,?,?,?,?,?,?)",
-            (
-                entry_id,
-                row["workspace_id"],
-                row["project_id"],
-                row["fingerprint"],
-                row["exact_fingerprint"],
-                row["canonical_request"],
-                json.dumps([stored]),
-            ),
-        )
-        self.db.execute(
-            "UPDATE pending SET status='answered', entry_id=?, "
-            "answered_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
-            (entry_id, pending_id),
-        )
-        event = self._waiters.pop(pending_id, None)
-        if event:
-            event.set()
+        with self.db.begin() as conn:  # the entry and the pending row change together or not at all
+            claimed = self.db.execute(
+                sa.update(Q)
+                .where(Q.c.id == pending_id, Q.c.status == "pending")
+                .values(status="answered", entry_id=entry_id, answered_at=now_iso()),
+                conn,
+            )
+            if claimed != 1:  # someone answered between our read and this write
+                raise SemulaError(409, "already_answered", f"{pending_id} was already answered.")
+            self.db.execute(
+                sa.insert(E).values(
+                    id=entry_id,
+                    workspace_id=row["workspace_id"],
+                    project_id=row["project_id"],
+                    fingerprint=row["fingerprint"],
+                    exact_fingerprint=row["exact_fingerprint"],
+                    canonical_request=row["canonical_request"],
+                    responses=json.dumps([stored]),
+                ),
+                conn,
+            )
+        self._release(pending_id)
         return entry_id
 
     # --- call log -----------------------------------------------------------------
@@ -583,19 +662,21 @@ class Service:
         project: str = DEFAULT_PROJECT,
     ) -> None:
         self.db.execute(
-            "INSERT INTO call_log (workspace_id, project_id, mode, outcome, tier, latency_ms, "
-            "entry_id, pending_id) VALUES (?,?,?,?,?,?,?,?)",
-            (
-                DEFAULT_WORKSPACE,
-                project,
-                self.mode,
-                outcome,
-                tier,
-                (time.perf_counter() - started) * 1000,
-                entry_id,
-                pending_id,
-            ),
+            sa.insert(L).values(
+                workspace_id=DEFAULT_WORKSPACE,
+                project_id=project,
+                mode=self.mode,
+                outcome=outcome,
+                tier=tier,
+                latency_ms=(time.perf_counter() - started) * 1000,
+                entry_id=entry_id,
+                pending_id=pending_id,
+            )
         )
+
+
+def _pk(table: sa.Table, slug: str) -> tuple[Any, Any]:
+    return (table.c.workspace_id == DEFAULT_WORKSPACE, table.c.id == slug)
 
 
 def _tokens(req: CanonicalRequest) -> set[str]:

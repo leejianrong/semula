@@ -19,7 +19,7 @@ async def test_models_list_and_retrieve(replay: httpx.AsyncClient) -> None:
 
 async def test_models_come_from_the_project_settings(replay: httpx.AsyncClient) -> None:
     db = replay._transport.app.state.db  # type: ignore[attr-defined]
-    db.execute("UPDATE project SET settings=?", (json.dumps({"models": ["gpt-4o", "claude-x"]}),))
+    db.run("UPDATE project SET settings=:s", {"s": json.dumps({"models": ["gpt-4o", "claude-x"]})})
     ids = [m["id"] for m in (await replay.get("/v1/models")).json()["data"]]
     assert ids == ["gpt-4o", "claude-x"]
 

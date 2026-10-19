@@ -68,6 +68,17 @@ The agent then lists parked calls, answers them, pre-records entries, edits and 
 
 To protect a server that is reachable beyond localhost, set `SEMULA_API_KEY`. `/v1`, `/api` and `/mcp` then require `Authorization: Bearer <key>` (or `X-API-Key`); `/health` stays open. The CLI reads the key from the same environment variable.
 
+### Database
+
+SQLite by default (a file in `SEMULA_DATA_DIR`, nothing to set up). For a shared or hosted setup point semula at Postgres:
+
+```bash
+uv sync --extra postgres
+SEMULA_DATABASE_URL=postgresql://user:pass@host:5432/semula uv run semula serve
+```
+
+Migrations (Alembic) run at startup on both. A SQLite file made by an earlier semula is upgraded in place. In the image: `docker build --build-arg UV_EXTRAS="--extra postgres" .`. `make test-postgres` runs the whole suite against a throwaway Postgres container. See [ADR-0009](docs/adr/0009-sqlalchemy-core-alembic-postgres-path.md).
+
 Or run the container: `make docker` (Docker; picks the first free port from 8080).
 
 ## Documents

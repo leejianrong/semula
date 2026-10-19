@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
+from starlette.concurrency import run_in_threadpool as offload
 
 from . import canonical
 from .errors import SemulaError
@@ -26,7 +28,9 @@ def list_projects(request: Request) -> dict[str, Any]:
 @router.post("/projects", status_code=201)
 async def create_project(request: Request) -> dict[str, Any]:
     body = await _json(request)
-    return _service(request).create_project(str(body.get("id", "")), body.get("name"))
+    return await offload(
+        _service(request).create_project, str(body.get("id", "")), body.get("name")
+    )
 
 
 @router.get("/projects/{project_id}")
@@ -40,7 +44,7 @@ async def update_project(project_id: str, request: Request) -> dict[str, Any]:
     settings = body.get("settings")
     if settings is not None and not isinstance(settings, dict):
         raise SemulaError(400, "invalid_request", "'settings' must be an object.", param="settings")
-    return _service(request).update_project(project_id, body.get("name"), settings)
+    return await offload(_service(request).update_project, project_id, body.get("name"), settings)
 
 
 @router.delete("/projects/{project_id}", status_code=204)
@@ -68,13 +72,16 @@ async def upsert_entry(project_id: str, request: Request, response: Response) ->
         raise SemulaError(
             400, "invalid_request", "Send {'request': {...}, 'response': ...}.", param="request"
         )
-    entry, created = _service(request).upsert_entry(
-        project_id,
-        body["request"],
-        body["response"],
-        version=body.get("version"),
-        actor=_actor(request),
-        force=bool(body.get("force", False)),
+    entry, created = await offload(
+        partial(
+            _service(request).upsert_entry,
+            project_id,
+            body["request"],
+            body["response"],
+            version=body.get("version"),
+            actor=_actor(request),
+            force=bool(body.get("force", False)),
+        )
     )
     response.status_code = 201 if created else 200
     return entry
@@ -90,8 +97,15 @@ async def update_entry(entry_id: str, request: Request) -> dict[str, Any]:
     body = await _json(request)
     version = body.pop("version", None)
     force = bool(body.pop("force", False))
-    return _service(request).update_entry(
-        entry_id, version, body, actor=_actor(request), force=force
+    return await offload(
+        partial(
+            _service(request).update_entry,
+            entry_id,
+            version,
+            body,
+            actor=_actor(request),
+            force=force,
+        )
     )
 
 
@@ -118,7 +132,7 @@ async def test_match(project_id: str, request: Request) -> dict[str, Any]:
         raise SemulaError(
             400, "invalid_request", "The request needs a 'messages' list.", param="request"
         )
-    return _service(request).test_match(canonical.from_openai(chat_body), project_id)
+    return await offload(_service(request).test_match, canonical.from_openai(chat_body), project_id)
 
 
 @router.get("/mode")
@@ -129,7 +143,7 @@ def get_mode(request: Request) -> dict[str, str]:
 @router.put("/mode")
 async def put_mode(request: Request) -> dict[str, str]:
     body = await _json(request)
-    return {"mode": _service(request).set_mode(str(body.get("mode", "")))}
+    return {"mode": await offload(_service(request).set_mode, str(body.get("mode", "")))}
 
 
 @router.get("/pending")
@@ -160,5 +174,5 @@ async def answer_pending(pending_id: str, request: Request) -> dict[str, Any]:
         payload = await request.json()
     except ValueError as exc:
         raise SemulaError(400, "invalid_json", "The request body is not valid JSON.") from exc
-    entry_id = _service(request).answer_pending(pending_id, payload)
+    entry_id = await offload(_service(request).answer_pending, pending_id, payload)
     return {"entry_id": entry_id, "pending_id": pending_id, "status": "answered"}

@@ -29,6 +29,8 @@ dependencies = [
     "httpx>=0.27",
     "jsonschema>=4.20",
     "fastmcp>=2.10",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
 ]
 
 [project.scripts]
@@ -40,6 +42,8 @@ Repository = "https://github.com/leejianrong/semula"
 Issues = "https://github.com/leejianrong/semula/issues"
 
 [project.optional-dependencies]
+# Hosted database (ADR-0009). SQLite needs nothing extra.
+postgres = ["psycopg[binary]>=3.1"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
@@ -47,6 +51,7 @@ dev = [
     "mypy>=1.11",
     "pip-audit>=2.7",
     "types-jsonschema",
+    "psycopg[binary]>=3.1",
 ]
 # Heavy client libraries for the e2e/conformance layer (kept out of the fast loop).
 e2e = [

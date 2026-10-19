@@ -6,9 +6,11 @@ import pytest
 
 from semula.app import create_app
 from semula.config import Settings
+from tests.support.db import fresh_database_url
 
 
 def make_client(tmp_path: Path, **overrides: object) -> httpx.AsyncClient:
+    overrides.setdefault("database_url", fresh_database_url(tmp_path))
     settings = Settings(data_dir=tmp_path, **overrides)  # type: ignore[arg-type]
     app = create_app(settings)
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")

@@ -4,7 +4,7 @@
 PORT ?= 8080
 FREE_PORT := python3 -c 'import socket,sys\np=int(sys.argv[1])\nwhile True:\n    s=socket.socket()\n    try:\n        s.bind(("127.0.0.1",p)); s.close(); print(p); break\n    except OSError:\n        s.close(); p+=1' $(PORT)
 
-.PHONY: run docker help setup hooks fmt lint typecheck test-fast test-e2e test check audit secrets clean
+.PHONY: run docker help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -36,6 +36,17 @@ typecheck: ## Type-check with mypy (strict)
 
 test-fast: ## Fast layer: unit + integration, no infra
 	uv run pytest -m "unit or integration" -q
+
+PG_PORT ?= 55432
+
+test-postgres: ## Run unit, integration and e2e tests against a throwaway Postgres (needs Docker)
+	@docker rm -f semula-test-pg >/dev/null 2>&1; \
+	docker run -d --rm --name semula-test-pg -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=semula \
+		-p 127.0.0.1:$(PG_PORT):5432 postgres:16-alpine >/dev/null && \
+	trap 'docker stop semula-test-pg >/dev/null' EXIT; \
+	for i in $$(seq 1 40); do docker exec semula-test-pg pg_isready -U postgres -d semula >/dev/null 2>&1 && break; sleep 1; done; \
+	SEMULA_TEST_DATABASE_URL=postgresql://postgres:pw@127.0.0.1:$(PG_PORT)/semula \
+		uv run --extra dev --extra e2e pytest -m "unit or integration or e2e" -q
 
 test-e2e: ## Heavy layer: real server driven by OpenAI SDK and LangChain
 	uv run --extra dev --extra e2e pytest -m e2e -q

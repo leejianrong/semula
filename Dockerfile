@@ -5,7 +5,9 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
-RUN uv sync --frozen --no-dev --no-editable
+# Add Postgres support with: --build-arg UV_EXTRAS="--extra postgres"
+ARG UV_EXTRAS=""
+RUN uv sync --frozen --no-dev --no-editable $UV_EXTRAS
 
 FROM python:3.12-slim
 RUN useradd --create-home --uid 10001 semula && mkdir /data && chown semula /data

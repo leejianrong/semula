@@ -18,7 +18,7 @@ from .service import Service
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
-    db = Database(settings.db_path)
+    db = Database(settings.resolved_database_url)
     service = Service(db, settings)
     mcp_app = build_mcp(service).http_app(path="/")
     app = FastAPI(title="semula", version=__version__, lifespan=mcp_app.lifespan)

@@ -1,161 +1,151 @@
-"""SQLite storage with numbered migrations (ADR-0004).
+"""Database access: an engine factory, migrations, and a few thin helpers (ADR-0009).
 
-Every table except ``schema_version`` and ``workspace`` carries ``workspace_id``.
-One default workspace and project exist locally; auth is not built.
+SQLite is the default (a file in the data dir); a Postgres URL works unchanged. The
+service layer queries with SQLAlchemy Core expressions from ``semula.schema``. The
+raw-SQL helpers (``query``, ``query_one``) exist for tests and diagnostics only.
 """
 
 from __future__ import annotations
 
-import sqlite3
-import threading
-from collections.abc import Iterable
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-DEFAULT_WORKSPACE = "default"
-DEFAULT_PROJECT = "default"
+import sqlalchemy as sa
+from alembic import command
+from alembic.config import Config
+from sqlalchemy.engine import Connection, Engine, RowMapping
+from sqlalchemy.pool import StaticPool
 
-# Append-only. A migration is never edited once released; add a new one.
-MIGRATIONS: list[str] = [
-    """
-    CREATE TABLE workspace (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    );
-    CREATE TABLE project (
-        workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
-        id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        settings TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        PRIMARY KEY (workspace_id, id)
-    );
-    CREATE TABLE entry (
-        id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        project_id TEXT NOT NULL,
-        fingerprint TEXT NOT NULL,
-        exact_fingerprint TEXT NOT NULL,
-        canonical_request TEXT NOT NULL,
-        responses TEXT NOT NULL,
-        version INTEGER NOT NULL DEFAULT 1,
-        pinned INTEGER NOT NULL DEFAULT 0,
-        hit_count INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        FOREIGN KEY (workspace_id, project_id) REFERENCES project(workspace_id, id)
-            ON DELETE CASCADE
-    );
-    CREATE INDEX idx_entry_fingerprint ON entry(workspace_id, project_id, fingerprint);
-    CREATE INDEX idx_entry_exact ON entry(workspace_id, project_id, exact_fingerprint);
-    CREATE TABLE pending (
-        id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        project_id TEXT NOT NULL,
-        fingerprint TEXT NOT NULL,
-        exact_fingerprint TEXT NOT NULL,
-        canonical_request TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        entry_id TEXT,
-        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        answered_at TEXT,
-        FOREIGN KEY (workspace_id, project_id) REFERENCES project(workspace_id, id)
-            ON DELETE CASCADE
-    );
-    CREATE INDEX idx_pending_status ON pending(workspace_id, project_id, status);
-    CREATE TABLE call_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        workspace_id TEXT NOT NULL,
-        project_id TEXT NOT NULL,
-        ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        mode TEXT NOT NULL,
-        outcome TEXT NOT NULL,
-        tier TEXT,
-        score REAL,
-        latency_ms REAL,
-        entry_id TEXT,
-        pending_id TEXT
-    );
-    CREATE INDEX idx_call_log_ts ON call_log(workspace_id, project_id, ts);
-    """,
-    # 2: how an entry picks among several stored responses (ADR-0005, SEM-21).
-    "ALTER TABLE entry ADD COLUMN selection TEXT NOT NULL DEFAULT 'first'",
-]
+from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE
+
+__all__ = ["DEFAULT_PROJECT", "DEFAULT_WORKSPACE", "Database", "make_engine", "normalise_url"]
+
+BASELINE_REVISION = "0001"
+LEGACY_SCHEMA_VERSION = 2  # the last version the pre-Alembic runner wrote
+
+
+def normalise_url(url: str) -> str:
+    """Accept the usual spellings and pick the drivers we ship (psycopg 3)."""
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://") :]
+    return url
+
+
+def make_engine(url: str) -> Engine:
+    url = normalise_url(url)
+    if not url.startswith("sqlite"):
+        return sa.create_engine(url, pool_pre_ping=True, future=True)
+
+    parsed = sa.engine.make_url(url)
+    in_memory = parsed.database in (None, "", ":memory:")
+    if not in_memory and parsed.database:
+        Path(parsed.database).parent.mkdir(parents=True, exist_ok=True)
+    kwargs: dict[str, Any] = {"connect_args": {"check_same_thread": False}}
+    if in_memory:
+        kwargs["poolclass"] = StaticPool
+    engine = sa.create_engine(url, future=True, **kwargs)
+
+    @sa.event.listens_for(engine, "connect")
+    def _on_connect(dbapi: Any, _record: Any) -> None:
+        # Take transaction control from pysqlite so BEGIN/COMMIT behave as SQLAlchemy expects.
+        dbapi.isolation_level = None
+        cursor = dbapi.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.close()
+
+    @sa.event.listens_for(engine, "begin")
+    def _on_begin(conn: Connection) -> None:
+        conn.exec_driver_sql("BEGIN")
+
+    return engine
 
 
 class Database:
-    """A single SQLite connection guarded by a lock.
-
-    Calls are short and local, so a lock around one connection is simpler than a
-    pool. Async handlers call it directly; nothing here awaits.
-    """
-
-    def __init__(self, path: Path | str) -> None:
-        if str(path) != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        self._conn.row_factory = sqlite3.Row
-        self._lock = threading.RLock()
-        with self._lock:
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA foreign_keys=ON")
-            self._conn.execute("PRAGMA busy_timeout=5000")
+    def __init__(self, url: str | Path) -> None:
+        raw = str(url)
+        self.url = raw if "://" in raw else f"sqlite:///{raw}"
+        self.engine = make_engine(self.url)
         self.migrate()
 
+    @property
+    def dialect(self) -> str:
+        return self.engine.dialect.name
+
+    # --- migrations -----------------------------------------------------------------
     def migrate(self) -> None:
-        with self._lock:
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)"
+        """Bring the database to the latest revision, adopting pre-Alembic SQLite files."""
+        with self.engine.begin() as conn:
+            self._adopt_legacy(conn)
+            config = Config()
+            config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+            config.attributes["connection"] = conn
+            command.upgrade(config, "head")
+
+    def _adopt_legacy(self, conn: Connection) -> None:
+        """A file made by the old hand-rolled runner has ``schema_version`` and no
+        ``alembic_version``. Its schema equals the baseline revision, so stamp it."""
+        tables = set(sa.inspect(conn).get_table_names())
+        if "schema_version" not in tables or "alembic_version" in tables:
+            return
+        version = conn.execute(sa.text("SELECT MAX(version) FROM schema_version")).scalar()
+        if version != LEGACY_SCHEMA_VERSION:
+            raise RuntimeError(
+                f"This database was written by an older semula (schema version {version}); "
+                f"upgrade it with a semula that still has the old migrations, or start fresh."
             )
-            row = self._conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
-            current = row["v"] or 0
-            for number, sql in enumerate(MIGRATIONS, start=1):
-                if number <= current:
-                    continue
-                self._conn.execute("BEGIN")
-                try:
-                    for statement in _split(sql):
-                        self._conn.execute(statement)
-                    self._conn.execute("INSERT INTO schema_version (version) VALUES (?)", (number,))
-                    if number == 1:
-                        self._seed()
-                    self._conn.execute("COMMIT")
-                except Exception:
-                    self._conn.execute("ROLLBACK")
-                    raise
-
-    def _seed(self) -> None:
-        self._conn.execute(
-            "INSERT INTO workspace (id, name) VALUES (?, ?)", (DEFAULT_WORKSPACE, "Default")
-        )
-        self._conn.execute(
-            "INSERT INTO project (workspace_id, id, name) VALUES (?, ?, ?)",
-            (DEFAULT_WORKSPACE, DEFAULT_PROJECT, "Default"),
+        conn.execute(sa.text("DROP TABLE schema_version"))
+        conn.execute(sa.text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        conn.execute(
+            sa.text("INSERT INTO alembic_version (version_num) VALUES (:rev)"),
+            {"rev": BASELINE_REVISION},
         )
 
-    def execute(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
-        with self._lock:
-            return self._conn.execute(sql, tuple(params))
+    def revision(self) -> str | None:
+        with self.engine.connect() as conn:
+            rev = conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
+        return str(rev) if rev is not None else None
 
-    def query(self, sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:
-        with self._lock:
-            return self._conn.execute(sql, tuple(params)).fetchall()
+    # --- queries --------------------------------------------------------------------
+    @contextmanager
+    def begin(self) -> Iterator[Connection]:
+        """One transaction: commits on success, rolls back on any exception."""
+        with self.engine.begin() as conn:
+            yield conn
 
-    def query_one(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Row | None:
-        with self._lock:
-            row: sqlite3.Row | None = self._conn.execute(sql, tuple(params)).fetchone()
-            return row
+    def execute(self, stmt: Any, conn: Connection | None = None) -> int:
+        """Run one statement (in ``conn``'s transaction, or its own). Returns rowcount."""
+        if conn is not None:
+            return int(conn.execute(stmt).rowcount)
+        with self.engine.begin() as own:
+            return int(own.execute(stmt).rowcount)
 
-    def schema_version(self) -> int:
-        row = self.query_one("SELECT MAX(version) AS v FROM schema_version")
-        return int(row["v"]) if row and row["v"] is not None else 0
+    def rows(self, stmt: Any, conn: Connection | None = None) -> list[RowMapping]:
+        if conn is not None:
+            return list(conn.execute(stmt).mappings().all())
+        with self.engine.connect() as own:
+            return list(own.execute(stmt).mappings().all())
+
+    def one(self, stmt: Any, conn: Connection | None = None) -> RowMapping | None:
+        if conn is not None:
+            return conn.execute(stmt).mappings().first()
+        with self.engine.connect() as own:
+            return own.execute(stmt).mappings().first()
+
+    # Raw SQL with :named parameters, for tests and diagnostics (not the service).
+    def query(self, sql: str, params: Mapping[str, Any] | None = None) -> list[RowMapping]:
+        return self.rows(sa.text(sql).bindparams(**(params or {})))
+
+    def query_one(self, sql: str, params: Mapping[str, Any] | None = None) -> RowMapping | None:
+        return self.one(sa.text(sql).bindparams(**(params or {})))
+
+    def run(self, sql: str, params: Mapping[str, Any] | None = None) -> int:
+        return self.execute(sa.text(sql).bindparams(**(params or {})))
 
     def close(self) -> None:
-        with self._lock:
-            self._conn.close()
-
-
-def _split(script: str) -> list[str]:
-    # Migrations contain no semicolons inside string literals, so a plain split is safe.
-    return [s.strip() for s in script.split(";") if s.strip()]
+        self.engine.dispose()

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool as offload
 
 from . import canonical
 from .db import DEFAULT_PROJECT
@@ -33,41 +35,61 @@ def _project(request: Request, service: Service) -> str:
 @router.post("/projects/{project_id}/chat/completions", response_model=None)
 async def chat_completions(request: Request) -> JSONResponse | StreamingResponse:
     service: Service = request.app.state.service
-    project = _project(request, service)
+    project = await offload(_project, request, service)
     started = time.perf_counter()
     body = await _read_body(request)
     model = str(body.get("model") or "semula")
     req = canonical.from_openai(body)
 
-    match = service.find(req, project)
+    match = await offload(service.find, req, project)
     if match:
-        service.record_hit(match.entry_id)
-        service.log_call("hit", started, tier=match.tier, entry_id=match.entry_id, project=project)
+        await offload(service.record_hit, match.entry_id)
+        await offload(
+            partial(
+                service.log_call,
+                "hit",
+                started,
+                tier=match.tier,
+                entry_id=match.entry_id,
+                project=project,
+            )
+        )
         return _respond(service, body, match.stored, model)
 
     if service.mode == "replay":
-        service.log_call("miss", started, project=project)
+        await offload(partial(service.log_call, "miss", started, project=project))
         raise SemulaError(
             424,
             "semula_no_match",
             "No recorded answer matches this request, and semula is in replay mode.",
             err_type="semula_error",
-            extra={"nearest": service.nearest(req, project)},
+            extra={"nearest": await offload(service.nearest, req, project)},
         )
 
-    pending_id = service.open_pending(req, project)
-    stored = await service.wait_for_answer(pending_id, service.record_timeout(project))
+    pending_id = await offload(service.open_pending, req, project)
+    timeout = await offload(service.record_timeout, project)
+    stored = await service.wait_for_answer(pending_id, timeout)
     if stored is None:
-        service.log_call("record_timeout", started, pending_id=pending_id, project=project)
+        await offload(
+            partial(
+                service.log_call,
+                "record_timeout",
+                started,
+                pending_id=pending_id,
+                project=project,
+            )
+        )
         raise SemulaError(
             504,
             "semula_record_timeout",
             f"No agent answered pending request {pending_id} within "
-            f"{service.record_timeout(project):g}s. It stays pending; "
+            f"{timeout:g}s. It stays pending; "
             "a late answer is still saved.",
             err_type="semula_error",
         )
-    service.log_call("recorded", started, pending_id=pending_id, project=project)
+    await offload(
+        partial(service.log_call, "recorded", started, pending_id=pending_id, project=project)
+    )
     return _respond(service, body, stored, model)
 
 
@@ -93,15 +115,19 @@ def _model(model_id: str) -> dict[str, Any]:
 @router.get("/projects/{project_id}/models")
 async def models(request: Request) -> dict[str, Any]:
     service: Service = request.app.state.service
-    project = _project(request, service)
-    return {"object": "list", "data": [_model(m) for m in service.list_models(project)]}
+    project = await offload(_project, request, service)
+    return {
+        "object": "list",
+        "data": [_model(m) for m in await offload(service.list_models, project)],
+    }
 
 
 @router.get("/models/{model_id:path}")
 @router.get("/projects/{project_id}/models/{model_id:path}")
 async def retrieve_model(model_id: str, request: Request) -> dict[str, Any]:
     service: Service = request.app.state.service
-    if model_id not in service.list_models(_project(request, service)):
+    project = await offload(_project, request, service)
+    if model_id not in await offload(service.list_models, project):
         raise SemulaError(
             404,
             "model_not_found",
