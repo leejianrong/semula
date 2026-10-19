@@ -8,7 +8,7 @@ Status: pre-alpha. Planning is done; implementation starts at slice SEM-E2. Trus
 
 ## Why
 
-Cut LLM API cost in dev and test by turning a coding-agent subscription into a recorder. The load-bearing choices are in `docs/adr/` (read 0002 on the record queue and 0003 on matching before touching those areas). Decisions and their status: `QUESTIONS.md`. Plan: `PLAN.md`.
+Cut LLM API cost in dev and test by turning a coding-agent subscription into a recorder. The load-bearing choices are in `docs/adr/` (read 0002 on the record queue and 0003 on matching before touching those areas). Decisions and their status: `docs/QUESTIONS.md`. Plan: `docs/PLAN.md`.
 
 ## How
 

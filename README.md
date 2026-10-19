@@ -2,7 +2,7 @@
 
 **A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
 
-> **Status: pre-alpha.** The plan and architecture are written; the code is just starting. Nothing here runs yet, so there is no install step. Follow progress on the [slices](SLICES.md).
+> **Status: pre-alpha.** The plan and architecture are written; the code is just starting. Nothing here runs yet, so there is no install step. Follow progress on the [slices](docs/SLICES.md).
 
 ```mermaid
 flowchart LR
@@ -37,9 +37,9 @@ export OPENAI_BASE_URL=http://localhost:8080/v1
 
 | | |
 |---|---|
-| [`PLAN.md`](PLAN.md) | Problem, scope, requirements, architecture |
-| [`SLICES.md`](SLICES.md) | Build increments with acceptance checks |
-| [`QUESTIONS.md`](QUESTIONS.md) | Decision register |
+| [`PLAN.md`](docs/PLAN.md) | Problem, scope, requirements, architecture |
+| [`SLICES.md`](docs/SLICES.md) | Build increments with acceptance checks |
+| [`QUESTIONS.md`](docs/QUESTIONS.md) | Decision register |
 | [`docs/adr/`](docs/adr/) | Architecture decisions |
 | [`docs/INDAH-REQUESTS-PROMPT.md`](docs/INDAH-REQUESTS-PROMPT.md) | What the dashboard needs from [indah](https://github.com/leejianrong/indah) |
 
