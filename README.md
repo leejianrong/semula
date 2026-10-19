@@ -2,7 +2,7 @@
 
 **A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
 
-> **Status: pre-alpha.** The plan and architecture are written; the code is just starting. Nothing here runs yet, so there is no install step. Follow progress on the [slices](docs/SLICES.md).
+> **Status: pre-alpha.** Record-then-replay works end to end for non-streaming chat completions. Streaming, tool-call validation, projects, MCP and the dashboard are still to come. Follow progress on the [slices](docs/SLICES.md).
 
 ```mermaid
 flowchart LR
@@ -26,12 +26,26 @@ Development and test runs call the same prompts over and over, and a paid API bi
 - Organise recordings by project; export them to files you can commit and diff.
 - A human dashboard to watch calls, answer pending ones and review near-misses (after the core).
 
-The intended shape of use, once it exists (not runnable today):
+## Try it
+
+From a clone (needs [uv](https://docs.astral.sh/uv/)). Not on PyPI yet.
 
 ```bash
-docker run -p 8080:8080 -v ./data:/data semula   # planned
-export OPENAI_BASE_URL=http://localhost:8080/v1
+git clone https://github.com/leejianrong/semula && cd semula
+uv sync
+SEMULA_MODE=record uv run semula serve        # terminal 1, listens on 127.0.0.1:8080
 ```
+
+Point any OpenAI-compatible client at `http://127.0.0.1:8080/v1`. The first call for a new prompt is held. In a second terminal, answer it as your coding agent would:
+
+```bash
+uv run semula pending                          # id, status, project, last message
+uv run semula answer <id> --text "hi from the agent"
+```
+
+The held call returns. Ask the same thing again, even with a different model name or a new timestamp in the prompt, and the stored answer comes back at once. Restart with `SEMULA_MODE=replay` and it works offline; unknown prompts return an error instead of a made-up answer.
+
+Or run the container: `make docker` (Docker; picks the first free port from 8080).
 
 ## Documents
 

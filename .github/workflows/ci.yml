@@ -71,4 +71,13 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: uv run pip-audit
 
-  # The e2e job (real container, OpenAI SDK, LangChain) is added with SEM-E2.
+  # Heavy layer: the real app over loopback driven by the OpenAI SDK, network blocked.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - run: uv run pytest -m e2e -q
