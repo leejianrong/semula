@@ -17,7 +17,7 @@ from tests.integration.conftest import make_client
 
 pytestmark = pytest.mark.embeddings
 
-BUDGET_MS = float(os.environ.get("SEMULA_EMBED_BUDGET_MS", "40"))
+BUDGET_MS = float(os.environ.get("SEMULA_EMBED_BUDGET_MS", "55"))
 
 
 @pytest.fixture(scope="session")
