@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>semula hosted sign in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F1F3EF;color:#14201B;font:14px/1.45 'Hanken Grotesk',system-ui,sans-serif}
+*,*:before,*:after{box-sizing:border-box}
+button{font:inherit;color:inherit;cursor:pointer}
+.m{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px}
+.wrap{display:flex;flex-wrap:wrap;min-height:900px}
+.left{flex:1 1 480px;background:#14201B;color:#C9D3CC;padding:48px 56px;display:flex;flex-direction:column;gap:20px;justify-content:center}
+.right{flex:1 1 480px;padding:48px 56px;display:flex;flex-direction:column;gap:18px;justify-content:center;align-items:center}
+.brand{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:40px;letter-spacing:-0.02em;color:#fff}
+h1{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:30px;letter-spacing:-0.02em;margin:0}
+.card{background:#fff;border:1px solid #D8DDD5;border-radius:12px;padding:26px 28px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:12px}
+.oidc{display:flex;align-items:center;gap:12px;border:1px solid #C5CCC2;background:#fff;border-radius:8px;padding:11px 14px;font-weight:600;width:100%;text-align:left}
+.oidc.main{background:#14201B;color:#fff;border-color:#14201B}
+.inp{border:1px solid #C5CCC2;border-radius:7px;padding:9px 11px;background:#fff}
+.muted{color:#52625A}
+.new{outline:2px dashed #6A42C2;outline-offset:4px;position:relative}
+.newtag{position:absolute;right:10px;top:-12px;background:#6A42C2;color:#fff;font-size:12px;font-weight:600;padding:1px 8px;border-radius:5px}
+.ws{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px}
+.ws.cur{background:#EAF3EF}
+.av{width:32px;height:32px;border-radius:8px;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:600;flex:none}
+.role{border-radius:5px;padding:1px 8px;font-size:12px;font-weight:600;margin-left:auto}
+.btn{border:1px solid #14201B;background:#14201B;color:#fff;border-radius:7px;padding:6px 12px;font-weight:600}
+</style>
+</helmet>
+<div class="wrap">
+  <section class="left" aria-label="About">
+    <div class="brand">semula</div>
+    <div style="font-size:20px;line-height:1.4;color:#fff;max-width:420px">Record each answer once. Replay it for free, for everyone on the team.</div>
+    <div style="max-width:420px">Your coding agent writes the answers over MCP. Your tests and CI replay them in milliseconds, with no API bill and no network.</div>
+    <div class="m" style="color:#8FA196">Local use stays one container with no sign-in. Accounts exist only in the hosted version.</div>
+  </section>
+
+  <section class="right" aria-label="Sign in and switch workspace">
+    <div class="card new">
+      <span class="newtag">New in hosted</span>
+      <h1>Sign in</h1>
+      <div class="muted">Use the account your workspace admin invited.</div>
+      <button class="oidc main" type="button"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="5" cy="4" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="11" cy="7" r="1.6"/><path d="M5 5.6v4.8M5 9c0-2 6-.5 6-2"/></svg>Continue with GitHub</button>
+      <button class="oidc" type="button"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 2v12M2 8h12"/></svg>Continue with Google</button>
+      <div style="display:flex;align-items:center;gap:10px;color:#52625A"><span style="flex:1;height:1px;background:#D8DDD5"></span>or<span style="flex:1;height:1px;background:#D8DDD5"></span></div>
+      <label for="mail" class="muted">Work email, for single sign-on</label>
+      <div class="inp m" id="mail">you@company.com</div>
+      <button class="oidc" type="button" style="justify-content:center">Continue with single sign-on</button>
+      <div class="muted" style="font-size:13px">There is no open sign-up. Ask a workspace admin to invite you.</div>
+    </div>
+
+    <div class="card new" style="gap:4px">
+      <span class="newtag">Workspace switcher</span>
+      <div class="muted m" style="margin-bottom:6px">Signed in as jian@acme.dev</div>
+      <sc-for list="{{spaces}}" as="w" hint-placeholder-count="3">
+        <div class="{{w.cls}}"><span class="av" style="{{w.av}}">{{w.i}}</span><span><b>{{w.name}}</b><div class="muted" style="font-size:13px">{{w.note}}</div></span><span class="role" style="{{w.roleStyle}}">{{w.role}}</span></div>
+      </sc-for>
+      <div class="ws" style="border-top:1px solid #E6EAE3;margin-top:6px;border-radius:0;padding-top:12px"><span style="flex:1"><b>Platform team</b> invited you as an Editor</span><button class="btn" type="button">Accept</button></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const spaces = [
+      { cls: 'ws cur', i: 'A', av: 'background:#6A42C2', name: 'Acme QA', note: '3 projects · 1,284 entries', role: 'Admin', roleStyle: 'background:#E8DEFA;color:#4B2A96' },
+      { cls: 'ws', i: 'P', av: 'background:#2C4036', name: 'Personal', note: '1 project · 40 entries', role: 'Admin', roleStyle: 'background:#E8DEFA;color:#4B2A96' },
+      { cls: 'ws', i: 'F', av: 'background:#2848C9', name: 'Payments squad', note: 'You can watch, not edit', role: 'Viewer', roleStyle: 'background:#EEF0EC;color:#3F4F47' },
+    ];
+    return { spaces };
+  }
+}
+</script>
+</body>
+</html>

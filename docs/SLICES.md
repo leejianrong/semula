@@ -1,6 +1,6 @@
 # semula: Slices
 
-Vertical increments, headless first. **The live source of status is Pandan board `SEM` (board 39).** This file is a snapshot of it, regenerated 2026-10-20: 48 of 61 stories done. Slice SEM-E2 confronted the riskiest mechanism: parking a call and answering it from a coding agent.
+Vertical increments, headless first. **The live source of status is Pandan board `SEM` (board 39).** This file is a snapshot of it, regenerated 2026-10-20: 50 of 61 stories done. Slice SEM-E2 confronted the riskiest mechanism: parking a call and answering it from a coding agent.
 
 Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). Cards marked ✔ are done and merged to `main`.
 
@@ -497,7 +497,7 @@ Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). C
 - [x] Default never auto-serves
 - [x] Threshold use appears in call_log
 
-## SEM-E9 · Dashboard design and indah requests (0/3)
+## SEM-E9 · Dashboard design and indah requests (2/3)
 
 **Goal** — A free-form dashboard design is saved in the repo and every gap in indah is a tracked request.
 
@@ -505,25 +505,25 @@ Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). C
 
 **Not in scope** — Building the dashboard.
 
-### · SEM-43 · Design the local dashboard free of indah limits (5 pts)
+### ✔ SEM-43 · Design the local dashboard free of indah limits (5 pts)
 
 **Why** — The look should be chosen for the job, not for what indah does today.
 
 **Do** — Screens: live log, pending queue, entries browser and editor, review queue, playground. Saved as an HTML artifact plus notes in docs/design/.
 
 **Acceptance**
-- [ ] Design files committed
-- [ ] Each screen lists the indah enhancements it needs
+- [x] Design files committed
+- [x] Each screen lists the indah enhancements it needs
 
-### · SEM-44 · Sketch the hosted dashboard additions (3 pts)
+### ✔ SEM-44 · Sketch the hosted dashboard additions (3 pts)
 
 **Why** — Hosted adds login, tokens, workspaces.
 
 **Do** — Extra screens and flows: sign-in, workspace switcher, token management, members.
 
 **Acceptance**
-- [ ] Saved beside the local design
-- [ ] Marks what differs from local
+- [x] Saved beside the local design
+- [x] Marks what differs from local
 
 ### · SEM-45 · Hand the indah request prompt to the indah team (1 pts)
 

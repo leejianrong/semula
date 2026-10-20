@@ -21,7 +21,7 @@ semula is built headless first (REST, CLI, MCP). The **dashboard** comes afterwa
 
 semula and indah are both mine. The goal is that semula's needs make indah better for everyone.
 
-Semula's design is being done freely, not bound by indah's limits. The design will be saved in `semula/docs/design/` (not written yet). Treat the screens below as the spec for now.
+Semula's design is being done freely, not bound by indah's limits. The design is saved in `semula/docs/design/` (proposed, 2026-10-20: see its README for the per-screen needs). The screens below remain the spec.
 
 ## Dashboard screens
 

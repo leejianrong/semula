@@ -69,6 +69,7 @@ For planning today, indah's existing ADRs that rule things out (e.g. ADR-0008 "n
 | 2026-10-20 | Redaction patterns double as scrubs when fingerprinting, so the live request, its redacted stored copy and a later re-key agree; built-in credential patterns are on by default; recorded answers are not redacted | ADR-0007 amendment |
 | 2026-10-20 | Replay budgets: exact and normalised p95 < 15 ms; the lexical tier and misses < 30 ms (they search the index). Image < 350 MB, cold start < 2 s (container start to healthy, MCP built after startup) | `tests/perf`, `scripts/check_image.sh` |
 | 2026-10-20 | Embeddings: opt-in extra plus `SEMULA_EMBEDDINGS=on`; model cached on the volume; indexed in the background, queried only after every cheaper tier missed; paraphrases go to review, serving is a per-project opt-in (`embedding_serve_threshold`, off) | ADR-0003 amendment |
+| 2026-10-20 | Dashboard design proposed in `docs/design/` (eight artboards: six local screens, two hosted sketches): the tier rail as the signature, a mode lamp, red only for "waiting on you". Six semula API gaps found by drawing real data; none built | `docs/design/README.md` |
 | 2026-10-20 | MCP exposes approve and reject to agents, with a description telling them to wait for a human unless asked | `docs/agents/PLAYBOOK.md` |
 
 ## Deferred
