@@ -159,6 +159,20 @@ candidate = sa.Table(
     sa.Index("idx_candidate_pair", "workspace_id", "project_id", "fingerprint", "entry_id"),
 )
 
+# One embedding per entry (SEM-E8), only when embeddings are switched on. Raw float32 bytes
+# keep it portable across SQLite and Postgres; the search matrix is built in memory.
+entry_vector = sa.Table(
+    "entry_vector",
+    metadata,
+    sa.Column("entry_id", sa.Text, sa.ForeignKey("entry.id", ondelete="CASCADE"), primary_key=True),
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("project_id", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("vector", sa.LargeBinary, nullable=False),
+    _ts("created_at"),
+    sa.Index("idx_entry_vector_project", "workspace_id", "project_id", "model"),
+)
+
 # An approved candidate: this request fingerprint now serves that entry (tier "alias").
 alias = sa.Table(
     "alias",

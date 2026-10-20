@@ -162,6 +162,12 @@ def get_pending(pending_id: str, request: Request) -> dict[str, Any]:
     return _service(request).get_pending(pending_id)
 
 
+@router.get("/embeddings")
+def embeddings_status(request: Request) -> dict[str, Any]:
+    """Whether semantic matching is on, the model, and how many entries have vectors yet."""
+    return _service(request).embeddings_status()
+
+
 @router.get("/projects/{project_id}/export")
 def export_project(project_id: str, request: Request) -> dict[str, Any]:
     """A ``semula/1`` bundle of the project's entries and approved aliases."""

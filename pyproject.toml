@@ -44,6 +44,8 @@ Issues = "https://github.com/leejianrong/semula/issues"
 [project.optional-dependencies]
 # Hosted database (ADR-0009). SQLite needs nothing extra.
 postgres = ["psycopg[binary]>=3.1"]
+# Semantic matching (ADR-0003): adds ~180 MB plus a 65 MB model fetched once. Off by default.
+embeddings = ["fastembed>=0.4"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
@@ -52,6 +54,7 @@ dev = [
     "pip-audit>=2.7",
     "types-jsonschema",
     "psycopg[binary]>=3.1",
+    "numpy>=1.26",  # the vector maths; fastembed itself is only in the `embeddings` extra
 ]
 # Heavy client libraries for the e2e/conformance layer (kept out of the fast loop).
 e2e = [
@@ -68,6 +71,7 @@ markers = [
     "unit: fast, isolated tests with no I/O beyond a temp dir",
     "integration: in-process app against a temp SQLite file; no network, no Docker",
     "e2e: the real container driven by real SDK clients (CI, needs Docker)",
+    "embeddings: the real embedding model (needs the extra and a one-time download; own CI job)",
     "perf: latency budgets on a 1k-entry project (own CI job; `make bench` to print the table)",
 ]
 asyncio_mode = "auto"
@@ -87,3 +91,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S"]
 python_version = "3.11"
 strict = true
 files = ["src/semula"]
+
+[[tool.mypy.overrides]]
+module = ["fastembed", "fastembed.*"]
+ignore_missing_imports = true  # optional extra, not installed in the fast layer

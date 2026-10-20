@@ -109,6 +109,25 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: uv run pytest -m perf -s -q
 
+  # Optional semantic matching with the real model: paraphrase, offline load, latency budget,
+  # and the embeddings image (model fetched once, then starts with no network).
+  embeddings:
+    runs-on: ubuntu-latest
+    env:
+      SEMULA_TEST_MODEL_DIR: ${{ github.workspace }}/.models
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v4
+        with:
+          path: .models
+          key: embedding-model-bge-small-en-v1.5
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev --extra embeddings
+      - run: uv run pytest -m embeddings -s -q
+      - run: scripts/check_embeddings_image.sh semula:embeddings-ci
+
   image:
     runs-on: ubuntu-latest
     steps:

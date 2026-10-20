@@ -19,6 +19,7 @@ from . import __version__, api_admin, api_openai
 from .auth import ApiKeyMiddleware
 from .config import Settings
 from .db import Database
+from .embeddings import Embedder
 from .errors import SemulaError
 from .service import Service
 
@@ -87,11 +88,12 @@ class LazyMcp:
         await self._app(scope, receive, send)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, embedder: Embedder | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     db = Database(settings.resolved_database_url)
-    service = Service(db, settings)
+    service = Service(db, settings, embedder)
     service.sync_index()
+    service.sync_embeddings()
     mcp = LazyMcp(service)
 
     @asynccontextmanager

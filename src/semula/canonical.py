@@ -154,6 +154,17 @@ def lexical_tokens(req: CanonicalRequest, config: FingerprintConfig | None = Non
     return words
 
 
+def embedding_text(req: CanonicalRequest, config: FingerprintConfig | None = None) -> str:
+    """What gets embedded: the last message with text, scrubbed and redacted like everything
+    else. Not the whole conversation: a system prompt shared by every call would make all of
+    them look alike, and long text is slow to embed."""
+    for message in reversed(_tail(req.messages, config)):
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return scrub(content, config)[:1500]
+    return ""
+
+
 def roles_of(req: CanonicalRequest, config: FingerprintConfig | None = None) -> list[str]:
     """Who speaks, in order (after ``tail_n``). Two conversations with different turns are
     different questions however many words they share."""

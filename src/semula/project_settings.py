@@ -82,6 +82,36 @@ class ProjectSettings(BaseModel):
         ),
     )
 
+    embedding_review_threshold: float = Field(
+        default=0.75,
+        gt=0,
+        le=1,
+        description=(
+            "Cosine similarity (0-1) from which a semantic match joins the review queue. Only "
+            "used when the server runs with SEMULA_EMBEDDINGS=on."
+        ),
+    )
+    embedding_serve_threshold: float | None = Field(
+        default=None,
+        gt=0,
+        le=1,
+        description=(
+            "Opt in to serving a semantic match without review at or above this cosine "
+            "similarity. Off by default: a paraphrase is not the same question. Use is logged "
+            "(tier 'embedding')."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _embedding_serve_at_least_review(self) -> ProjectSettings:
+        serve = self.embedding_serve_threshold
+        if serve is not None and serve < self.embedding_review_threshold:
+            raise ValueError(
+                f"embedding_serve_threshold ({serve}) cannot be below "
+                f"embedding_review_threshold ({self.embedding_review_threshold})."
+            )
+        return self
+
     @model_validator(mode="after")
     def _review_at_most_serve(self) -> ProjectSettings:
         if self.bm25_review_threshold > self.bm25_serve_threshold:

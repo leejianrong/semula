@@ -105,7 +105,14 @@ def _serve(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     port = args.port if args.port is not None else settings.port
-    uvicorn.run(create_app(settings), host=host, port=port, log_level="info")
+    from .embeddings import EmbeddingsUnavailable
+
+    try:
+        app = create_app(settings)
+    except EmbeddingsUnavailable as exc:  # SEMULA_EMBEDDINGS=on but it cannot run: say why
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    uvicorn.run(app, host=host, port=port, log_level="info")
     return EXIT_OK
 
 
@@ -238,6 +245,40 @@ def _entry_delete(args: argparse.Namespace) -> int:
     if resp.status_code != 204:
         return _fail(args, resp)
     return _ok(args, {"deleted": args.id}, f"deleted entry {args.id}")
+
+
+def _embeddings_status(args: argparse.Namespace) -> int:
+    resp = _call(args, "GET", "/api/v1/embeddings")
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    out = resp.json()
+    if not out["enabled"]:
+        human = "embeddings: off (set SEMULA_EMBEDDINGS=on with the 'embeddings' extra installed)"
+    else:
+        queued = f", {out['backlog']} queued" if out["backlog"] else ""
+        human = (
+            f"embeddings: on, {out['model']}, {out['indexed']}/{out['entries']} entries indexed"
+            f"{queued}"
+        )
+    return _ok(args, out, human)
+
+
+def _embeddings_fetch(args: argparse.Namespace) -> int:
+    """Download the model once, to the model directory, so the server can start offline."""
+    from .config import Settings
+    from .embeddings import EmbeddingsUnavailable, FastEmbedder
+
+    directory = Settings.from_env().resolved_model_dir
+    try:
+        embedder = FastEmbedder(directory)
+    except EmbeddingsUnavailable as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    return _ok(
+        args,
+        {"model": embedder.model_id, "dir": str(directory)},
+        f"{embedder.model_id} is ready in {directory}",
+    )
 
 
 def _call_line(c: dict[str, Any]) -> str:
@@ -507,6 +548,11 @@ def build_parser() -> argparse.ArgumentParser:
     tail = add(sub, "tail", _tail, "Follow calls live (one JSON object per line with --json)")
     tail.add_argument("--project", default=None)
     tail.add_argument("--count", type=int, default=0, help="stop after this many calls")
+
+    emb = sub.add_parser("embeddings", help="Optional semantic matching")
+    esub2 = emb.add_subparsers(dest="embeddings_command", required=True)
+    add(esub2, "status", _embeddings_status, "Is it on, and how many entries are indexed")
+    add(esub2, "fetch", _embeddings_fetch, "Download the model once (needs the extra and network)")
 
     review = sub.add_parser("review", help="Decide near-miss matches")
     rsub = review.add_subparsers(dest="review_command", required=True)

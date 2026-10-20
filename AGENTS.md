@@ -4,7 +4,7 @@
 
 semula is a record-replay fake LLM server: an OpenAI-compatible endpoint that replays recorded answers and, in record mode, parks unknown prompts for a coding agent to answer over MCP or CLI. Python 3.11+, FastAPI, SQLite, `uv`. src layout in `src/semula/`.
 
-Status: pre-alpha. Planning is done; slices SEM-E2 to SEM-E5 (record/replay, streaming and tools, projects and entries, MCP/CLI/API key/playbook), SEM-E6 (smarter matching with human review) and SEM-E12 (SQLite and Postgres) are built. Next is SEM-E7 (call log, event bus, redaction, export/import, slim image, benchmark). See the Pandan board for live status. Trust the code over any doc where they disagree, and fix the doc.
+Status: pre-alpha. Planning is done; slices SEM-E2 to SEM-E5 (record/replay, streaming and tools, projects and entries, MCP/CLI/API key/playbook), SEM-E6 (smarter matching with human review), SEM-E7 (observability, export/import, slim image, benchmark), SEM-E8 (optional embeddings) and SEM-E12 (SQLite and Postgres) are built. Next is SEM-E9 (dashboard design). See the Pandan board for live status. Trust the code over any doc where they disagree, and fix the doc.
 
 ## Why
 
@@ -14,7 +14,7 @@ Cut LLM API cost in dev and test by turning a coding-agent subscription into a r
 
 - Setup: `uv sync --extra dev` (or `make setup`), then `make hooks` once.
 - Gate before pushing: `make check` (ruff, mypy strict, fast tests). `make help` lists everything.
-- Fast layer = tests marked `unit` or `integration`: no network, no Docker, temp SQLite only. `e2e` boots the real container and runs in CI only. Never let a slow test into the fast layer. `perf` (`make bench`) holds the replay latency budget and `make image-check` the image budgets (Docker); both run as their own CI jobs.
+- Fast layer = tests marked `unit` or `integration`: no network, no Docker, temp SQLite only. `e2e` boots the real container and runs in CI only. Never let a slow test into the fast layer. `perf` (`make bench`) holds the replay latency budget, `make image-check` the image budgets (Docker), and `embeddings` (`make test-embeddings`) the real model; each runs as its own CI job. Embedding code stays in `embeddings.py` and imports numpy and fastembed lazily, so the default install never loads them.
 - Work is tracked on Pandan board **SEM** (board 39, use the `pandan` skill). Pick a card, branch per slice off fresh `main`, land via PR with green CI. No direct pushes to `main`.
 - Every bug or flake gets a failing test first, then the fix.
 - All surfaces (REST, CLI, MCP, dashboard) call one service layer; never write the database from a surface (ADR-0005).

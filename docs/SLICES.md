@@ -1,6 +1,6 @@
 # semula: Slices
 
-Vertical increments, headless first. **The live source of status is Pandan board `SEM` (board 39).** This file is a snapshot of it, regenerated 2026-10-20: 45 of 61 stories done. Slice SEM-E2 confronted the riskiest mechanism: parking a call and answering it from a coding agent.
+Vertical increments, headless first. **The live source of status is Pandan board `SEM` (board 39).** This file is a snapshot of it, regenerated 2026-10-20: 48 of 61 stories done. Slice SEM-E2 confronted the riskiest mechanism: parking a call and answering it from a coding agent.
 
 Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). Cards marked ✔ are done and merged to `main`.
 
@@ -459,7 +459,7 @@ Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). C
 - [x] p95 under 15 ms without embeddings
 - [x] CI fails if the budget is exceeded
 
-## SEM-E8 · Optional semantic matching (0/3)
+## SEM-E8 · Optional semantic matching (3/3)
 
 **Goal** — Users who want paraphrase matching can opt in without bloating the default image.
 
@@ -467,35 +467,35 @@ Decisions behind these: see [QUESTIONS.md](QUESTIONS.md) and [docs/adr](adr/). C
 
 **Not in scope** — Auto-serving embedding matches by default.
 
-### · SEM-40 · Package embeddings as an optional extra (3 pts)
+### ✔ SEM-40 · Package embeddings as an optional extra (3 pts)
 
 **Why** — Default image must stay small.
 
 **Do** — fastembed + bge-small-en-v1.5 behind an extra; model fetched once and cached on the volume.
 
 **Acceptance**
-- [ ] Default image lacks the model
-- [ ] Offline start works after first download
+- [x] Default image lacks the model
+- [x] Offline start works after first download
 
-### · SEM-41 · Add an embedding tier that feeds the review queue (5 pts)
+### ✔ SEM-41 · Add an embedding tier that feeds the review queue (5 pts)
 
 **Why** — Paraphrases are the main hit-rate gain.
 
 **Do** — Cosine search over stored vectors; candidates go to review, never auto-serve by default.
 
 **Acceptance**
-- [ ] Paraphrase appears in review with a score
-- [ ] p95 under 40 ms on 1k entries
+- [x] Paraphrase appears in review with a score
+- [x] p95 under 40 ms on 1k entries
 
-### · SEM-42 · Allow an opt-in auto-serve threshold per project (2 pts)
+### ✔ SEM-42 · Allow an opt-in auto-serve threshold per project (2 pts)
 
 **Why** — Some projects accept the risk.
 
 **Do** — Per-project threshold, off by default, logged when used.
 
 **Acceptance**
-- [ ] Default never auto-serves
-- [ ] Threshold use appears in call_log
+- [x] Default never auto-serves
+- [x] Threshold use appears in call_log
 
 ## SEM-E9 · Dashboard design and indah requests (0/3)
 

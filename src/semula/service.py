@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import threading
 import time
@@ -21,6 +22,7 @@ from . import canonical
 from .canonical import (
     CanonicalRequest,
     FingerprintConfig,
+    embedding_text,
     exact_fingerprint,
     lexical_tokens,
     normalised_fingerprint,
@@ -30,6 +32,7 @@ from .canonical import (
 )
 from .config import Settings
 from .db import Database
+from .embeddings import Embedder, Indexer, VectorStore, load_embedder
 from .errors import SemulaError
 from .events import EventBus
 from .exchange import FORMAT
@@ -44,6 +47,8 @@ from .schema import candidate as C
 from .schema import entry as E
 from .schema import pending as Q
 from .schema import project as P
+
+log = logging.getLogger("semula.service")
 
 _SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 
@@ -82,7 +87,7 @@ class MatchResult:
 
 
 class Service:
-    def __init__(self, db: Database, settings: Settings) -> None:
+    def __init__(self, db: Database, settings: Settings, embedder: Embedder | None = None) -> None:
         self.db = db
         self.settings = settings
         # Held calls waiting on an answer: pending id -> [(their event loop, their event)].
@@ -91,6 +96,15 @@ class Service:
         self._waiters_lock = threading.Lock()
         self.mode: str = settings.mode
         self.lexical = make_index(db)
+        # Semantic matching is optional: with no embedder none of this loads (ADR-0003).
+        if embedder is None and settings.embeddings:
+            embedder = load_embedder(
+                settings.resolved_model_dir, offline=settings.embeddings_offline
+            )
+        self.vectors: VectorStore | None = VectorStore(db, embedder) if embedder else None
+        self.indexer: Indexer | None = (
+            Indexer(self.vectors, self._texts_to_embed, DEFAULT_WORKSPACE) if self.vectors else None
+        )
         self.events = EventBus()
         self._settings_cache: dict[str, tuple[float, ProjectSettings]] = {}
         self._logged = 0
@@ -282,7 +296,10 @@ class Service:
         match = self._find_exact(req, project, config)
         if match:
             return MatchResult(match, [])
-        return self._find_lexical(req, project, settings, config)
+        found = self._find_lexical(req, project, settings, config)
+        if found.match or not self.vectors:
+            return found
+        return self._add_semantic(self.vectors, found, req, project, settings, config)
 
     def _find_exact(
         self, req: CanonicalRequest, project: str, config: FingerprintConfig
@@ -376,6 +393,111 @@ class Service:
             [Candidate(entry_id, round(score, 4)) for score, entry_id in weak[:MAX_CANDIDATES]],
             {"entry_id": best_id, "score": round(best_score, 3), "last_message": last},
         )
+
+    def _add_semantic(
+        self,
+        vectors: VectorStore,
+        found: MatchResult,
+        req: CanonicalRequest,
+        project: str,
+        settings: ProjectSettings,
+        config: FingerprintConfig,
+    ) -> MatchResult:
+        """The embedding tier (ADR-0003). It runs only after every cheaper tier missed, since
+        embedding the request is the slowest step. Its matches go to review; they are served only
+        if the project opted in with ``embedding_serve_threshold``."""
+        text = embedding_text(req, config)
+        if not text:
+            return found
+        try:
+            query = vectors.embedder.embed([text])[0]
+            neighbours = vectors.search(DEFAULT_WORKSPACE, project, query, LEXICAL_POOL)
+        except Exception:  # an optional extra must never break a call that works without it
+            log.warning("The embedding tier failed; continuing without it.", exc_info=True)
+            return found
+        rejected = self._rejected(project, req, config)
+        near = [
+            (n.score, n.entry_id)
+            for n in neighbours
+            if n.entry_id not in rejected and n.score >= settings.embedding_review_threshold
+        ]
+        if not near:
+            return found
+        serve_at = settings.embedding_serve_threshold
+        if serve_at is not None:
+            my_shape = shape(req, config)
+            for score, entry_id in near:
+                if score < serve_at:
+                    break
+                row = self.db.one(
+                    _entry_for_serving(E.c.canonical_request).where(E.c.id == entry_id)
+                )
+                other = CanonicalRequest.from_json(row["canonical_request"]) if row else None
+                if row and other and shape(other, config) == my_shape:
+                    return MatchResult(_match(row, "embedding", score), [])
+        merged = {c.entry_id: c for c in found.candidates}  # the word match explains itself better
+        for score, entry_id in self._same_turns(near, req, config):
+            merged.setdefault(entry_id, Candidate(entry_id, round(score, 4), "embedding"))
+        ranked = sorted(merged.values(), key=lambda c: -c.score)[:MAX_CANDIDATES]
+        return MatchResult(None, ranked, found.nearest)
+
+    def _rejected(self, project: str, req: CanonicalRequest, config: FingerprintConfig) -> set[str]:
+        return {
+            r["entry_id"]
+            for r in self.db.rows(
+                sa.select(C.c.entry_id).where(
+                    C.c.workspace_id == DEFAULT_WORKSPACE,
+                    C.c.project_id == project,
+                    C.c.fingerprint == normalised_fingerprint(req, config),
+                    C.c.status == "rejected",
+                )
+            )
+        }
+
+    # --- embeddings -----------------------------------------------------------------
+    def _texts_to_embed(self, ids: list[str]) -> list[tuple[str, str, str, str]]:
+        rows = self.db.rows(
+            sa.select(E.c.id, E.c.workspace_id, E.c.project_id, E.c.canonical_request).where(
+                E.c.id.in_(ids)
+            )
+        )
+        configs: dict[str, FingerprintConfig] = {}
+        out: list[tuple[str, str, str, str]] = []
+        for row in rows:
+            project = row["project_id"]
+            if project not in configs:
+                configs[project] = self.project_settings(project).fingerprint_config()
+            text = embedding_text(
+                CanonicalRequest.from_json(row["canonical_request"]), configs[project]
+            )
+            if text:
+                out.append((row["id"], row["workspace_id"], project, text))
+        return out
+
+    def sync_embeddings(self) -> None:
+        """Queue every entry that has no vector yet (a fresh start, a new model, old data)."""
+        if not self.vectors or not self.indexer:
+            return
+        have = self.vectors.indexed(DEFAULT_WORKSPACE)
+        for row in self.db.rows(sa.select(E.c.id).where(E.c.workspace_id == DEFAULT_WORKSPACE)):
+            if row["id"] not in have:
+                self.indexer.schedule(row["id"])
+
+    def embeddings_status(self) -> dict[str, Any]:
+        if not self.vectors or not self.indexer:
+            return {"enabled": False}
+        entries = self.db.one(
+            sa.select(sa.func.count().label("n"))
+            .select_from(E)
+            .where(E.c.workspace_id == DEFAULT_WORKSPACE)
+        )
+        return {
+            "enabled": True,
+            "model": self.vectors.embedder.model_id,
+            "entries": entries["n"] if entries else 0,
+            "indexed": self.vectors.count(DEFAULT_WORKSPACE),
+            "backlog": self.indexer.backlog,
+        }
 
     def _same_turns(
         self, weak: list[tuple[float, str]], req: CanonicalRequest, config: FingerprintConfig
@@ -669,6 +791,8 @@ class Service:
         conn: Connection,
     ) -> None:
         self.lexical.upsert(entry_id, DEFAULT_WORKSPACE, project, lexical_tokens(req, config), conn)
+        if self.indexer:
+            self.indexer.schedule(entry_id)  # vectors are made off the write path
 
     def sync_index(self) -> None:
         """Make the lexical index match the entries: add the missing, drop the stale. Cheap
