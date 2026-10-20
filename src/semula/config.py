@@ -10,6 +10,10 @@ from typing import Literal
 Mode = Literal["replay", "record"]
 
 
+def _flag(value: str) -> bool:
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
@@ -18,6 +22,9 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8080
     chunk_size: int = 24
+    embeddings: bool = False  # SEMULA_EMBEDDINGS=on; needs the `embeddings` extra
+    embeddings_offline: bool = False  # never download the model; fail if it is not cached
+    model_dir: Path | None = None  # default: <data dir>/models, on the volume
     log_retention_days: int = 30
     log_max_rows: int = 50_000
     models: tuple[str, ...] = ("semula",)
@@ -27,6 +34,10 @@ class Settings:
     @property
     def db_path(self) -> Path:
         return self.data_dir / "semula.db"
+
+    @property
+    def resolved_model_dir(self) -> Path:
+        return self.model_dir or self.data_dir / "models"
 
     @property
     def resolved_database_url(self) -> str:
@@ -45,6 +56,11 @@ class Settings:
             host=os.environ.get("SEMULA_HOST", "127.0.0.1"),
             port=int(os.environ.get("SEMULA_PORT", "8080")),
             chunk_size=int(os.environ.get("SEMULA_CHUNK_SIZE", "24")),
+            embeddings=_flag(os.environ.get("SEMULA_EMBEDDINGS", "off")),
+            embeddings_offline=_flag(os.environ.get("SEMULA_EMBEDDINGS_OFFLINE", "off")),
+            model_dir=Path(os.environ["SEMULA_MODEL_DIR"])
+            if os.environ.get("SEMULA_MODEL_DIR")
+            else None,
             log_retention_days=int(os.environ.get("SEMULA_LOG_RETENTION_DAYS", "30")),
             log_max_rows=int(os.environ.get("SEMULA_LOG_MAX_ROWS", "50000")),
             api_key=os.environ.get("SEMULA_API_KEY") or None,

@@ -68,6 +68,7 @@ For planning today, indah's existing ADRs that rule things out (e.g. ADR-0008 "n
 | 2026-10-20 | Lexical tier: FTS5 retrieves, word-overlap scores; auto-serve default 1.0 (near-misses go to review; lower it per project once tuned) plus a same-shape guard; review floor 0.6 | ADR-0003 amendment |
 | 2026-10-20 | Redaction patterns double as scrubs when fingerprinting, so the live request, its redacted stored copy and a later re-key agree; built-in credential patterns are on by default; recorded answers are not redacted | ADR-0007 amendment |
 | 2026-10-20 | Replay budgets: exact and normalised p95 < 15 ms; the lexical tier and misses < 30 ms (they search the index). Image < 350 MB, cold start < 2 s (container start to healthy, MCP built after startup) | `tests/perf`, `scripts/check_image.sh` |
+| 2026-10-20 | Embeddings: opt-in extra plus `SEMULA_EMBEDDINGS=on`; model cached on the volume; indexed in the background, queried only after every cheaper tier missed; paraphrases go to review, serving is a per-project opt-in (`embedding_serve_threshold`, off) | ADR-0003 amendment |
 | 2026-10-20 | MCP exposes approve and reject to agents, with a description telling them to wait for a human unless asked | `docs/agents/PLAYBOOK.md` |
 
 ## Deferred

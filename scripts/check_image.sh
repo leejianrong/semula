@@ -35,6 +35,14 @@ elapsed=$(echo "$(date +%s.%N) - $(date -d "$started_at" +%s.%N)" | bc)
 printf 'cold start: %.2f s (budget %s s)\n' "$elapsed" "$MAX_START_S"
 [ "$(echo "$elapsed <= $MAX_START_S" | bc)" = 1 ] || { echo "FAIL: cold start too slow"; exit 1; }
 
+# Semantic matching is an opt-in extra: the default image must carry neither the library nor a model.
+if docker run --rm --entrypoint python "$TAG" -c "import fastembed" >/dev/null 2>&1; then
+  echo "FAIL: the default image contains fastembed"; exit 1
+fi
+docker run --rm --entrypoint sh "$TAG" -c 'test ! -e /data/models' \
+  || { echo "FAIL: the default image contains a model directory"; exit 1; }
+echo "ok: no embeddings library or model in the default image"
+
 # The volume is the only place data lives: a project survives the container being replaced.
 curl -fs -X POST "http://127.0.0.1:${port}/api/v1/projects" -H 'content-type: application/json' \
   -d '{"id":"persisted"}' >/dev/null

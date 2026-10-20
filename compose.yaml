@@ -2,6 +2,7 @@
 #
 #   docker compose up -d --wait semula                       SQLite on a named volume (default)
 #   docker compose --profile postgres up -d --wait semula-pg  the same app on Postgres
+#   docker compose --profile embeddings up -d --wait semula-embed   with semantic matching
 #
 # Data lives in the volumes below, never in the image: `docker compose down` keeps it,
 # `docker compose down -v` deletes it. Ports bind to loopback; publish them wider only
@@ -52,6 +53,25 @@ services:
       timeout: 3s
       retries: 20
 
+  semula-embed:
+    profiles: [embeddings]
+    build:
+      context: .
+      args:
+        UV_EXTRAS: "--extra embeddings" # fastembed + onnxruntime: about 180 MB more
+    image: semula:local-embeddings
+    ports:
+      - "127.0.0.1:${SEMULA_EMBED_HOST_PORT:-8082}:8080"
+    volumes:
+      - semula-embed-data:/data # the model (65 MB, fetched on first start) is kept here too
+    environment:
+      SEMULA_MODE: ${SEMULA_MODE:-replay}
+      SEMULA_API_KEY: ${SEMULA_API_KEY:-}
+      SEMULA_EMBEDDINGS: "on"
+      # SEMULA_EMBEDDINGS_OFFLINE: "on" # after the first start: never touch the network
+    restart: unless-stopped
+
 volumes:
+  semula-embed-data:
   semula-data:
   semula-pg:

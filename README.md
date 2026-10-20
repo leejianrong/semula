@@ -2,7 +2,7 @@
 
 **A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
 
-> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing, pinning, an MCP server and a full CLI work too. Near-miss matching with a review queue, a call log with live tail, redaction, export/import and a slim container work too. The dashboard and optional embeddings are still to come. Follow progress on the [slices](docs/SLICES.md).
+> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing, pinning, an MCP server and a full CLI work too. Near-miss matching with a review queue, a call log with live tail, redaction, export/import and a slim container work too. Optional semantic matching (embeddings) is built; the dashboard is still to come. Follow progress on the [slices](docs/SLICES.md).
 
 ```mermaid
 flowchart LR
@@ -80,6 +80,10 @@ SEMULA_DATABASE_URL=postgresql://user:pass@host:5432/semula uv run semula serve
 ```
 
 Migrations (Alembic) run at startup on both. A SQLite file made by an earlier semula is upgraded in place. In the image: `docker build --build-arg UV_EXTRAS="--extra postgres" .`. `make test-postgres` runs the whole suite against a throwaway Postgres container. See [ADR-0009](docs/adr/0009-sqlalchemy-core-alembic-postgres-path.md).
+
+### Semantic matching (optional)
+
+Paraphrases ("the screen is cracked" / "the display is shattered") share few words, so the word tiers miss them. Install the extra and switch it on: `uv sync --extra embeddings`, then `SEMULA_EMBEDDINGS=on semula serve`. The first start downloads a 65 MB model (bge-small-en-v1.5) into `<data dir>/models`; later starts need no network (`SEMULA_EMBEDDINGS_OFFLINE=on` forbids downloading, `semula embeddings fetch` pre-downloads). Paraphrases land in the review queue with their cosine score and are **never served unless you opt in** per project (`embedding_serve_threshold`). Embedding runs only after every cheaper tier has missed and never delays a hit or a write. `semula embeddings status` shows progress. With Docker: `docker compose --profile embeddings up -d --wait semula-embed` (a 440 MB image; the default stays at 240 MB and has no model).
 
 ### Container
 

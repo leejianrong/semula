@@ -67,6 +67,7 @@ def build_mcp(service: Service) -> FastMCP:
             "version": __version__,
             "mode": service.mode,
             "projects": service.list_projects(),
+            "embeddings": service.embeddings_status(),
         }
 
     @tool

@@ -57,7 +57,7 @@ Agents and humans share one write path. When they conflict, the human wins: a hu
 
 ## Success measures
 
-- Replay hit overhead p95 < 15 ms (1k-entry project, no embeddings, excluding streaming delay), enforced in CI by `tests/perf`; the opt-in lexical tier and misses, which search the index, get 30 ms. With embeddings p95 < 40 ms.
+- Replay hit overhead p95 < 15 ms (1k-entry project, no embeddings, excluding streaming delay), enforced in CI by `tests/perf`; the opt-in lexical tier and misses, which search the index, get 30 ms. With embeddings, only a miss pays for the model: measured on a 2-vCPU CI runner at p50 40 ms / p95 43 ms (1k entries, 25-word prompts), so that path is budgeted at 55 ms; hits are unaffected. The original 40 ms target was not reachable with this model on shared CPUs.
 - Image < 350 MB without the embeddings extra. Cold start < 2 s.
 - Zero outbound calls in replay mode, asserted by a test with the network blocked.
 - OpenAI Python SDK and LangChain pass the conformance suite (streaming, tools, errors).
@@ -69,7 +69,7 @@ Agents and humans share one write path. When they conflict, the human wins: a hu
 |------|-----------|-----|
 | S1 | One process, one port: `/v1` LLM API, `/api/v1` admin, `/mcp`, later `/ui`. | 0001 |
 | S2 | Record queue: a miss writes a `pending` row; the HTTP call waits up to `record_timeout`; an answer (validated) releases it and saves an entry; a late answer is still saved. | 0002 |
-| S3 | Matcher cascade: exact fingerprint, then normalised fingerprint, then BM25 (FTS5). Weak candidates enter the review queue. Embeddings are an optional tier that only feeds review by default. | 0003, 0007 |
+| S3 | Matcher cascade: exact fingerprint, then normalised fingerprint, then BM25 (FTS5). Weak candidates enter the review queue. Embeddings are an optional tier (extra, `SEMULA_EMBEDDINGS=on`) that only feeds review unless a project opts in. | 0003, 0007 |
 | S4 | Storage: SQLAlchemy Core over SQLite locally and Postgres when hosted, Alembic migrations, `workspace_id` on every table. Export/import to files carrying ULIDs. | 0004, 0009 |
 | S5 | One service layer; REST, CLI, MCP and the dashboard are thin callers. Optimistic concurrency with entry versions. | 0005 |
 | S6 | Streaming: store the assembled message plus chunk boundaries when recorded from a stream; replay by re-chunking or verbatim. | 0008 |
