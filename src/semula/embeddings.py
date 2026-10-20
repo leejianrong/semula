@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, cast
 
 import sqlalchemy as sa
 
@@ -85,7 +85,7 @@ class FastEmbedder:
                     f"Could not download {model_id}: {exc}. Check the network, or set "
                     "SEMULA_EMBEDDINGS=off."
                 ) from exc
-        self._model.model.tokenizer.enable_truncation(max_length=MAX_TOKENS)  # type: ignore[attr-defined]
+        cast(Any, self._model).model.tokenizer.enable_truncation(max_length=MAX_TOKENS)
 
     def embed(self, texts: Sequence[str]) -> np.ndarray:
         import numpy as np

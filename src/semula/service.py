@@ -8,6 +8,7 @@ import logging
 import re
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -102,6 +103,11 @@ class Service:
                 settings.resolved_model_dir, offline=settings.embeddings_offline
             )
         self.vectors: VectorStore | None = VectorStore(db, embedder) if embedder else None
+        self._encoder_pool = (
+            ThreadPoolExecutor(max_workers=2, thread_name_prefix="semula-encode")
+            if self.vectors
+            else None
+        )
         self.indexer: Indexer | None = (
             Indexer(self.vectors, self._texts_to_embed, DEFAULT_WORKSPACE) if self.vectors else None
         )
@@ -296,10 +302,22 @@ class Service:
         match = self._find_exact(req, project, config)
         if match:
             return MatchResult(match, [])
+        # Encoding the request is the slowest step, so it starts now and overlaps the word search.
+        encoding = self._start_encoding(req, config)
         found = self._find_lexical(req, project, settings, config)
-        if found.match or not self.vectors:
+        if encoding is None or self.vectors is None or found.match:
+            if encoding is not None:
+                encoding.cancel()
             return found
-        return self._add_semantic(self.vectors, found, req, project, settings, config)
+        return self._add_semantic(self.vectors, encoding, found, req, project, settings, config)
+
+    def _start_encoding(
+        self, req: CanonicalRequest, config: FingerprintConfig
+    ) -> Future[Any] | None:
+        if not self.vectors or not self._encoder_pool:
+            return None
+        text = embedding_text(req, config)
+        return self._encoder_pool.submit(self.vectors.embedder.embed, [text]) if text else None
 
     def _find_exact(
         self, req: CanonicalRequest, project: str, config: FingerprintConfig
@@ -397,6 +415,7 @@ class Service:
     def _add_semantic(
         self,
         vectors: VectorStore,
+        encoding: Future[Any],
         found: MatchResult,
         req: CanonicalRequest,
         project: str,
@@ -406,11 +425,8 @@ class Service:
         """The embedding tier (ADR-0003). It runs only after every cheaper tier missed, since
         embedding the request is the slowest step. Its matches go to review; they are served only
         if the project opted in with ``embedding_serve_threshold``."""
-        text = embedding_text(req, config)
-        if not text:
-            return found
         try:
-            query = vectors.embedder.embed([text])[0]
+            query = encoding.result()[0]
             neighbours = vectors.search(DEFAULT_WORKSPACE, project, query, LEXICAL_POOL)
         except Exception:  # an optional extra must never break a call that works without it
             log.warning("The embedding tier failed; continuing without it.", exc_info=True)

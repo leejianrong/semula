@@ -93,5 +93,5 @@ strict = true
 files = ["src/semula"]
 
 [[tool.mypy.overrides]]
-module = ["fastembed", "fastembed.*"]
+module = ["fastembed", "fastembed.*", "loguru"]
 ignore_missing_imports = true  # optional extra, not installed in the fast layer
