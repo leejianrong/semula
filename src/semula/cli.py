@@ -194,12 +194,20 @@ def _entry_list(args: argparse.Namespace) -> int:
     params: dict[str, Any] = {"limit": args.limit, "offset": args.offset}
     if args.q:
         params["q"] = args.q
+    for flag in ("pinned", "has_alias", "tool_calls", "never_hit"):
+        value = getattr(args, flag)
+        if value is not None:
+            params[flag] = str(value).lower()
+    for key in ("sort", "order"):
+        if getattr(args, key):
+            params[key] = getattr(args, key)
     resp = _call(args, "GET", f"/api/v1/projects/{args.project}/entries", params=params)
     if resp.status_code != 200:
         return _fail(args, resp)
     body = resp.json()
     lines = [
         f"{e['id']}\tv{e['version']}\t{'pinned' if e['pinned'] else '-'}\thits={e['hit_count']}"
+        f"\t{'tools' if e['has_tools'] else '-'}\taliases={e['alias_count']}"
         f"\t{e['last_message'].replace(chr(10), ' ')[:70]}"
         for e in body["entries"]
     ]
@@ -530,6 +538,23 @@ def build_parser() -> argparse.ArgumentParser:
     elist.add_argument("--q", default=None, help="text filter")
     elist.add_argument("--limit", type=int, default=50)
     elist.add_argument("--offset", type=int, default=0)
+    for flag, meaning in (
+        ("pinned", "pinned"),
+        ("has-alias", "with an approved alias"),
+        ("tool-calls", "whose answer calls a tool"),
+        ("never-hit", "never replayed"),
+    ):
+        elist.add_argument(
+            f"--{flag}",
+            dest=flag.replace("-", "_"),
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help=f"only entries {meaning} (--no-{flag}: only the others)",
+        )
+    elist.add_argument(
+        "--sort", choices=["hits", "updated", "created"], help="default: oldest first"
+    )
+    elist.add_argument("--order", choices=["asc", "desc"], help="default: desc with --sort")
     add(esub, "show", _entry_show, "Show one entry in full").add_argument("id")
     eset = add(esub, "set", _entry_set, "Edit an entry (needs its current --version)")
     eset.add_argument("id")

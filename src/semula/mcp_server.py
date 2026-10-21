@@ -137,11 +137,34 @@ def build_mcp(service: Service) -> FastMCP:
 
     @tool
     def list_entries(
-        project: str, q: str | None = None, limit: int = 50, offset: int = 0
+        project: str,
+        q: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        pinned: bool | None = None,
+        has_alias: bool | None = None,
+        tool_calls: bool | None = None,
+        never_hit: bool | None = None,
+        sort: str | None = None,
+        order: str | None = None,
     ) -> dict[str, Any]:
         """List a project's recorded entries without their bodies: id, version, pinned flag, hit
-        count and the last message. 'q' filters by text. Use get_entry for the full content."""
-        return service.list_entries(project, q, limit, offset)
+        count, alias_count, has_tools (an answer calls a tool) and the last message. 'q' filters
+        by text; 'pinned', 'has_alias', 'tool_calls' and 'never_hit' filter by flag (false picks
+        the opposite). 'sort' is hits, updated or created (most first; 'order' asc or desc).
+        'total' counts the filtered set. Use get_entry for the full content."""
+        return service.list_entries(
+            project,
+            q,
+            limit,
+            offset,
+            pinned=pinned,
+            has_alias=has_alias,
+            tool_calls=tool_calls,
+            never_hit=never_hit,
+            sort=sort,
+            order=order,
+        )
 
     @tool
     def get_entry(id: str) -> dict[str, Any]:

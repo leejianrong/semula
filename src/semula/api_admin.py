@@ -63,9 +63,32 @@ def _actor(request: Request) -> str:
 
 @router.get("/projects/{project_id}/entries")
 def list_entries(
-    project_id: str, request: Request, q: str | None = None, limit: int = 50, offset: int = 0
+    project_id: str,
+    request: Request,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    pinned: bool | None = None,
+    has_alias: bool | None = None,
+    tool_calls: bool | None = None,
+    never_hit: bool | None = None,
+    sort: str | None = None,
+    order: str | None = None,
 ) -> dict[str, Any]:
-    return _service(request).list_entries(project_id, q, limit, offset)
+    """Entries without their bodies. Filters (``pinned``, ``has_alias``, ``tool_calls``,
+    ``never_hit``) combine with AND; ``sort`` is ``hits``, ``updated`` or ``created``."""
+    return _service(request).list_entries(
+        project_id,
+        q,
+        limit,
+        offset,
+        pinned=pinned,
+        has_alias=has_alias,
+        tool_calls=tool_calls,
+        never_hit=never_hit,
+        sort=sort,
+        order=order,
+    )
 
 
 @router.post("/projects/{project_id}/entries")

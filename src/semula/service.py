@@ -61,6 +61,11 @@ MAX_CANDIDATES = 3  # weak matches queued for review per missed request
 PRUNE_EVERY = 200  # call-log rows between retention sweeps
 SETTINGS_TTL = 1.0  # seconds a project's settings are reused between reads
 
+ENTRY_SORTS = {"hits": "hit_count", "updated": "updated_at", "created": "created_at"}
+# Stored answers are JSON written by json.dumps, so an answer that calls a tool holds exactly this
+# text. A prose mention of it is escaped (\"tool_calls\": [) and cannot match.
+TOOL_CALLS_LIKE = '%"tool_calls": [%'
+
 TIERS = ("exact", "normalised", "alias", "words", "meaning")
 # What one tier saw, kept only when test_match asks: tier -> (verdict, score, short reason).
 Trace = dict[str, tuple[str, float | None, str]]
@@ -593,19 +598,63 @@ class Service:
 
     # --- entries ------------------------------------------------------------------
     def list_entries(
-        self, project: str, q: str | None = None, limit: int = 50, offset: int = 0
+        self,
+        project: str,
+        q: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        *,
+        pinned: bool | None = None,
+        has_alias: bool | None = None,
+        tool_calls: bool | None = None,
+        never_hit: bool | None = None,
+        sort: str | None = None,
+        order: str | None = None,
     ) -> dict[str, Any]:
-        """A lean projection: no request or response bodies, cheap for agents to scan."""
+        """A lean projection: no request or response bodies, cheap for agents to scan.
+
+        Filters combine with AND; a flag left out does not filter, ``false`` selects the
+        opposite. Without ``sort`` rows come in creation order (ids are ULIDs); a named sort
+        defaults to most-first (``order`` ``desc``). Ties fall back to the id so pages stay
+        stable."""
         self.require_project(project)
+        if sort not in (None, *ENTRY_SORTS):
+            raise SemulaError(
+                422, "invalid_param", f"sort must be one of {', '.join(ENTRY_SORTS)}.", param="sort"
+            )
+        if order not in (None, "asc", "desc"):
+            raise SemulaError(422, "invalid_param", "order must be 'asc' or 'desc'.", param="order")
         conditions = [E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == project]
         if q:
             escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(E.c.canonical_request.ilike(f"%{escaped}%", escape="\\"))
+        if pinned is not None:
+            conditions.append(E.c.pinned.is_(pinned))
+        if never_hit is not None:
+            conditions.append(E.c.hit_count == 0 if never_hit else E.c.hit_count > 0)
+        if has_alias is not None:
+            exists = sa.exists().where(A.c.entry_id == E.c.id)
+            conditions.append(exists if has_alias else ~exists)
+        if tool_calls is not None:
+            calls = E.c.responses.like(TOOL_CALLS_LIKE)
+            conditions.append(calls if tool_calls else ~calls)
         total = self.db.one(sa.select(sa.func.count().label("n")).select_from(E).where(*conditions))
+        alias_count = (
+            sa.select(sa.func.count())
+            .where(A.c.entry_id == E.c.id)
+            .correlate(E)
+            .scalar_subquery()
+            .label("alias_count")
+        )
+        column = E.c.id if sort is None else getattr(E.c, ENTRY_SORTS[sort])
+        descending = (order or ("asc" if sort is None else "desc")) == "desc"
+        ordering = [column.desc() if descending else column.asc()]
+        if sort is not None:
+            ordering.append(E.c.id.desc() if descending else E.c.id.asc())
         rows = self.db.rows(
-            sa.select(E)
+            sa.select(E, alias_count)
             .where(*conditions)
-            .order_by(E.c.id)
+            .order_by(*ordering)
             .limit(max(1, min(limit, 500)))
             .offset(max(0, offset))
         )
@@ -1585,7 +1634,10 @@ def _entry_view(row: Any, *, full: bool) -> dict[str, Any]:
         "last_message": (req.messages[-1]["content"][:200] if req.messages else ""),
         "fingerprint": row["fingerprint"],
         "updated_at": row["updated_at"],
+        "has_tools": any((r.get("message") or {}).get("tool_calls") for r in responses),
     }
+    if "alias_count" in row:
+        view["alias_count"] = row["alias_count"]
     if full:
         view["request"] = {"messages": req.messages, "tools": req.tools}
         view["responses"] = responses
