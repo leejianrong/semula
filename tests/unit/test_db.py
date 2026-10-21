@@ -18,7 +18,7 @@ from tests.support.db import fresh_database_url
 
 pytestmark = pytest.mark.unit
 
-HEAD = "0008"  # bump with every new migration
+HEAD = "0009"  # bump with every new migration
 
 # What the pre-Alembic hand-rolled runner produced at its version 2.
 LEGACY_DDL = """
@@ -211,3 +211,36 @@ def test_upgrading_collapses_duplicate_open_requests_to_the_earliest(tmp_path: P
     conn.close()
     db = Database(path)
     assert [r["id"] for r in db.query("SELECT id FROM pending")] == ["P1"]
+
+
+def test_upgrading_gives_every_existing_entry_a_first_revision(tmp_path: Path) -> None:
+    """History arrived after entries existed: the migration snapshots each one as it stands."""
+    db = new_db(tmp_path)
+    db.run("DROP TABLE entry_revision")
+    db.run("UPDATE alembic_version SET version_num = '0008'")
+    for n, (pinned, selection) in enumerate([(False, "first"), (True, "cycle")]):
+        db.run(
+            "INSERT INTO entry (id, workspace_id, project_id, fingerprint, exact_fingerprint, "
+            "canonical_request, responses, version, pinned, selection, updated_at, created_at) "
+            "VALUES (:id, :w, :p, 'f', 'e', '{}', :r, 3, :pin, :sel, "
+            "'2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')",
+            {
+                "id": f"e{n}", "w": DEFAULT_WORKSPACE, "p": DEFAULT_PROJECT, "pin": pinned,
+                "r": '[{"message": {"role": "assistant", "content": "old"}}]', "sel": selection,
+            },
+        )  # fmt: skip
+    db.migrate()
+    assert db.revision() == HEAD
+    rows = db.query("SELECT * FROM entry_revision ORDER BY entry_id")
+    assert [(r["entry_id"], r["version"], r["actor"], r["summary"]) for r in rows] == [
+        ("e0", 3, "agent", "before history"),
+        ("e1", 3, "agent", "before history"),
+    ]
+    assert rows[0]["ts"] == "2026-10-01T00:00:00.000Z" and not rows[0]["forced"]
+    import json
+
+    assert json.loads(rows[1]["snapshot"]) == {
+        "responses": [{"message": {"role": "assistant", "content": "old"}}],
+        "selection": "cycle",
+        "pinned": True,
+    }

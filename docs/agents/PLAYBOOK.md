@@ -38,6 +38,7 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Auth
 | `update_entry`, `delete_entry` | `semula entry set <id> --version N ...`, `semula entry delete <id> --version N` |
 | `test_match` | `semula test-match --prompt "..."` or `--file request.json` |
 | `list_calls` | `semula log [--project P] [--outcome miss]`; `semula tail` follows live (`--json` for one object per line) |
+| `entry_history` | `semula entry history <id>`; `--version N` shows that revision in full |
 | `log_stats` | `semula log --stats [--window 30m] [--project P]` |
 | (no MCP tool) | `semula export <project> --dir DIR`, `semula import DIR`: cassettes as files for git |
 | (status in `get_status`) | `semula embeddings status` |
@@ -86,7 +87,7 @@ Rules that keep answers replayable:
 
 | Error `code` | Meaning | What to do |
 |---|---|---|
-| `version_conflict` (409) | Someone changed it since you read it. The error carries `current`. | Re-read, re-apply your change to that version. Never retry the stale one. |
+| `version_conflict` (409) | Someone changed it since you read it. The error carries `current`. | Re-read, re-apply your change to that version. Never retry the stale one. To see what changed, `entry_history` (CLI `semula entry history <id> [--version N]`). |
 | `entry_pinned` (409) | A human pinned this entry. | Leave it alone and tell the user. Do not pass `force` unless the user told you to. |
 | `entry_exists` (409) | `upsert_entry` found an entry for that request. | Pass its `version` if you mean to replace it. |
 | `invalid_answer` (422) | Your answer is malformed. `param` says where. | Fix that field and resubmit. |

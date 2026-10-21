@@ -215,6 +215,34 @@ def _entry_list(args: argparse.Namespace) -> int:
     return _ok(args, body, "\n".join(lines))
 
 
+def _entry_history(args: argparse.Namespace) -> int:
+    params = {"version": args.version} if args.version is not None else None
+    resp = _call(args, "GET", f"/api/v1/entries/{args.id}/history", params=params)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    out = resp.json()
+    if args.version is not None:
+        rev = out["revision"]
+        snap = rev["snapshot"]
+        answers = "\n".join(
+            f"  [{i}] {json.dumps(r['message'].get('content') or r['message'].get('tool_calls'))}"
+            for i, r in enumerate(snap["responses"])
+        )
+        human = (
+            f"v{rev['version']}  {rev['ts']}  {rev['actor']}  {rev['summary']}"
+            f"{'  (forced)' if rev['forced'] else ''}\n"
+            f"selection {snap['selection']}, {'pinned' if snap['pinned'] else 'not pinned'}\n"
+            f"{answers}"
+        )
+    else:
+        human = "\n".join(
+            f"v{r['version']}\t{r['ts']}\t{r['actor']}\t{r['summary']}"
+            f"{' (forced)' if r['forced'] else ''}"
+            for r in out["revisions"]
+        )
+    return _ok(args, out, human)
+
+
 def _entry_show(args: argparse.Namespace) -> int:
     resp = _call(args, "GET", f"/api/v1/entries/{args.id}")
     if resp.status_code != 200:
@@ -578,6 +606,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     elist.add_argument("--order", choices=["asc", "desc"], help="default: desc with --sort")
     add(esub, "show", _entry_show, "Show one entry in full").add_argument("id")
+    ehist = add(esub, "history", _entry_history, "An entry's change history (newest first)")
+    ehist.add_argument("id")
+    ehist.add_argument("--version", type=int, default=None, help="show that revision in full")
     eset = add(esub, "set", _entry_set, "Edit an entry (needs its current --version)")
     eset.add_argument("id")
     eset.add_argument("--version", type=int, required=True)

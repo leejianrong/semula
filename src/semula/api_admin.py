@@ -119,6 +119,13 @@ def get_entry(entry_id: str, request: Request) -> dict[str, Any]:
     return _service(request).get_entry(entry_id)
 
 
+@router.get("/entries/{entry_id}/history")
+def entry_history(entry_id: str, request: Request, version: int | None = None) -> dict[str, Any]:
+    """The entry's revisions, newest first (the latest 50 are kept); ``?version=N`` returns that
+    revision with its snapshot: the responses, selection and pin as that write left them."""
+    return _service(request).entry_history(entry_id, version)
+
+
 @router.put("/entries/{entry_id}")
 async def update_entry(entry_id: str, request: Request) -> dict[str, Any]:
     body = await _json(request)
@@ -212,6 +219,7 @@ async def import_project(request: Request) -> dict[str, Any]:
             body["bundle"],
             project,
             force=bool(body.get("force", False)),
+            actor=_actor(request),
         )
     )
 
@@ -304,5 +312,7 @@ async def answer_pending(pending_id: str, request: Request) -> dict[str, Any]:
         payload = await request.json()
     except ValueError as exc:
         raise SemulaError(400, "invalid_json", "The request body is not valid JSON.") from exc
-    entry_id = await offload(_service(request).answer_pending, pending_id, payload)
+    entry_id = await offload(
+        _service(request).answer_pending, pending_id, payload, actor=_actor(request)
+    )
     return {"entry_id": entry_id, "pending_id": pending_id, "status": "answered"}
