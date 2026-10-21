@@ -187,7 +187,9 @@ def build_mcp(service: Service) -> FastMCP:
     ) -> dict[str, Any]:
         """Ask what would happen to a request now, without serving it or counting a hit: which
         tier matched (exact, normalised, alias or bm25), the entry and its score, and on a miss
-        the weak 'candidates' that would go to review and the nearest recorded entry. Pass
+        the weak 'candidates' that would go to review and the nearest recorded entry. 'tiers'
+        lists a verdict for each of exact, normalised, alias, words and meaning (no, match,
+        candidate, skipped, off) with an optional score and a short reason. Pass
         'prompt' (one user message) or a full chat 'request'."""
         if request is None:
             if prompt is None:

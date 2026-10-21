@@ -445,7 +445,14 @@ def _test_match(args: argparse.Namespace) -> int:
         if out["candidates"]:
             hint += f"; {len(out['candidates'])} weak candidate(s) would go to review"
         human = f"no match (would {out['would']}){hint}"
+    if out.get("tiers"):
+        human += "\ntiers: " + ", ".join(_tier_text(t) for t in out["tiers"])
     return _ok(args, out, human)
+
+
+def _tier_text(tier: dict[str, Any]) -> str:
+    score = f" {tier['score']:.2f}" if "score" in tier else ""
+    return f"{tier['tier']} {tier['verdict']}{score}"
 
 
 def _mcp(args: argparse.Namespace) -> int:
