@@ -69,8 +69,8 @@ async def _load(tab: Tab, row: dict[str, Any]) -> dict[str, Any]:
                 detail["answer"] = _answer(await blocking(service.get_entry, pending["entry_id"]))
     except SemulaError:
         detail["note"] = "Its entry was deleted."
-    if not detail["messages"] and row["prompt"]:
-        detail["messages"] = [{"role": "user", "content": row["prompt"]}]
+    if not detail["messages"] and row["preview"]:
+        detail["messages"] = [{"role": "user", "content": row["preview"]}]
         detail["note"] = detail["note"] or "Only the preview was kept."
     return detail
 

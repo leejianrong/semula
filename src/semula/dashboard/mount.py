@@ -10,6 +10,7 @@ from typing import Any
 
 from starlette.types import Receive, Scope, Send
 
+from ..schema import DEFAULT_PROJECT
 from ..service import Service
 
 log = logging.getLogger("semula.dashboard")
@@ -87,6 +88,12 @@ class LazyDashboard:
                 self._app = build_dashboard(self._service)
         return self._app
 
+    def _landing_project(self) -> str:
+        """Where ``/ui`` opens: the project of the latest call, so a first look shows traffic
+        rather than an empty ``default``."""
+        latest = self._service.list_calls(limit=1)
+        return str(latest[0]["project"]) if latest else DEFAULT_PROJECT
+
     async def _ensure(self) -> Any:
         if self._bridge_task is None:
             # Listen before building: the build seeds the log from the database, and a call
@@ -116,7 +123,8 @@ class LazyDashboard:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http" and scope["path"].rstrip("/") == scope.get("root_path", ""):
-            await _redirect(send, f"{scope.get('root_path', '')}/projects/default/log")
+            project = await asyncio.to_thread(self._landing_project)
+            await _redirect(send, f"{scope.get('root_path', '')}/projects/{project}/log")
             return
         app = await self._ensure()
         if app is None:

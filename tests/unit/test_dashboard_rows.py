@@ -2,7 +2,7 @@ from datetime import UTC, timedelta, timezone
 
 import pytest
 
-from semula.dashboard.rows import call_row, clock, keeps, match_text, parse_ts, took
+from semula.dashboard.rows import call_row, clock, keeps, match_text, parse_ts, short, took
 
 pytestmark = pytest.mark.unit
 
@@ -123,3 +123,12 @@ def test_the_rail_from_a_test_match_answer() -> None:
         [{"tier": "words", "verdict": "no", "score": 0.4, "reason": "too different"}]
     )
     assert again[0]["text"] == "No, too different"
+
+
+def test_a_long_prompt_is_cut_for_the_table_but_kept_whole_for_the_detail() -> None:
+    long = "word " * 30
+    row = call_row({**CALL, "preview": long.strip()}, UTC)
+    assert len(row["prompt"]) <= 64 and row["prompt"].endswith("…")
+    assert row["preview"] == long.strip()
+    assert short("short") == "short" and short("x" * 64) == "x" * 64
+    assert short("x" * 65) == "x" * 63 + "…"

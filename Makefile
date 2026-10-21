@@ -1,17 +1,21 @@
 .DEFAULT_GOAL := help
 
-# Print a free host port at or above $(PORT) (stdlib only; no lsof/nc needed).
+# Print a free host port at or above $(PORT) (stdlib only; no lsof/nc needed). A script, not an
+# inline `python -c`: make leaves the \n of a one-liner as two characters, which Python rejects.
 PORT ?= 8080
-FREE_PORT := python3 -c 'import socket,sys\np=int(sys.argv[1])\nwhile True:\n    s=socket.socket()\n    try:\n        s.bind(("127.0.0.1",p)); s.close(); print(p); break\n    except OSError:\n        s.close(); p+=1' $(PORT)
+FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: run docker image-check bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: run demo docker image-check bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-run: ## Run the server on the first free port from 8080 (Ctrl+C to stop)
-	@P=$$($(FREE_PORT)); echo ">>> semula: http://127.0.0.1:$$P/health"; uv run semula serve --port $$P
+run: ## Run the server on the first free port from 8080; the dashboard is at /ui/ (Ctrl+C to stop)
+	@P=$$($(FREE_PORT)); echo ">>> semula: http://127.0.0.1:$$P/ui/   (health: /health)"; uv run semula serve --port $$P
+
+demo: ## Run with demo data and a moving log; prints the dashboard URL (ARGS=--record parks calls)
+	@uv run python scripts/demo.py --port $(PORT) $(ARGS)
 
 docker: ## Build and run the container on the first free port from 8080
 	@P=$$($(FREE_PORT)); echo ">>> semula: http://127.0.0.1:$$P/health"; docker build -q -t semula:dev . && docker run --rm -p 127.0.0.1:$$P:8080 -v semula-data:/data semula:dev
