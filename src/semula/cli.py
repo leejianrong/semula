@@ -286,8 +286,10 @@ def _call_line(c: dict[str, Any]) -> str:
     score = f" {c['score']:.2f}" if c["score"] is not None else ""
     latency = f"{c['latency_ms']:.0f}ms" if c["latency_ms"] is not None else "-"
     entry = c["entry_id"] or c["pending_id"] or "-"
+    preview = f'  "{c["preview"]}"' if c.get("preview") else ""
     return (
-        f"{c['ts'][11:23]}  {c['project']:<12} {c['outcome']:<14} {tier}{score}  {latency}  {entry}"
+        f"{c['ts'][11:23]}  {c['project']:<12} {c['outcome']:<14} {tier}{score}  {latency}  "
+        f"{entry}{preview}"
     )
 
 

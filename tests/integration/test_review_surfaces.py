@@ -114,3 +114,21 @@ def test_test_match_shows_the_tier_verdicts_to_a_cli_user(
         out = capsys.readouterr().out
         assert "tiers: exact no, normalised no, alias no, words candidate" in out
         assert "meaning off" in out
+
+
+def test_the_preview_reaches_the_cli_and_mcp(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def listed(url: str) -> Any:
+        async with Client(url + "/mcp/") as client:
+            result = await client.call_tool("list_calls", {})
+            return result.data if result.data is not None else json.loads(result.content[0].text)
+
+    with running_server(tmp_path, mode="replay") as url:
+        httpx.post(url + "/v1/chat/completions", json=ask("What is the capital of Peru?"))
+        capsys.readouterr()
+        assert run(url, "log") == 0
+        assert '"What is the capital of Peru?"' in capsys.readouterr().out
+        assert run(url, "log", "--json") == 0
+        assert json.loads(capsys.readouterr().out)["calls"][0]["preview"].startswith("What is")
+        assert asyncio.run(listed(url))[0]["preview"] == "What is the capital of Peru?"

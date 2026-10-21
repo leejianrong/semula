@@ -48,7 +48,7 @@ Tooltips that open on keyboard focus (E5) are required by the [text rules](text-
 
 Drawing real data exposed gaps in the headless core. These are semula work, not indah work, and none was built when this was written; struck through as they land:
 
-1. **A prompt preview on each call-log row.** The log lists calls but carries no text. Add a short redacted last-message preview to the row and the event.
+1. ~~**A prompt preview on each call-log row.**~~ Done (SEM-63). Each row, event, `GET /api/v1/log`, `semula log`/`tail` and MCP `list_calls` carry `preview`: the last message with text, redacted, whitespace collapsed, at most 120 characters (null on rows from before).
 2. **Log statistics.** The strip and the hit rate, median and parked numbers need `GET /api/v1/log/stats` (per-minute buckets for a window, plus the three numbers).
 3. ~~**Per-tier verdicts in `test_match`.**~~ Done (SEM-62). `test_match` returns `tiers`: one entry each for exact, normalised, alias, words and meaning, with a `verdict` (`no`, `match`, `candidate`, `skipped`, `off`), an optional `score` and a short `reason`. The trace is collected only when `test_match` asks.
 4. **Entry history.** "Compare" in the conflict banner needs a small change history per entry.

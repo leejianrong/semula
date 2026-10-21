@@ -227,3 +227,88 @@ async def test_recorded_answers_are_logged_too(record: httpx.AsyncClient) -> Non
     await record_answer(record, chat("log me"), {"content": "ok"})
     outcomes = [c["outcome"] for c in (await record.get("/api/v1/log")).json()["calls"]]
     assert outcomes == ["recorded"]
+
+
+# --- SEM-63: a redacted preview of the prompt on every row -------------------------------------
+HIT_STATEMENTS = 5  # measured before SEM-63: a hit looks up, then logs
+SECRET_KEY = "sk-" + "ant-api03-AbCdEfGhIjKlMnOpQrStUvWx"  # noqa: S105
+
+
+async def test_each_outcome_carries_a_preview_of_the_prompt(record: httpx.AsyncClient) -> None:
+    await seed(record, "hello")
+    await record.post("/v1/chat/completions", json=chat("hello"))  # a hit
+    call = asyncio.create_task(record.post("/v1/chat/completions", json=chat("park me please")))
+    for _ in range(200):
+        pending = (await record.get("/api/v1/pending")).json()["pending"]
+        if pending:
+            break
+        await asyncio.sleep(0.01)
+    await record.post(f"/api/v1/pending/{pending[0]['id']}/answer", json={"content": "ok"})
+    await call
+    await record.put("/api/v1/mode", json={"mode": "replay"})
+    await record.post("/v1/chat/completions", json=chat("a miss " + "z" * 200))
+    calls = (await record.get("/api/v1/log")).json()["calls"]
+    previews = {c["outcome"]: c["preview"] for c in calls}
+    assert previews["hit"] == "hello" and previews["recorded"] == "park me please"
+    assert previews["miss"].startswith("a miss zzz") and len(previews["miss"]) == 120
+
+
+async def test_a_timed_out_call_has_a_preview_too(tmp_path: Path) -> None:
+    async with make_client(tmp_path, mode="record", record_timeout=0.2) as client:
+        resp = await client.post("/v1/chat/completions", json=chat("nobody answers"))
+        assert resp.status_code == 504
+        (call,) = (await client.get("/api/v1/log")).json()["calls"]
+        assert call["outcome"] == "record_timeout" and call["preview"] == "nobody answers"
+
+
+async def test_the_preview_is_on_the_live_event(replay: httpx.AsyncClient) -> None:
+    service = replay._transport.app.state.service  # type: ignore[attr-defined]
+    with service.events.subscribe() as sub:
+        await replay.post("/v1/chat/completions", json=chat("tell me live"))
+        event = await asyncio.wait_for(sub.get(), 2)
+    assert event["preview"] == "tell me live"
+
+
+async def test_a_secret_never_reaches_the_preview_or_the_database(
+    replay: httpx.AsyncClient,
+) -> None:
+    await replay.post("/v1/chat/completions", json=chat(f"deploy with {SECRET_KEY} now"))
+    await replay.patch(
+        "/api/v1/projects/default", json={"settings": {"redact_patterns": ["ACME-\\d+"]}}
+    )
+    await replay.post("/v1/chat/completions", json=chat("ticket ACME-4411 broke"))
+    calls = (await replay.get("/api/v1/log")).json()["calls"]
+    assert [c["preview"] for c in calls] == [
+        "ticket [REDACTED] broke",
+        "deploy with [REDACTED] now",
+    ]
+    stored = every_stored_value(replay)
+    assert "ant-api03" not in stored and "ACME-4411" not in stored
+
+
+async def test_old_rows_without_a_preview_read_as_none(replay: httpx.AsyncClient) -> None:
+    db = replay._transport.app.state.db  # type: ignore[attr-defined]
+    db.run(
+        "INSERT INTO call_log (workspace_id, project_id, ts, mode, outcome) "
+        "VALUES ('default', 'default', '2026-01-01T00:00:00.000Z', 'replay', 'miss')"
+    )
+    (call,) = (await replay.get("/api/v1/log")).json()["calls"]
+    assert call["preview"] is None
+
+
+async def test_the_preview_costs_a_hit_no_extra_queries(replay: httpx.AsyncClient) -> None:
+    await seed(replay)
+    db = replay._transport.app.state.db  # type: ignore[attr-defined]
+    statements: list[str] = []
+
+    def count(conn, cursor, statement, *rest):  # type: ignore[no-untyped-def]
+        statements.append(statement)
+
+    sa.event.listen(db.engine, "before_cursor_execute", count)
+    try:
+        await replay.post("/v1/chat/completions", json=chat("hello"))
+    finally:
+        sa.event.remove(db.engine, "before_cursor_execute", count)
+    inserts = [s for s in statements if s.lstrip().upper().startswith("INSERT")]
+    assert len(inserts) == 1  # the log row, and nothing else is written
+    assert len(statements) <= HIT_STATEMENTS, statements

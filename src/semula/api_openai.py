@@ -54,13 +54,14 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 entry_id=match.entry_id,
                 project=project,
                 count_hit=True,
+                req=req,
             )
         )
         return _respond(service, body, match.stored, model)
 
     await offload(service.record_candidates, req, project, found.candidates)  # still a miss
     if service.mode == "replay":
-        await offload(partial(service.log_call, "miss", started, project=project))
+        await offload(partial(service.log_call, "miss", started, project=project, req=req))
         raise SemulaError(
             424,
             "semula_no_match",
@@ -80,6 +81,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 started,
                 pending_id=pending_id,
                 project=project,
+                req=req,
             )
         )
         raise SemulaError(
@@ -91,7 +93,14 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             err_type="semula_error",
         )
     await offload(
-        partial(service.log_call, "recorded", started, pending_id=pending_id, project=project)
+        partial(
+            service.log_call,
+            "recorded",
+            started,
+            pending_id=pending_id,
+            project=project,
+            req=req,
+        )
     )
     return _respond(service, body, stored, model)
 
