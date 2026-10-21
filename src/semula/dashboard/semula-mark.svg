@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" role="img" aria-label="semula">
+  <title>semula</title>
+  <!-- Option D, "again from the start". The ink follows the system colour scheme (an SVG used as
+       an image cannot see indah's own toggle); the record dot is the same red in both. -->
+  <style>.ink{stroke:#14201B}.fill{fill:#14201B}@media (prefers-color-scheme:dark){.ink{stroke:#DDE8E2}.fill{fill:#DDE8E2}}</style>
+  <path class="ink" d="M32 11A21 21 0 1 1 11 32" fill="none" stroke-width="6.5" stroke-linecap="round"/>
+  <path class="ink fill" d="M11 22L4 33H18z" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="32" cy="11" r="8.5" fill="#C8271F"/>
+</svg>

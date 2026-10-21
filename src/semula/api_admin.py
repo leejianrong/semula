@@ -260,6 +260,8 @@ async def log_stream(request: Request, project: str | None = None) -> StreamingR
                 except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
+                if event.get("type") != "call":
+                    continue  # the dashboard hears more; this stream's contract is calls
                 if project and event.get("project") != project:
                     continue
                 yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"

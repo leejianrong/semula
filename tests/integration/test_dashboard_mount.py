@@ -13,8 +13,19 @@ from tests.support.server import running_server
 pytestmark = pytest.mark.integration
 
 
-async def test_ui_serves_the_indah_shell(replay: httpx.AsyncClient) -> None:
+async def test_ui_goes_to_the_live_log_of_the_default_project(replay: httpx.AsyncClient) -> None:
     resp = await replay.get("/ui/")
+    assert resp.status_code == 307 and resp.headers["location"] == "/ui/projects/default/log"
+    nothing_built = next(
+        r.app for r in replay._transport.app.routes if getattr(r, "path", "") == "/ui"
+    )  # type: ignore[attr-defined]
+    assert nothing_built._app is None  # redirecting needs no dashboard
+    bare = await replay.get("/ui", follow_redirects=True)  # the router adds the slash first
+    assert bare.status_code == 200 and str(bare.url).endswith("/ui/projects/default/log")
+
+
+async def test_ui_serves_the_indah_shell(replay: httpx.AsyncClient) -> None:
+    resp = await replay.get("/ui/projects/default/log")
     assert resp.status_code == 200 and "text/html" in resp.headers["content-type"]
     assert "<title>semula" in resp.text
 
@@ -32,7 +43,7 @@ async def test_the_root_goes_to_the_dashboard(replay: httpx.AsyncClient) -> None
 async def test_the_api_the_health_check_and_replay_are_unaffected(
     replay: httpx.AsyncClient,
 ) -> None:
-    await replay.get("/ui/")  # build the dashboard first
+    await replay.get("/ui/projects/default/log")  # build the dashboard first
     assert (await replay.get("/health")).json()["status"] == "ok"
     assert (await replay.get("/api/v1/projects")).status_code == 200
     miss = await replay.post("/v1/chat/completions", json=chat("anything"))
@@ -69,12 +80,12 @@ async def test_nothing_is_built_until_the_first_visit(tmp_path: Path) -> None:
         dashboard = next(r.app for r in app.routes if getattr(r, "path", "") == "/ui")
         await client.get("/health")
         assert dashboard._app is None
-        await client.get("/ui/")
+        await client.get("/ui/projects/default/log")
         assert dashboard._app is not None
 
 
 def test_the_dashboard_works_under_a_real_server(tmp_path: Path) -> None:
     with running_server(tmp_path, mode="replay") as url:
-        assert httpx.get(url + "/ui/", timeout=20).status_code == 200
+        assert httpx.get(url + "/ui/", timeout=20, follow_redirects=True).status_code == 200
         assert httpx.get(url + "/mcp/", timeout=20).status_code != 404
         assert httpx.get(url + "/ui/projects/default/log", timeout=20).status_code == 200
