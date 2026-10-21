@@ -38,7 +38,7 @@ printf 'cold start: %.2f s (budget %s s)\n' "$elapsed" "$MAX_START_S"
 # The dashboard is built in the background after start-up: /ui must come up, and a deep link
 # (a pasted entry URL) must load the same shell.
 for path in /ui/ /ui/projects/default/entries; do
-  curl -fs --max-time 15 "http://127.0.0.1:${port}${path}" | grep -q '<div id="app">' \
+  curl -fsL --max-time 15 "http://127.0.0.1:${port}${path}" | grep -q '<div id="app">' \
     || { echo "FAIL: ${path} did not serve the dashboard"; docker logs "$NAME"; exit 1; }
 done
 echo "ok: the dashboard is served at /ui, deep links included"

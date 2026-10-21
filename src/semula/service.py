@@ -140,6 +140,7 @@ class Service:
                 422, "invalid_mode", "mode must be 'replay' or 'record'.", param="mode"
             )
         self.mode = mode
+        self.events.publish({"type": "mode", "mode": mode})
         return mode
 
     # --- projects -----------------------------------------------------------------
@@ -157,6 +158,7 @@ class Service:
         self.db.execute(
             sa.insert(P).values(workspace_id=DEFAULT_WORKSPACE, id=slug, name=name or slug)
         )
+        self.events.publish({"type": "projects"})
         return self.get_project(slug)
 
     def list_projects(self) -> list[dict[str, Any]]:
@@ -314,6 +316,29 @@ class Service:
             self.lexical.delete_project(DEFAULT_WORKSPACE, slug, conn)
         for row in parked:
             self._release(row["id"])  # held calls find no answer and time out cleanly
+        self.events.publish({"type": "projects"})
+
+    # --- what live views hear besides calls -------------------------------------------
+    def _queues_changed(self, project: str) -> None:
+        """Tell live views that the pending or review queue of ``project`` moved. They count
+        again; the event carries no numbers, so it cannot go stale."""
+        self.events.publish({"type": "queues", "project": project})
+
+    def queue_counts(self, project: str | None = None) -> dict[str, int]:
+        """How many requests are parked and how many near-matches wait for review, for one
+        project or all of them."""
+        mine_q = [Q.c.workspace_id == DEFAULT_WORKSPACE, Q.c.status == "pending"]
+        mine_c = [C.c.workspace_id == DEFAULT_WORKSPACE, C.c.status == "open"]
+        if project:
+            self.require_project(project)
+            mine_q.append(Q.c.project_id == project)
+            mine_c.append(C.c.project_id == project)
+        pending = self.db.one(sa.select(sa.func.count().label("n")).select_from(Q).where(*mine_q))
+        review = self.db.one(sa.select(sa.func.count().label("n")).select_from(C).where(*mine_c))
+        return {
+            "pending": int(pending["n"]) if pending else 0,
+            "review": int(review["n"]) if review else 0,
+        }
 
     # --- models -----------------------------------------------------------------
     def list_models(self, project: str = DEFAULT_PROJECT) -> list[str]:
@@ -739,8 +764,10 @@ class Service:
                 conn,
             )
             self._index(entry_id, project, req, config, conn)
-            self._supersede(conn, project, fp)
+            superseded = self._supersede(conn, project, fp)
             self._revise(conn, entry_id, 1, actor, "created", [stored], "first", False)
+        if superseded:
+            self._queues_changed(project)
         return self.get_entry(entry_id), True
 
     def get_entry(self, entry_id: str) -> dict[str, Any]:
@@ -956,6 +983,7 @@ class Service:
             self.lexical.delete(entry_id, conn)  # candidates and aliases cascade
             if forced:
                 self._log_forced(row, "forced_delete", conn)
+        self._queues_changed(row["project_id"])  # candidates of the entry went with it
 
     def _log_forced(self, row: Any, outcome: str, conn: Connection) -> None:
         self.db.execute(
@@ -1158,6 +1186,9 @@ class Service:
                         param="aliases",
                     )
                 self._import_alias(item, slug, config, report["aliases"], conn)
+        if report["created_project"]:
+            self.events.publish({"type": "projects"})
+        self._queues_changed(slug)
         return report
 
     def _config_in(self, slug: str, conn: Connection) -> FingerprintConfig:
@@ -1337,9 +1368,11 @@ class Service:
                 )
             )
         }
+        queued = False
         for found in candidates:
             if found.entry_id in known:
                 continue
+            queued = True
             self.db.execute(
                 sa.insert(C).values(
                     id=new_ulid(),
@@ -1353,6 +1386,8 @@ class Service:
                     status="open",
                 )
             )
+        if queued:
+            self._queues_changed(project)
 
     def list_candidates(
         self, project: str | None = None, status: str | None = "open"
@@ -1407,13 +1442,15 @@ class Service:
                 conn,
             )
             self._supersede(conn, row["project_id"], row["fingerprint"])  # others are moot now
+        self._queues_changed(row["project_id"])
         return self.get_candidate(candidate_id)
 
     def reject_candidate(self, candidate_id: str) -> dict[str, Any]:
         """Say they differ. The pairing is remembered and never queued or served again."""
-        self._candidate_row(candidate_id)
+        row = self._candidate_row(candidate_id)
         with self.db.begin() as conn:
             self._decide(candidate_id, "rejected", conn)
+        self._queues_changed(row["project_id"])
         return self.get_candidate(candidate_id)
 
     def _decide(self, candidate_id: str, status: str, conn: Connection) -> None:
@@ -1431,9 +1468,9 @@ class Service:
                 f"Candidate {candidate_id} is already {current['status'] if current else 'gone'}.",
             )
 
-    def _supersede(self, conn: Connection, project: str, fingerprint: str) -> None:
+    def _supersede(self, conn: Connection, project: str, fingerprint: str) -> int:
         """Close open candidates for a request that now has an answer of its own."""
-        self.db.execute(
+        return self.db.execute(
             sa.update(C)
             .where(
                 C.c.workspace_id == DEFAULT_WORKSPACE,
@@ -1476,6 +1513,7 @@ class Service:
             if row is None:
                 raise
             return str(row["id"])
+        self._queues_changed(project)
         return pid
 
     async def wait_for_answer(self, pending_id: str, timeout: float) -> dict[str, Any] | None:
@@ -1576,6 +1614,7 @@ class Service:
             self._supersede(conn, row["project_id"], row["fingerprint"])
             self._revise(conn, entry_id, 1, actor, "recorded", [stored], "first", False)
         self._release(pending_id)
+        self._queues_changed(row["project_id"])
         return entry_id
 
     # --- call log -----------------------------------------------------------------

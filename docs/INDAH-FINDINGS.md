@@ -14,6 +14,21 @@ A running list from building the dashboard (SEM-E10) on indah 0.3.0. Each item s
 - **Theme tokens are a fixed list** (`bg`, `surface`, `surface-2/3`, `text`, `muted`, `outline`, primary and secondary pairs, `ok`, `warn`, `err`). The design has custom roles (`record`, `info`, each with an `on-` and container) and the Material 3 surface tiers. We map `record` red to `err` and cannot give `info` its own blue: the `info` badge tone follows the primary container.
 - **Table time columns are relative only** ("3 s ago", absolute in the tooltip). The log wants `09:14:22.318`, so we send a preformatted string in a `mono` column and lose sorting by time on that column (the table keeps arrival order).
 
+## Controls and layout
+
+- **The page frame is fixed at 1080 px** (`.shell { max-width: 1080px }`). A left rail plus a table with five columns is cramped in it; a fluid option (`create_app(layout="fluid")`, or a token) would fix it.
+- **No chip or segmented control.** `Radio` stacks its options vertically, `Tabs` wraps children, and `Button(variant=)` cannot change with state. The log's filter is a `Select` and the mode is a `Switch`. The design draws a segmented Replay/Record control and filter chips.
+- **`Select` options are fixed when the page is built**, so a project created later does not appear in the switcher until the tab reloads. A signal for the options would let it follow.
+- **`Link` takes a plain string label**, so a live count (the Pending badge in the design) cannot sit inside a nav link; it would need a `Link` and a `Badge` side by side, and a badge cannot hide itself at zero.
+- **A plain `Text` renders heading-sized** (only `markdown=True` gives body size). Easy to trip over; the guide could say so.
+- **One logo file for both schemes.** The dark mark vanishes on the dark page. We use an SVG with its own `prefers-color-scheme` rule, which follows the operating system rather than indah's toggle.
+- **The first paint shows placeholders.** The session factory is synchronous, so stats and counts load a moment later and arrive as patches (a dash, then the number). An async factory, or an initial-data hook, would avoid the flicker.
+- **Per-tab work is hand-rolled.** A refresh loop is an `asyncio` task cancelled from `ctx.on_close`; it works well, and a helper for it would save everyone the same ten lines.
+
+## What worked first time
+
+`Topic` and `ctx.tail` (a call reaches every open tab in a few milliseconds, one small `append` patch each), `Table(follow=True)`, `Router` with deep links, the bundled fonts, `List` with a render spec and per-row `style` (the tier rail), and the dark theme.
+
 ## Behaviour to know
 
 - **Event handlers run on the event loop.** A synchronous `on_click` that touches the database blocks every tab. We use `async def` handlers that call the service through `asyncio.to_thread`. A line in the guide would save others from finding this the hard way.

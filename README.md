@@ -2,7 +2,7 @@
 
 **A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
 
-> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing, pinning, an MCP server and a full CLI work too. Near-miss matching with a review queue, a call log with live tail, redaction, export/import and a slim container work too. Optional semantic matching (embeddings) is built; the dashboard is still to come. Follow progress on the [slices](docs/SLICES.md).
+> **Status: pre-alpha.** Record-then-replay works end to end for chat completions, including streaming and tool calls, and the OpenAI SDK and LangChain pass the conformance suite. Projects, entry editing, pinning, an MCP server and a full CLI work too. Near-miss matching with a review queue, a call log with live tail, redaction, export/import and a slim container work too. Optional semantic matching (embeddings) is built; the dashboard has its live log so far (the pending queue, entries, review and playground are next). Follow progress on the [slices](docs/SLICES.md).
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ Development and test runs call the same prompts over and over, and a paid API bi
 - Record mode: an unknown prompt is parked, a coding agent answers it over MCP or CLI, semula validates and saves it.
 - Replay mode: known prompts return the stored answer with no network. Target: p95 under 15 ms.
 - Organise recordings by project; export them to files you can commit and diff.
-- A human dashboard to watch calls, answer pending ones and review near-misses (after the core).
+- A human dashboard to watch calls, answer pending ones and review near-misses (the live log is built; the rest follows).
 
 ## Try it
 
@@ -68,7 +68,7 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/
 
 The agent then lists parked calls, answers them, pre-records entries, edits and pins, and checks matches with `test_match`. The loop, answer formats and error handling are in the [agent playbook](docs/agents/PLAYBOOK.md); a ready-made Claude Code skill is in [`docs/agents/claude-code-skill/`](docs/agents/claude-code-skill/SKILL.md). Every CLI command takes `--json`; exit codes are `0` ok, `1` unreachable, `2` usage, `3` not found, `4` rejected, `5` authentication.
 
-The dashboard is at `/ui` (the root redirects there); `SEMULA_UI=off` hides it. To protect a server that is reachable beyond localhost, set `SEMULA_API_KEY`: the dashboard then switches itself off (a browser cannot send the key on a page load; sign-in is a hosted item, ADR-0010), and `/v1`, `/api` and `/mcp` require `Authorization: Bearer <key>` (or `X-API-Key`); `/health` stays open. The CLI reads the key from the same environment variable.
+The dashboard is at `/ui` (the root redirects there, to the live log of the default project; it is built on the first visit); `SEMULA_UI=off` hides it. To protect a server that is reachable beyond localhost, set `SEMULA_API_KEY`: the dashboard then switches itself off (a browser cannot send the key on a page load; sign-in is a hosted item, ADR-0010), and `/v1`, `/api` and `/mcp` require `Authorization: Bearer <key>` (or `X-API-Key`); `/health` stays open. The CLI reads the key from the same environment variable.
 
 ### Database
 
