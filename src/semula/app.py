@@ -11,13 +11,14 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
 from . import __version__, api_admin, api_openai
 from .auth import ApiKeyMiddleware
 from .config import Settings
+from .dashboard.mount import LazyDashboard, Locked
 from .db import Database
 from .embeddings import Embedder
 from .errors import SemulaError
@@ -95,6 +96,7 @@ def create_app(settings: Settings | None = None, embedder: Embedder | None = Non
     service.sync_index()
     service.sync_embeddings()
     mcp = LazyMcp(service)
+    dashboard = LazyDashboard(service) if settings.ui and not settings.api_key else None
 
     @asynccontextmanager
     async def lifespan(parent: FastAPI) -> AsyncIterator[None]:
@@ -104,6 +106,8 @@ def create_app(settings: Settings | None = None, embedder: Embedder | None = Non
         finally:
             await mcp.stop()
             await task
+            if dashboard:
+                await dashboard.stop()
 
     app = FastAPI(title="semula", version=__version__, lifespan=lifespan)
     app.state.settings = settings
@@ -145,6 +149,13 @@ def create_app(settings: Settings | None = None, embedder: Embedder | None = Non
     app.include_router(api_openai.router)
     app.include_router(api_admin.router)
     app.mount("/mcp", mcp)
+    if settings.ui:
+        app.mount("/ui", dashboard or Locked())
+
+        @app.get("/", include_in_schema=False)
+        def root() -> RedirectResponse:
+            return RedirectResponse("ui/")
+
     if settings.api_key:
         app.add_middleware(ApiKeyMiddleware, key=settings.api_key)
     return app

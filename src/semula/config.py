@@ -28,6 +28,7 @@ class Settings:
     log_retention_days: int = 30
     log_max_rows: int = 50_000
     models: tuple[str, ...] = ("semula",)
+    ui: bool = True  # SEMULA_UI=off hides the dashboard at /ui
     api_key: str | None = field(default=None, repr=False)
     database_url: str | None = field(default=None, repr=False)  # may hold a password
 
@@ -63,6 +64,7 @@ class Settings:
             else None,
             log_retention_days=int(os.environ.get("SEMULA_LOG_RETENTION_DAYS", "30")),
             log_max_rows=int(os.environ.get("SEMULA_LOG_MAX_ROWS", "50000")),
+            ui=_flag(os.environ.get("SEMULA_UI", "on")),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
             database_url=os.environ.get("SEMULA_DATABASE_URL") or None,
             models=tuple(

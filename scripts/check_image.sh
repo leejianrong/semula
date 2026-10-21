@@ -35,6 +35,14 @@ elapsed=$(echo "$(date +%s.%N) - $(date -d "$started_at" +%s.%N)" | bc)
 printf 'cold start: %.2f s (budget %s s)\n' "$elapsed" "$MAX_START_S"
 [ "$(echo "$elapsed <= $MAX_START_S" | bc)" = 1 ] || { echo "FAIL: cold start too slow"; exit 1; }
 
+# The dashboard is built in the background after start-up: /ui must come up, and a deep link
+# (a pasted entry URL) must load the same shell.
+for path in /ui/ /ui/projects/default/entries; do
+  curl -fs --max-time 15 "http://127.0.0.1:${port}${path}" | grep -q '<div id="app">' \
+    || { echo "FAIL: ${path} did not serve the dashboard"; docker logs "$NAME"; exit 1; }
+done
+echo "ok: the dashboard is served at /ui, deep links included"
+
 # Semantic matching is an opt-in extra: the default image must carry neither the library nor a model.
 if docker run --rm --entrypoint python "$TAG" -c "import fastembed" >/dev/null 2>&1; then
   echo "FAIL: the default image contains fastembed"; exit 1

@@ -969,6 +969,21 @@ wheels = [
 ]
 
 [[package]]
+name = "indah"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "python-multipart" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ff/b7/2700dc9273a7cd7a28c44f33011a44fd03f8625e5ca6c254db91d0a8b5d5/indah-0.3.0.tar.gz", hash = "sha256:04cfd6c867c48a13f298c6b79ed85276a10615b9fd57a174fd834c1975d7efb8", size = 5767534, upload-time = "2026-10-21T06:24:51.399Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/40/2a/b7d4552408905b896bf97a725b2d0efb033f641813388fce408e2c25166d/indah-0.3.0-py3-none-any.whl", hash = "sha256:6f63254eee69fea1bc237a1970ac876124448c57591d1df25a51a639b7d245c3", size = 316604, upload-time = "2026-10-21T06:24:49.504Z" },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3364,6 +3379,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "httpx" },
+    { name = "indah" },
     { name = "jsonschema" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
@@ -3399,6 +3415,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.4" },
     { name = "fastmcp", specifier = ">=2.10" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "indah", specifier = ">=0.3,<0.4" },
     { name = "jsonschema", specifier = ">=4.20" },
     { name = "langchain-openai", marker = "extra == 'e2e'", specifier = ">=0.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
