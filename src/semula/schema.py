@@ -188,4 +188,6 @@ alias = sa.Table(
     _ts("created_at"),
     _project_fk("alias"),
     sa.Index("idx_alias_fingerprint", "workspace_id", "project_id", "fingerprint"),
+    # the entries list counts aliases per row and filters on them; deleting an entry cascades here
+    sa.Index("idx_alias_entry", "entry_id"),
 )

@@ -81,7 +81,7 @@ Rules that keep answers replayable:
 
 ## 4. Editing what is already recorded
 
-`list_entries` (lean, no bodies) then `get_entry` for the full content. To change one, `update_entry` with the entry's **current `version`**.
+`list_entries` (lean, no bodies) then `get_entry` for the full content. To change one, `update_entry` with the entry's **current `version`**. Narrow the list with `pinned`, `has_alias`, `tool_calls` and `never_hit` (CLI: `--pinned`, `--no-pinned`, ...) and order it with `sort` (`hits`, `updated`, `created`); each row says `alias_count` and `has_tools`.
 
 | Error `code` | Meaning | What to do |
 |---|---|---|

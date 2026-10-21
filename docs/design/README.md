@@ -52,7 +52,7 @@ Drawing real data exposed gaps in the headless core. These are semula work, not 
 2. **Log statistics.** The strip and the hit rate, median and parked numbers need `GET /api/v1/log/stats` (per-minute buckets for a window, plus the three numbers).
 3. ~~**Per-tier verdicts in `test_match`.**~~ Done (SEM-62). `test_match` returns `tiers`: one entry each for exact, normalised, alias, words and meaning, with a `verdict` (`no`, `match`, `candidate`, `skipped`, `off`), an optional `score` and a short `reason`. The trace is collected only when `test_match` asks.
 4. **Entry history.** "Compare" in the conflict banner needs a small change history per entry.
-5. **Entries list filters and flags.** Filters for pinned, alias, tool calls and never hit; an alias count and a tool-call flag per row; sort by hits and updated.
+5. ~~**Entries list filters and flags.**~~ Done (SEM-64). `GET /api/v1/projects/<id>/entries` takes `pinned`, `has_alias`, `tool_calls`, `never_hit` (bool, AND-combined, `false` selects the others) and `sort` (`hits`, `updated`, `created`) with `order`; each row has `alias_count` and `has_tools`; `total` counts the filtered set. Checked on 10,000 entries: at most 32 ms on SQLite and 55 ms on Postgres (the slowest is the existing text search); one index added, `alias(entry_id)`.
 6. **Hosted: mode per project, tokens, members and roles.** Part of SEM-E11.
 
 ## Decisions taken in review
