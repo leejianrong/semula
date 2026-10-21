@@ -37,6 +37,15 @@ FILTERS: dict[str, tuple[str, ...] | None] = {
 }
 
 
+PROMPT_COLUMN = 64  # characters of the prompt the table shows; the detail card has it all
+
+
+def short(text: str, limit: int = PROMPT_COLUMN) -> str:
+    """Cut ``text`` for a table cell. A plain cell cannot truncate by width (indah sizes it to
+    its content), so a long prompt would push every other column off the page."""
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
 def parse_ts(ts: str) -> datetime:
     return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
 
@@ -82,7 +91,8 @@ def call_row(call: dict[str, Any], tz: tzinfo | None = None) -> dict[str, Any]:
         "score": call.get("score"),
         "match": match_text(call.get("tier"), call.get("score")),
         "took": took(call.get("latency_ms")),
-        "prompt": call.get("preview") or "",
+        "prompt": short(call.get("preview") or ""),
+        "preview": call.get("preview") or "",
         "entry_id": call.get("entry_id"),
         "pending_id": call.get("pending_id"),
     }

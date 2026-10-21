@@ -24,6 +24,15 @@ async def test_ui_goes_to_the_live_log_of_the_default_project(replay: httpx.Asyn
     assert bare.status_code == 200 and str(bare.url).endswith("/ui/projects/default/log")
 
 
+async def test_ui_opens_on_the_project_that_has_traffic(replay: httpx.AsyncClient) -> None:
+    await replay.post("/api/v1/projects", json={"id": "busy"})
+    await replay.post("/v1/projects/busy/chat/completions", json=chat("anyone"))
+    resp = await replay.get("/ui/")
+    assert resp.headers["location"] == "/ui/projects/busy/log"
+    await replay.post("/v1/chat/completions", json=chat("now the default"))
+    assert (await replay.get("/ui/")).headers["location"] == "/ui/projects/default/log"
+
+
 async def test_ui_serves_the_indah_shell(replay: httpx.AsyncClient) -> None:
     resp = await replay.get("/ui/projects/default/log")
     assert resp.status_code == 200 and "text/html" in resp.headers["content-type"]

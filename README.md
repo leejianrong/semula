@@ -68,7 +68,7 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/
 
 The agent then lists parked calls, answers them, pre-records entries, edits and pins, and checks matches with `test_match`. The loop, answer formats and error handling are in the [agent playbook](docs/agents/PLAYBOOK.md); a ready-made Claude Code skill is in [`docs/agents/claude-code-skill/`](docs/agents/claude-code-skill/SKILL.md). Every CLI command takes `--json`; exit codes are `0` ok, `1` unreachable, `2` usage, `3` not found, `4` rejected, `5` authentication.
 
-The dashboard is at `/ui` (the root redirects there, to the live log of the default project; it is built on the first visit); `SEMULA_UI=off` hides it. To protect a server that is reachable beyond localhost, set `SEMULA_API_KEY`: the dashboard then switches itself off (a browser cannot send the key on a page load; sign-in is a hosted item, ADR-0010), and `/v1`, `/api` and `/mcp` require `Authorization: Bearer <key>` (or `X-API-Key`); `/health` stays open. The CLI reads the key from the same environment variable.
+The dashboard is at `/ui` (the root redirects to the live log of the project with the latest call; it is built on the first visit). `make run` serves it; `make demo` serves it with demo data and a moving log, then throws the data away (`make demo ARGS=--record` parks two calls instead); `SEMULA_UI=off` hides it. To protect a server that is reachable beyond localhost, set `SEMULA_API_KEY`: the dashboard then switches itself off (a browser cannot send the key on a page load; sign-in is a hosted item, ADR-0010), and `/v1`, `/api` and `/mcp` require `Authorization: Bearer <key>` (or `X-API-Key`); `/health` stays open. The CLI reads the key from the same environment variable.
 
 ### Database
 
