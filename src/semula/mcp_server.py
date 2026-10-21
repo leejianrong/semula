@@ -233,6 +233,14 @@ def build_mcp(service: Service) -> FastMCP:
         return service.list_calls(project, outcome, limit)
 
     @tool
+    def log_stats(project: str | None = None, window: str = "30m") -> dict[str, Any]:
+        """How calls are going: per-minute counts (hits, misses, recorded, timed_out) for the
+        last 'window' (like 30m or 2h, up to 24h), the hit_rate (hits over all calls), the
+        median_latency_ms of replayed calls and 'parked', how many requests wait for an answer
+        right now. A low hit rate or a growing parked count says where to look next."""
+        return service.log_stats(project, window)
+
+    @tool
     def list_candidates(
         project: str | None = None, include_decided: bool = False
     ) -> list[dict[str, Any]]:

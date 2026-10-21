@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import statistics
 import threading
 import time
 from dataclasses import dataclass
@@ -65,6 +66,15 @@ ENTRY_SORTS = {"hits": "hit_count", "updated": "updated_at", "created": "created
 # Stored answers are JSON written by json.dumps, so an answer that calls a tool holds exactly this
 # text. A prose mention of it is escaped (\"tool_calls\": [) and cannot match.
 TOOL_CALLS_LIKE = '%"tool_calls": [%'
+
+STATS_OUTCOMES = {
+    "hit": "hits",
+    "miss": "misses",
+    "recorded": "recorded",
+    "record_timeout": "timed_out",
+}
+_WINDOW = re.compile(r"(\d+)([mhd])")
+MAX_WINDOW_MINUTES = 24 * 60
 
 TIERS = ("exact", "normalised", "alias", "words", "meaning")
 # What one tier saw, kept only when test_match asks: tier -> (verdict, score, short reason).
@@ -1517,6 +1527,77 @@ class Service:
             sa.select(L).where(*conditions).order_by(L.c.id.desc()).limit(max(1, min(limit, 500)))
         )
         return [{"id": r["id"], **_log_view(r)} for r in rows]
+
+    def log_stats(
+        self, project: str | None = None, window: str = "30m", *, now: datetime | None = None
+    ) -> dict[str, Any]:
+        """Per-minute call counts for the last ``window`` (``30m``, ``2h``, ``1d``; one minute to
+        24 hours), the hit rate, the median replay latency and how many calls are parked now.
+
+        The buckets are the last N whole minutes, the current one included, so a window always
+        has N of them (empty minutes are zero). Counting is a ``GROUP BY`` on the ISO timestamp's
+        minute prefix and the median is taken in Python, so it behaves the same on SQLite and
+        Postgres. ``hit_rate`` is hits over every call. ``median_latency_ms`` covers hits and
+        misses only: a recorded or timed-out call waited for an agent, which is not replay speed.
+        ``parked`` is the open pending requests now, whatever the window."""
+        match = _WINDOW.fullmatch(window)
+        minutes = int(match[1]) * {"m": 1, "h": 60, "d": 1440}[match[2]] if match else 0
+        if not 1 <= minutes <= MAX_WINDOW_MINUTES:
+            raise SemulaError(
+                422,
+                "invalid_param",
+                "window must be a number of minutes, hours or days from 1m to 24h, like 30m.",
+                param="window",
+            )
+        conditions = [L.c.workspace_id == DEFAULT_WORKSPACE]
+        pending = [Q.c.workspace_id == DEFAULT_WORKSPACE, Q.c.status == "pending"]
+        if project:
+            self.require_project(project)
+            conditions.append(L.c.project_id == project)
+            pending.append(Q.c.project_id == project)
+        now = (now or datetime.now(UTC)).astimezone(UTC)
+        this_minute = now.replace(second=0, microsecond=0)
+        slots = [this_minute - timedelta(minutes=minutes - 1 - i) for i in range(minutes)]
+        window_start, window_end = iso(slots[0]), iso(this_minute + timedelta(minutes=1))
+        conditions += [L.c.ts >= window_start, L.c.ts < window_end]
+        minute = sa.func.substr(L.c.ts, 1, 16)  # 2026-10-21T10:30
+        counted = self.db.rows(
+            sa.select(minute.label("minute"), L.c.outcome, sa.func.count().label("n"))
+            .where(*conditions)
+            .group_by(minute, L.c.outcome)
+        )
+        buckets = {
+            iso(slot)[:16]: {"ts": iso(slot)} | dict.fromkeys(STATS_OUTCOMES.values(), 0)
+            for slot in slots
+        }
+        for row in counted:
+            key = STATS_OUTCOMES.get(row["outcome"])
+            if key and row["minute"] in buckets:
+                buckets[row["minute"]][key] += row["n"]
+        totals = {
+            key: sum(int(b[key]) for b in buckets.values()) for key in STATS_OUTCOMES.values()
+        }
+        calls = sum(totals.values())
+        latencies = [
+            float(r["latency_ms"])
+            for r in self.db.rows(
+                sa.select(L.c.latency_ms).where(
+                    *conditions, L.c.outcome.in_(("hit", "miss")), L.c.latency_ms.is_not(None)
+                )
+            )
+        ]
+        parked = self.db.one(sa.select(sa.func.count().label("n")).select_from(Q).where(*pending))
+        return {
+            "project": project,
+            "window": window,
+            "since": window_start,
+            "until": iso(now),
+            "buckets": list(buckets.values()),
+            "totals": {"calls": calls, **totals},
+            "hit_rate": round(totals["hits"] / calls, 4) if calls else None,
+            "median_latency_ms": round(statistics.median(latencies), 3) if latencies else None,
+            "parked": int(parked["n"]) if parked else 0,
+        }
 
     def prune_log(self) -> int:
         """Drop calls older than the retention window, then the oldest beyond the row cap."""

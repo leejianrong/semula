@@ -301,7 +301,29 @@ def _call_line(c: dict[str, Any]) -> str:
     )
 
 
+def _log_stats(args: argparse.Namespace) -> int:
+    params = {"window": args.window}
+    if args.project:
+        params["project"] = args.project
+    resp = _call(args, "GET", "/api/v1/log/stats", params=params)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    out = resp.json()
+    totals = out["totals"]
+    rate = f"{out['hit_rate'] * 100:.0f}%" if out["hit_rate"] is not None else "-"
+    median = f"{out['median_latency_ms']:.1f} ms" if out["median_latency_ms"] is not None else "-"
+    human = (
+        f"last {out['window']}: {totals['calls']} calls, hit rate {rate}, median {median}, "
+        f"parked {out['parked']}\n"
+        f"hits {totals['hits']}  misses {totals['misses']}  recorded {totals['recorded']}  "
+        f"timed out {totals['timed_out']}"
+    )
+    return _ok(args, out, human)
+
+
 def _log(args: argparse.Namespace) -> int:
+    if args.stats:
+        return _log_stats(args)
     params: dict[str, Any] = {"limit": args.limit}
     for key in ("project", "outcome"):
         if getattr(args, key):
@@ -578,6 +600,8 @@ def build_parser() -> argparse.ArgumentParser:
     log.add_argument("--project", default=None)
     log.add_argument("--outcome", default=None, help="hit, miss, recorded, record_timeout")
     log.add_argument("--limit", type=int, default=20)
+    log.add_argument("--stats", action="store_true", help="counts, hit rate and median instead")
+    log.add_argument("--window", default="30m", help="with --stats: 30m, 2h ... up to 24h")
 
     tail = add(sub, "tail", _tail, "Follow calls live (one JSON object per line with --json)")
     tail.add_argument("--project", default=None)

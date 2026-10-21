@@ -100,7 +100,7 @@ docker compose --profile postgres up -d --wait semula-pg    # the same app on Po
 
 ### Watching calls
 
-`semula tail` follows calls live (`--json` for one object per line), `semula log` lists recent ones, and `GET /api/v1/log/stream` is the same feed as server-sent events. The log keeps 30 days or 50,000 rows (`SEMULA_LOG_RETENTION_DAYS`, `SEMULA_LOG_MAX_ROWS`) and never stores request headers. Each row carries a redacted preview (120 characters) of the prompt.
+`semula tail` follows calls live (`--json` for one object per line), `semula log` lists recent ones (`--stats` gives per-minute counts, hit rate, median latency and how many calls are parked), and `GET /api/v1/log/stream` is the same feed as server-sent events. The log keeps 30 days or 50,000 rows (`SEMULA_LOG_RETENTION_DAYS`, `SEMULA_LOG_MAX_ROWS`) and never stores request headers. Each row carries a redacted preview (120 characters) of the prompt.
 
 ## Documents
 
