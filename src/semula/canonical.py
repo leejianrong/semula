@@ -165,6 +165,23 @@ def embedding_text(req: CanonicalRequest, config: FingerprintConfig | None = Non
     return ""
 
 
+PREVIEW_CHARS = 120
+
+
+def preview_text(req: CanonicalRequest, config: FingerprintConfig | None = None) -> str:
+    """A short line saying which prompt this was, for the call log: the last message with text,
+    redacted (never scrubbed, so a person reads what was actually asked), whitespace collapsed,
+    cut to ``PREVIEW_CHARS``. Redaction runs on the whole message *before* the cut, so a secret
+    that straddles the cut is replaced whole rather than half shown."""
+    for message in reversed(req.messages):
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            text = _SPACE.sub(" ", redact_text(content, config.redactions if config else ()))
+            text = text.strip()
+            return text if len(text) <= PREVIEW_CHARS else text[: PREVIEW_CHARS - 1] + "…"
+    return ""
+
+
 def roles_of(req: CanonicalRequest, config: FingerprintConfig | None = None) -> list[str]:
     """Who speaks, in order (after ``tail_n``). Two conversations with different turns are
     different questions however many words they share."""

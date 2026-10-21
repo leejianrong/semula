@@ -134,6 +134,7 @@ call_log = sa.Table(
     sa.Column("latency_ms", sa.Float),
     sa.Column("entry_id", sa.Text),
     sa.Column("pending_id", sa.Text),
+    sa.Column("preview", sa.Text),  # redacted, at most 120 characters; null on older rows
     sa.Index("idx_call_log_ts", "workspace_id", "project_id", "ts"),
 )
 

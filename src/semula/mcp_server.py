@@ -204,8 +204,9 @@ def build_mcp(service: Service) -> FastMCP:
         project: str | None = None, outcome: str | None = None, limit: int = 50
     ) -> list[dict[str, Any]]:
         """Recent calls through semula, newest first: time, project, mode, outcome (hit, miss,
-        recorded, record_timeout), tier (exact, normalised, alias, bm25), score, latency and the
-        entry. Use it to see why an app's calls are missing or timing out."""
+        recorded, record_timeout), tier (exact, normalised, alias, bm25), score, latency, the
+        entry and a 'preview' (the last message, redacted, at most 120 characters). Use it to
+        see why an app's calls are missing or timing out."""
         return service.list_calls(project, outcome, limit)
 
     @tool

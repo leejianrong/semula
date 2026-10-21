@@ -26,6 +26,7 @@ from .canonical import (
     exact_fingerprint,
     lexical_tokens,
     normalised_fingerprint,
+    preview_text,
     redact_request,
     roles_of,
     shape,
@@ -258,6 +259,24 @@ class Service:
                 )
                 if table is E:  # scrubbers and tail_n shape the indexed words too
                     self._index(row["id"], slug, req, config, conn)
+        self._reredact_log(slug, config, conn)
+
+    def _reredact_log(self, slug: str, config: FingerprintConfig, conn: Connection) -> None:
+        """Apply the redaction list to the call-log previews already stored. A secret the 120
+        character cut had already sliced in half cannot be recognised again: it is the one thing
+        a later pattern cannot clean."""
+        rows = self.db.rows(
+            sa.select(L.c.id, L.c.preview).where(
+                L.c.workspace_id == DEFAULT_WORKSPACE,
+                L.c.project_id == slug,
+                L.c.preview.is_not(None),
+            ),
+            conn,
+        )
+        for row in rows:
+            clean = canonical.redact_text(row["preview"], config.redactions)
+            if clean != row["preview"]:
+                self.db.execute(sa.update(L).where(L.c.id == row["id"]).values(preview=clean), conn)
 
     def delete_project(self, slug: str) -> None:
         self.require_project(slug)
@@ -1396,9 +1415,15 @@ class Service:
         pending_id: str | None = None,
         project: str = DEFAULT_PROJECT,
         count_hit: bool = False,
+        req: CanonicalRequest | None = None,
     ) -> None:
         """Log one call, tell live subscribers, and now and then enforce retention. With
-        ``count_hit`` the entry's hit count moves in the same transaction (one commit, not two)."""
+        ``count_hit`` the entry's hit count moves in the same transaction (one commit, not two).
+        ``req`` is the request already in hand: its redacted preview goes on the row, with no
+        extra query (project settings are cached)."""
+        preview = (
+            preview_text(req, self.project_settings(project).fingerprint_config()) if req else None
+        )
         values = {
             "workspace_id": DEFAULT_WORKSPACE,
             "project_id": project,
@@ -1410,6 +1435,7 @@ class Service:
             "latency_ms": (time.perf_counter() - started) * 1000,
             "entry_id": entry_id,
             "pending_id": pending_id,
+            "preview": preview or None,
         }
         with self.db.begin() as conn:
             if count_hit and entry_id:
@@ -1467,6 +1493,7 @@ def _log_view(row: Any) -> dict[str, Any]:
     view = {k: row[k] for k in keys}
     view["project"] = view.pop("project_id")
     view["pending_id"] = row["pending_id"]
+    view["preview"] = row["preview"]
     return view
 
 
