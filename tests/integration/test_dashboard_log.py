@@ -186,35 +186,45 @@ def test_choosing_another_project_moves_the_tab_there(server: str, tab: Tab) -> 
     assert message["path"] == "/projects/other/log"
 
 
-def test_the_record_switch_changes_the_mode_and_every_tab_follows(server: str, tab: Tab) -> None:
+def test_the_record_switch_sets_the_projects_mode_and_every_tab_follows(
+    server: str, tab: Tab
+) -> None:
     second = Tab(server)
     try:
         flag = second.find("switch", label="Record")
-        tab.send(tab.find("switch", label="Record"), "change", {"value": True})
-        assert httpx.get(server + "/api/v1/mode").json() == {"mode": "record"}
-        second.wait_for(
-            lambda m: (
+
+        def checked(value: bool) -> Any:
+            return lambda m: (
                 m["type"] == "patch"
                 and any(
-                    c["target"] == flag["id"] and c["props"].get("checked") for c in m["changes"]
-                )
-            ),
-            3,
-        )
-        httpx.put(server + "/api/v1/mode", json={"mode": "replay"})  # from outside the dashboard
-        second.wait_for(
-            lambda m: (
-                m["type"] == "patch"
-                and any(
-                    c["target"] == flag["id"] and c["props"].get("checked") is False
+                    c["target"] == flag["id"] and c["props"].get("checked") is value
                     for c in m["changes"]
                 )
-            ),
-            3,
-        )
-        assert httpx.get(server + "/api/v1/mode").json() == {"mode": "replay"}
+            )
+
+        tab.send(tab.find("switch", label="Record"), "change", {"value": True})
+        second.wait_for(checked(True), 3)
+        project = httpx.get(server + "/api/v1/projects/default").json()
+        assert project["mode"] == "record" and project["settings"]["mode"] == "record"  # kept
+        mark = second.mark()
+        httpx.patch(
+            server + "/api/v1/projects/default", json={"settings": {"mode": "replay"}}
+        )  # changed from outside the dashboard
+        second.wait_for(checked(False), 3, mark)
     finally:
+        httpx.patch(server + "/api/v1/projects/default", json={"settings": {"mode": None}})
         second.close()
+
+
+def test_the_switch_follows_the_projects_not_the_other_ones(server: str, tab: Tab) -> None:
+    flag = tab.find("switch", label="Record")
+    mark = tab.mark()
+    httpx.patch(server + "/api/v1/projects/other", json={"settings": {"mode": "record"}})
+    try:
+        time.sleep(1.5)
+        assert f'"target": "{flag["id"]}"' not in tab.since(mark)  # another project's mode
+    finally:
+        httpx.patch(server + "/api/v1/projects/other", json={"settings": {"mode": None}})
 
 
 def test_a_parked_call_shows_in_the_parked_count(server: str, tab: Tab) -> None:

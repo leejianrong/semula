@@ -11,7 +11,7 @@ Install: copy this folder to `.claude/skills/semula-record/` and connect the MCP
 
 ## Loop
 
-1. `get_status`. If the mode is `replay`, nothing is parked; ask before switching to `record` with `set_mode`.
+1. `get_status`. If the project's mode is `replay`, nothing is parked; ask before switching it to `record` with `set_mode` (pass `project` so the choice is kept).
 2. `list_pending`, then `get_pending <id>` for the full request. Read the system prompt for the output format, and the tool definitions if any.
 3. `answer_pending <id> <answer>`:
    - text: `{"content": "..."}`

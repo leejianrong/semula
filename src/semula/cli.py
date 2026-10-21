@@ -472,14 +472,29 @@ def _import(args: argparse.Namespace) -> int:
 
 
 def _mode(args: argparse.Namespace) -> int:
-    resp = (
-        _call(args, "GET", "/api/v1/mode")
-        if args.mode is None
-        else _call(args, "PUT", "/api/v1/mode", json={"mode": args.mode})
-    )
+    if args.mode is None:
+        resp = _call(args, "GET", "/api/v1/mode")
+        if resp.status_code != 200:
+            return _fail(args, resp)
+        body = resp.json()
+        lines = [f"server default   {body['mode']}"]
+        lines += [f"project {slug}  {mode}" for slug, mode in sorted(body["projects"].items())]
+        return _ok(args, body, "\n".join(lines))
+    payload: dict[str, Any] = {"mode": args.mode}
+    if args.project:
+        payload["project"] = args.project
+    resp = _call(args, "PUT", "/api/v1/mode", json=payload)
     if resp.status_code != 200:
         return _fail(args, resp)
-    return _ok(args, resp.json(), resp.json()["mode"])
+    body = resp.json()
+    if body["persisted"]:
+        human = f"{body['project']}: {body['mode']} (kept across restarts)"
+    else:
+        human = (
+            f"default: {body['mode']} (until the server restarts; "
+            "add --project <id> to keep a project's mode)"
+        )
+    return _ok(args, body, human)
 
 
 def _test_match(args: argparse.Namespace) -> int:
@@ -669,6 +684,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     mode = add(sub, "mode", _mode, "Show or switch the mode (replay or record)")
     mode.add_argument("mode", nargs="?", choices=["replay", "record"])
+    mode.add_argument("--project", default=None, help="set this project's own mode (kept)")
 
     tm = add(sub, "test-match", _test_match, "Which entry would fire for this prompt, and why")
     tm.add_argument("--project", default="default")

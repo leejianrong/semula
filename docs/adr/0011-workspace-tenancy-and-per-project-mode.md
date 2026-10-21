@@ -45,6 +45,8 @@ The service takes a `Scope(workspace_id, principal)` as its first argument and p
 
 ### 4. Mode per project
 
+*Built in SEM-73 (2026-10-22): a project's mode is stored in its settings and kept across restarts; `PUT /api/v1/mode` without a project moves the in-memory default and says `persisted: false`. A bundle never carries or sets a mode.*
+
 - `mode` becomes a project setting (`replay` or `record`), in the existing `ProjectSettings` JSON, so it is validated, cached for 1 s, patched by `PATCH /api/v1/projects/{id}`, and stored.
 - **Effective mode** = the project's own mode if set, else the process default. The process default is `SEMULA_MODE` (and `PUT /api/v1/mode`, which keeps working locally and sets that default). A project that names a mode keeps it. Local users see no change; hosted has no process default beyond `replay`.
 - A replay-scope token never parks, whatever the project's mode (ADR-0010). Switching a project to record needs `editor`; it is audited and shown in the log (`call_log.mode` already stores the mode per call).

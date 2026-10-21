@@ -28,6 +28,14 @@ FINGERPRINT_FIELDS = (
 class ProjectSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    mode: Literal["replay", "record"] | None = Field(
+        default=None,
+        description=(
+            "'record' parks a call that has no recorded answer for an agent to answer; "
+            "'replay' fails it fast. Unset, the project follows the server's default "
+            "(SEMULA_MODE). Kept across restarts; never exported."
+        ),
+    )
     models: list[str] | None = Field(
         default=None, description="Model ids advertised on /v1/models (default: server-wide)."
     )

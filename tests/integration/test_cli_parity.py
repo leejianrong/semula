@@ -87,9 +87,13 @@ def test_mode_and_test_match_and_settings(
         seed(url, "What is the capital of France?", "Paris")
         capsys.readouterr()
 
-        assert run(url, "mode") == 0 and capsys.readouterr().out.strip() == "replay"
+        assert run(url, "mode") == 0
+        assert capsys.readouterr().out.splitlines() == [
+            "server default   replay",
+            "project default  replay",
+        ]
         assert run(url, "mode", "record", "--json") == 0
-        assert out_json(capsys) == {"mode": "record"}
+        assert out_json(capsys) == {"mode": "record", "persisted": False, "project": None}
 
         assert run(url, "test-match", "--prompt", "What is the capital of France?", "--json") == 0
         hit = out_json(capsys)

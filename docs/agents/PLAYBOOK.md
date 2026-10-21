@@ -28,7 +28,7 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Auth
 
 | MCP tool | CLI |
 |---|---|
-| `get_status`, `set_mode` | `semula mode` (shows it), `semula mode record` / `semula mode replay`. Mode must be `record` for calls to be parked. |
+| `get_status`, `set_mode` | `semula mode` (the default and each project's mode), `semula mode record --project <id>` / `semula mode replay --project <id>`. A project must be in `record` for its calls to be parked. A project's mode is kept across restarts; without `--project` you only move the server default, which is forgotten on restart. |
 | `list_projects`, `create_project` | `semula project list`, `semula project create <id>` |
 | `get_project_settings`, `update_project_settings` | `semula project settings <id>`, `semula project settings <id> --set '{"tail_n": 2}'` |
 | `list_pending`, `get_pending` | `semula pending`, `semula show <id>` |

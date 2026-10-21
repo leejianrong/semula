@@ -16,6 +16,7 @@ async def patch(client: httpx.AsyncClient, project: str, settings: dict) -> http
 async def test_defaults_are_visible_and_documented_by_the_api(replay: httpx.AsyncClient) -> None:
     settings = (await replay.get("/api/v1/projects/default")).json()["settings"]
     assert settings == {
+        "mode": None,
         "models": None,
         "tail_n": None,
         "scrub_patterns": [],
