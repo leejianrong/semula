@@ -60,6 +60,10 @@ MAX_CANDIDATES = 3  # weak matches queued for review per missed request
 PRUNE_EVERY = 200  # call-log rows between retention sweeps
 SETTINGS_TTL = 1.0  # seconds a project's settings are reused between reads
 
+TIERS = ("exact", "normalised", "alias", "words", "meaning")
+# What one tier saw, kept only when test_match asks: tier -> (verdict, score, short reason).
+Trace = dict[str, tuple[str, float | None, str]]
+
 
 @dataclass(frozen=True)
 class Match:
@@ -288,21 +292,28 @@ class Service:
     def find(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> Match | None:
         return self.lookup(req, project).match
 
-    def lookup(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> MatchResult:
+    def lookup(
+        self, req: CanonicalRequest, project: str = DEFAULT_PROJECT, trace: Trace | None = None
+    ) -> MatchResult:
         """Run the tiers: exact, normalised, approved alias, then lexical (ADR-0003). Pure: it
-        serves nothing and writes nothing, so ``test_match`` can share it."""
+        serves nothing and writes nothing, so ``test_match`` can share it. Pass a ``trace`` to
+        have each tier that ran say what it saw; the serving path passes none and pays nothing."""
         settings = self.project_settings(project)
         config = settings.fingerprint_config()
-        match = self._find_exact(req, project, config)
+        match = self._find_exact(req, project, config, trace)
         if match:
             return MatchResult(match, [])
-        found = self._find_lexical(req, project, settings, config)
+        found = self._find_lexical(req, project, settings, config, trace)
         if found.match or not self.vectors:
             return found
-        return self._add_semantic(self.vectors, found, req, project, settings, config)
+        return self._add_semantic(self.vectors, found, req, project, settings, config, trace)
 
     def _find_exact(
-        self, req: CanonicalRequest, project: str, config: FingerprintConfig
+        self,
+        req: CanonicalRequest,
+        project: str,
+        config: FingerprintConfig,
+        trace: Trace | None = None,
     ) -> Match | None:
         fp = normalised_fingerprint(req, config)
         for tier, column, value in (
@@ -320,7 +331,15 @@ class Service:
                 .limit(1)
             )
             if row:
+                if trace is not None:
+                    trace[tier] = (
+                        "match",
+                        1.0,
+                        "same prompt" if tier == "exact" else "same once cleaned",
+                    )
                 return _match(row, tier)
+            if trace is not None:
+                trace[tier] = ("no", None, "")
         approved = self.db.one(
             _entry_for_serving()
             .join(A, A.c.entry_id == E.c.id)
@@ -332,6 +351,8 @@ class Service:
             .order_by(A.c.created_at, A.c.id)
             .limit(1)
         )
+        if trace is not None:
+            trace["alias"] = ("match", 1.0, "approved") if approved else ("no", None, "")
         return _match(approved, "alias") if approved else None
 
     def _find_lexical(
@@ -340,12 +361,15 @@ class Service:
         project: str,
         settings: ProjectSettings,
         config: FingerprintConfig,
+        trace: Trace | None = None,
     ) -> MatchResult:
         """Score the index's proposals by word overlap. Serve one only if it clears the
         project's high bar *and* has the same conversation shape; keep the rest as candidates."""
         words = lexical_tokens(req, config)
         hits = self.lexical.search(DEFAULT_WORKSPACE, project, words, config, LEXICAL_POOL)
         if not hits:
+            if trace is not None:
+                trace["words"] = ("no", None, "no similar entry")
             return MatchResult(None, [])
         rejected = {
             r["entry_id"]
@@ -368,6 +392,8 @@ class Service:
         )
         scored = [(score, entry_id) for score, entry_id in scored if score > 0]
         if not scored:
+            if trace is not None:
+                trace["words"] = ("no", None, "no shared words")
             return MatchResult(None, [])
         my_shape = shape(req, config)
         for score, entry_id in scored:
@@ -378,6 +404,8 @@ class Service:
                 row
                 and shape(CanonicalRequest.from_json(row["canonical_request"]), config) == my_shape
             ):
+                if trace is not None:
+                    trace["words"] = ("match", round(score, 4), "same words")
                 return MatchResult(_match(row, "bm25", score), [])
         best_score, best_id = scored[0]
         best = self.db.one(sa.select(E.c.canonical_request).where(E.c.id == best_id))
@@ -388,6 +416,13 @@ class Service:
         weak = self._same_turns(
             [(s, i) for s, i in scored if s >= settings.bm25_review_threshold], req, config
         )
+        if trace is not None:
+            if weak:
+                trace["words"] = ("candidate", round(weak[0][0], 4), "in review")
+            elif best_score >= settings.bm25_review_threshold:
+                trace["words"] = ("no", round(best_score, 4), "other turns")
+            else:
+                trace["words"] = ("no", round(best_score, 4), "too different")
         return MatchResult(
             None,
             [Candidate(entry_id, round(score, 4)) for score, entry_id in weak[:MAX_CANDIDATES]],
@@ -402,18 +437,23 @@ class Service:
         project: str,
         settings: ProjectSettings,
         config: FingerprintConfig,
+        trace: Trace | None = None,
     ) -> MatchResult:
         """The embedding tier (ADR-0003). It runs only after every cheaper tier missed, since
         embedding the request is the slowest step. Its matches go to review; they are served only
         if the project opted in with ``embedding_serve_threshold``."""
         text = embedding_text(req, config)
         if not text:
+            if trace is not None:
+                trace["meaning"] = ("no", None, "no text")
             return found
         try:
             query = vectors.embedder.embed([text])[0]
             neighbours = vectors.search(DEFAULT_WORKSPACE, project, query, LEXICAL_POOL)
         except Exception:  # an optional extra must never break a call that works without it
             log.warning("The embedding tier failed; continuing without it.", exc_info=True)
+            if trace is not None:
+                trace["meaning"] = ("no", None, "model failed")
             return found
         rejected = self._rejected(project, req, config)
         near = [
@@ -422,6 +462,13 @@ class Service:
             if n.entry_id not in rejected and n.score >= settings.embedding_review_threshold
         ]
         if not near:
+            if trace is not None:
+                best = max((n.score for n in neighbours), default=None)
+                trace["meaning"] = (
+                    "no",
+                    None if best is None else round(best, 4),
+                    "too different" if best is not None else "no similar entry",
+                )
             return found
         serve_at = settings.embedding_serve_threshold
         if serve_at is not None:
@@ -434,10 +481,19 @@ class Service:
                 )
                 other = CanonicalRequest.from_json(row["canonical_request"]) if row else None
                 if row and other and shape(other, config) == my_shape:
+                    if trace is not None:
+                        trace["meaning"] = ("match", round(score, 4), "same meaning")
                     return MatchResult(_match(row, "embedding", score), [])
         merged = {c.entry_id: c for c in found.candidates}  # the word match explains itself better
-        for score, entry_id in self._same_turns(near, req, config):
+        same = self._same_turns(near, req, config)
+        for score, entry_id in same:
             merged.setdefault(entry_id, Candidate(entry_id, round(score, 4), "embedding"))
+        if trace is not None:
+            trace["meaning"] = (
+                ("candidate", round(same[0][0], 4), "in review")
+                if same
+                else ("no", round(near[0][0], 4), "other turns")
+            )
         ranked = sorted(merged.values(), key=lambda c: -c.score)[:MAX_CANDIDATES]
         return MatchResult(None, ranked, found.nearest)
 
@@ -757,7 +813,8 @@ class Service:
     def test_match(self, req: CanonicalRequest, project: str) -> dict[str, Any]:
         """What would happen to this request right now, without serving, logging or counting."""
         self.require_project(project)
-        found = self.lookup(req, project)
+        trace: Trace = {}
+        found = self.lookup(req, project, trace)
         match = found.match
         config = self.project_settings(project).fingerprint_config()
         out: dict[str, Any] = {
@@ -772,6 +829,7 @@ class Service:
                 {"entry_id": c.entry_id, "score": c.score, "tier": c.tier} for c in found.candidates
             ],
             "nearest": None if match else found.nearest,
+            "tiers": self._tier_verdicts(trace),
         }
         if match:
             out["would"] = "serve"
@@ -779,6 +837,25 @@ class Service:
             out["response_preview"] = content[:200]
         else:
             out["would"] = "park" if self.mode == "record" else "no_match_error"
+        return out
+
+    def _tier_verdicts(self, trace: Trace) -> list[dict[str, Any]]:
+        """One entry per tier, in cascade order. A tier the trace holds ran; one it lacks was
+        either never reached (an earlier tier answered) or, for meaning, switched off."""
+        out: list[dict[str, Any]] = []
+        for tier in TIERS:
+            if tier in trace:
+                verdict, score, reason = trace[tier]
+            elif tier == "meaning" and not self.vectors:
+                verdict, score, reason = "off", None, ""
+            else:
+                verdict, score, reason = "skipped", None, "already answered"
+            row: dict[str, Any] = {"tier": tier, "verdict": verdict}
+            if score is not None:
+                row["score"] = score
+            if reason:
+                row["reason"] = reason
+            out.append(row)
         return out
 
     # --- lexical index ------------------------------------------------------------

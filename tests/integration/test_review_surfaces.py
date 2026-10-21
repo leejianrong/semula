@@ -102,3 +102,15 @@ def test_mcp_offers_the_review_queue(tmp_path: Path) -> None:
 
     with running_server(tmp_path, mode="replay") as url:
         asyncio.run(go(url, queue_one(url)))
+
+
+def test_test_match_shows_the_tier_verdicts_to_a_cli_user(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with running_server(tmp_path, mode="replay") as url:
+        queue_one(url)
+        capsys.readouterr()
+        assert run(url, "test-match", "--prompt", WEAK) == 0
+        out = capsys.readouterr().out
+        assert "tiers: exact no, normalised no, alias no, words candidate" in out
+        assert "meaning off" in out
