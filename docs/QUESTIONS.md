@@ -72,6 +72,9 @@ For planning today, indah's existing ADRs that rule things out (e.g. ADR-0008 "n
 | 2026-10-20 | Dashboard design proposed in `docs/design/` (eight artboards: six local screens, two hosted sketches): the tier rail as the signature, a mode lamp, red only for "waiting on you". Six semula API gaps found by drawing real data; none built | `docs/design/README.md` |
 | 2026-10-20 | Dashboard design, second round: Material 3 tokens (generated from seed #0E7C66, light and dark, the logo red as a custom `record` role), a text budget (four checks; explanations behind keyboard-accessible ⓘ tooltips), logo option D, "again from the start" | `docs/design/` |
 | 2026-10-20 | MCP exposes approve and reject to agents, with a description telling them to wait for a human unless asked | `docs/agents/PLAYBOOK.md` |
+| 2026-10-21 | The five headless-core gaps from the dashboard design are built (SEM-E13): redacted 120-character preview per call-log row; `GET /api/v1/log/stats`; per-tier verdicts in `test_match`; `entry_revision` history (latest 50 per entry); entries list filters, sort and flags | `docs/design/README.md` |
+| 2026-10-21 | Log stats: `median_latency_ms` covers hits and misses only (a recorded or timed-out call waited for an agent); `hit_rate` is hits over every call; `parked` ignores the window | SEM-65 |
+| 2026-10-21 | `has_tools` on an entry means an answer calls a tool; the list filter is a LIKE on the stored JSON, checked against the per-row flag | SEM-64 |
 
 ## Deferred
 
