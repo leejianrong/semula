@@ -18,7 +18,8 @@ EXPECTED_TOOLS = {
     "get_status", "set_mode", "list_projects", "create_project", "get_project_settings",
     "update_project_settings", "list_pending", "get_pending", "answer_pending", "list_entries",
     "get_entry", "upsert_entry", "update_entry", "delete_entry", "test_match",
-    "list_calls", "list_candidates", "get_candidate", "approve_candidate", "reject_candidate",
+    "list_calls", "log_stats", "list_candidates", "get_candidate", "approve_candidate",
+    "reject_candidate",
 }  # fmt: skip
 
 

@@ -228,6 +228,13 @@ def list_calls(
     return {"calls": _service(request).list_calls(project, outcome, limit, before_id)}
 
 
+@router.get("/log/stats")
+def log_stats(request: Request, project: str | None = None, window: str = "30m") -> dict[str, Any]:
+    """Per-minute counts (hits, misses, recorded, timed_out) for the last ``window`` (``30m``,
+    ``2h``, up to ``24h``), plus ``hit_rate``, ``median_latency_ms`` and ``parked``."""
+    return _service(request).log_stats(project, window)
+
+
 @router.get("/log/stream")
 async def log_stream(request: Request, project: str | None = None) -> StreamingResponse:
     """Server-sent events: one ``call`` event per call as it is logged. A ``: connected``
