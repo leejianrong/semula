@@ -173,6 +173,14 @@ def build_mcp(service: Service) -> FastMCP:
         return service.get_entry(id)
 
     @tool
+    def entry_history(id: str, version: int | None = None) -> dict[str, Any]:
+        """An entry's change history, newest first: version, time, actor (agent or human), a short
+        summary and whether an agent forced past a pin. The latest 50 are kept. Pass 'version' to
+        read that revision in full (the responses, selection and pin as that write left them), for
+        example to compare with the current entry after a version_conflict."""
+        return service.entry_history(id, version)
+
+    @tool
     def upsert_entry(
         project: str,
         request: dict[str, Any],

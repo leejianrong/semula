@@ -47,6 +47,7 @@ from .schema import alias as A
 from .schema import call_log as L
 from .schema import candidate as C
 from .schema import entry as E
+from .schema import entry_revision as R
 from .schema import pending as Q
 from .schema import project as P
 
@@ -62,6 +63,7 @@ MAX_CANDIDATES = 3  # weak matches queued for review per missed request
 PRUNE_EVERY = 200  # call-log rows between retention sweeps
 SETTINGS_TTL = 1.0  # seconds a project's settings are reused between reads
 
+MAX_REVISIONS = 50  # snapshots kept per entry; the oldest are dropped
 ENTRY_SORTS = {"hits": "hit_count", "updated": "updated_at", "created": "created_at"}
 # Stored answers are JSON written by json.dumps, so an answer that calls a tool holds exactly this
 # text. A prose mention of it is escaped (\"tool_calls\": [) and cannot match.
@@ -738,6 +740,7 @@ class Service:
             )
             self._index(entry_id, project, req, config, conn)
             self._supersede(conn, project, fp)
+            self._revise(conn, entry_id, 1, actor, "created", [stored], "first", False)
         return self.get_entry(entry_id), True
 
     def get_entry(self, entry_id: str) -> dict[str, Any]:
@@ -857,9 +860,87 @@ class Service:
             )
             if changed != 1:  # lost a race between the check and the write
                 raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
+            summary = _change_summary(row, changes, responses, selection, pinned)
+            self._revise(
+                conn,
+                entry_id,
+                row["version"] + 1,  # the guard and the WHERE above made this the version we hold
+                actor,
+                summary,
+                responses,
+                selection,
+                pinned,
+                forced,
+            )
             if forced:
                 self._log_forced(row, "forced_write", conn)
         return self.get_entry(entry_id)
+
+    # --- history ------------------------------------------------------------------
+    def _revise(
+        self,
+        conn: Connection,
+        entry_id: str,
+        version: int,
+        actor: str,
+        summary: str,
+        responses: list[Any],
+        selection: str,
+        pinned: bool,
+        forced: bool = False,
+    ) -> None:
+        """Snapshot an entry as a write leaves it, in that write's transaction, and drop the
+        oldest snapshots beyond ``MAX_REVISIONS``."""
+        self.db.execute(
+            sa.insert(R).values(
+                entry_id=entry_id,
+                workspace_id=DEFAULT_WORKSPACE,
+                version=version,
+                actor=actor if actor == "human" else "agent",
+                summary=summary[:120],
+                forced=forced,
+                snapshot=json.dumps(
+                    {"responses": responses, "selection": selection, "pinned": pinned}
+                ),
+            ),
+            conn,
+        )
+        edge = self.db.one(
+            sa.select(R.c.version)
+            .where(R.c.entry_id == entry_id)
+            .order_by(R.c.version.desc())
+            .offset(MAX_REVISIONS - 1)
+            .limit(1),
+            conn,
+        )
+        if edge:
+            self.db.execute(
+                sa.delete(R).where(R.c.entry_id == entry_id, R.c.version < edge["version"]), conn
+            )
+
+    def entry_history(self, entry_id: str, version: int | None = None) -> dict[str, Any]:
+        """The entry's revisions, newest first and without their snapshots; or, with ``version``,
+        that one revision with its snapshot (the entry's responses, selection and pin then)."""
+        entry = self._entry_row(entry_id)
+        base = {"entry_id": entry_id, "version": entry["version"]}
+        if version is not None:
+            row = self.db.one(sa.select(R).where(R.c.entry_id == entry_id, R.c.version == version))
+            if not row:
+                raise SemulaError(
+                    404,
+                    "revision_not_found",
+                    f"Entry {entry_id} has no version {version} in its history "
+                    f"(the latest {MAX_REVISIONS} are kept).",
+                    param="version",
+                )
+            return {
+                **base,
+                "revision": {**_revision_view(row), "snapshot": json.loads(row["snapshot"])},
+            }
+        rows = self.db.rows(
+            sa.select(R).where(R.c.entry_id == entry_id).order_by(R.c.version.desc())
+        )
+        return {**base, "revisions": [_revision_view(r) for r in rows]}
 
     def delete_entry(
         self, entry_id: str, version: int | None, *, actor: str = "agent", force: bool = False
@@ -1019,7 +1100,12 @@ class Service:
         }
 
     def import_project(
-        self, bundle: Any, project: str | None = None, *, force: bool = False
+        self,
+        bundle: Any,
+        project: str | None = None,
+        *,
+        force: bool = False,
+        actor: str = "agent",
     ) -> dict[str, Any]:
         """Apply a bundle, all or nothing. Entries are matched by ULID: new ones are added,
         changed ones updated (a pinned entry is left alone unless ``force``), identical ones
@@ -1052,7 +1138,7 @@ class Service:
                 report["created_project"] = True
             config = self._config_in(slug, conn)
             for item in entries:
-                self._import_entry(item, slug, config, force, report["entries"], conn)
+                self._import_entry(item, slug, config, force, report["entries"], conn, actor)
             known = {
                 r["id"]
                 for r in self.db.rows(
@@ -1087,6 +1173,7 @@ class Service:
         force: bool,
         tally: dict[str, Any],
         conn: Connection,
+        actor: str = "agent",
     ) -> None:
         req = CanonicalRequest.from_json(json.dumps(item["request"]))
         responses = []
@@ -1140,6 +1227,16 @@ class Service:
                 conn,
             )
             tally["created"] += 1
+            self._revise(
+                conn,
+                item["id"],
+                extra.get("version", 1),
+                actor,
+                "imported",
+                responses,
+                selection,
+                values["pinned"],
+            )
         elif all(
             row[k] == v for k, v in values.items() if k not in ("fingerprint", "exact_fingerprint")
         ):
@@ -1156,6 +1253,24 @@ class Service:
                 conn,
             )
             tally["updated"] += 1
+            what = _change_summary(
+                row,
+                {"responses": responses} if row["responses"] != values["responses"] else {},
+                responses,
+                selection,
+                values["pinned"],
+            )
+            self._revise(
+                conn,
+                item["id"],
+                row["version"] + 1,
+                actor,
+                "imported" if what == "no change" else f"imported, {what}",
+                responses,
+                selection,
+                values["pinned"],
+                forced=bool(row["pinned"]),
+            )
         self._index(item["id"], slug, req, config, conn)
         self._supersede(conn, slug, values["fingerprint"])
 
@@ -1422,7 +1537,7 @@ class Service:
             raise SemulaError(404, "pending_not_found", f"No pending request {pending_id}.")
         return _pending_view(row, full=True)
 
-    def answer_pending(self, pending_id: str, payload: Any) -> str:
+    def answer_pending(self, pending_id: str, payload: Any, *, actor: str = "agent") -> str:
         """Validate an answer, save it as an entry, and release any held calls."""
         row = self.db.one(
             sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == DEFAULT_WORKSPACE)
@@ -1459,6 +1574,7 @@ class Service:
             config = self.project_settings(row["project_id"]).fingerprint_config()
             self._index(entry_id, row["project_id"], req, config, conn)
             self._supersede(conn, row["project_id"], row["fingerprint"])
+            self._revise(conn, entry_id, 1, actor, "recorded", [stored], "first", False)
         self._release(pending_id)
         return entry_id
 
@@ -1616,6 +1732,32 @@ class Service:
             if edge:
                 deleted += self.db.execute(sa.delete(L).where(mine, L.c.id < edge["id"]), conn)
         return deleted
+
+
+def _revision_view(row: Any) -> dict[str, Any]:
+    return {
+        "version": row["version"],
+        "ts": row["ts"],
+        "actor": row["actor"],
+        "summary": row["summary"],
+        "forced": bool(row["forced"]),
+    }
+
+
+def _change_summary(
+    before: Any, changes: dict[str, Any], responses: list[Any], selection: str, pinned: bool
+) -> str:
+    """A few words on what a write changed, for the history list."""
+    parts: list[str] = []
+    if "response" in changes or "responses" in changes:
+        parts.append("answer replaced" if "response" in changes else "answers replaced")
+    if "add_response" in changes:
+        parts.append(f"answer added ({len(responses)} in all)")
+    if selection != before["selection"]:
+        parts.append(f"selection {before['selection']} to {selection}")
+    if pinned != bool(before["pinned"]):
+        parts.append("pinned" if pinned else "unpinned")
+    return ", ".join(parts) or "no change"
 
 
 def _log_view(row: Any) -> dict[str, Any]:

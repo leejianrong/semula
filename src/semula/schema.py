@@ -92,6 +92,22 @@ entry = sa.Table(
     sa.Index("idx_entry_exact", "workspace_id", "project_id", "exact_fingerprint"),
 )
 
+# One snapshot per write to an entry, newest ``MAX_REVISIONS`` kept; the entry's own row stays the
+# current state. Written in the same transaction as the write; history is never exported.
+entry_revision = sa.Table(
+    "entry_revision",
+    metadata,
+    sa.Column("entry_id", sa.Text, sa.ForeignKey("entry.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    _ts("ts"),
+    sa.Column("actor", sa.Text, nullable=False),  # agent | human
+    sa.Column("summary", sa.Text, nullable=False),
+    sa.Column("forced", sa.Boolean, nullable=False, default=False),  # an agent overrode a pin
+    sa.Column("snapshot", sa.Text, nullable=False),  # {"responses": [...], "selection", "pinned"}
+    sa.PrimaryKeyConstraint("entry_id", "version", name="pk_entry_revision"),
+)
+
 pending = sa.Table(
     "pending",
     metadata,
