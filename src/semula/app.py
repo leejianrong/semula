@@ -144,7 +144,7 @@ def create_app(settings: Settings | None = None, embedder: Embedder | None = Non
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "version": __version__, "mode": app.state.service.mode}
+        return {"status": "ok", "version": __version__, "mode": app.state.service.default_mode}
 
     app.include_router(api_openai.router)
     app.include_router(api_admin.router)

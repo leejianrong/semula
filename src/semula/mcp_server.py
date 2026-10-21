@@ -61,20 +61,23 @@ def build_mcp(service: Service) -> FastMCP:
 
     @tool
     def get_status() -> dict[str, Any]:
-        """Show the server's mode ('replay' or 'record'), version and the projects with their
-        entry and pending counts. Start here to see whether anything is waiting."""
+        """Show the server's default mode, its version and the projects, each with its own mode
+        ('replay' or 'record'), entry count and pending count. Start here to see whether anything
+        is waiting."""
         return {
             "version": __version__,
-            "mode": service.mode,
+            "mode": service.default_mode,
             "projects": service.list_projects(),
             "embeddings": service.embeddings_status(),
         }
 
     @tool
-    def set_mode(mode: str) -> dict[str, str]:
-        """Switch between 'record' (unknown prompts are parked for you to answer) and 'replay'
-        (unknown prompts fail fast; nothing is parked). Not persisted across restarts."""
-        return {"mode": service.set_mode(mode)}
+    def set_mode(mode: str, project: str | None = None) -> dict[str, Any]:
+        """Switch a project between 'record' (unknown prompts are parked for you to answer) and
+        'replay' (unknown prompts fail fast; nothing is parked). With 'project' the choice is
+        kept across restarts. Without it you move the server's default, which projects that have
+        not chosen follow, and that is forgotten when the server restarts."""
+        return service.set_mode(mode, project)
 
     @tool
     def list_projects() -> list[dict[str, Any]]:

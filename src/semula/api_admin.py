@@ -170,14 +170,24 @@ async def test_match(project_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/mode")
-def get_mode(request: Request) -> dict[str, str]:
-    return {"mode": _service(request).mode}
+def get_mode(request: Request) -> dict[str, Any]:
+    """The server's default mode, and what each project does (its own choice or the default)."""
+    service = _service(request)
+    return {
+        "mode": service.default_mode,
+        "projects": {p["id"]: p["mode"] for p in service.list_projects()},
+    }
 
 
 @router.put("/mode")
-async def put_mode(request: Request) -> dict[str, str]:
+async def put_mode(request: Request) -> dict[str, Any]:
+    """Body ``{"mode": "record"}`` moves the server's default (in memory: a restart returns to
+    ``SEMULA_MODE``). Add ``"project": "<id>"`` to set that project's own mode, which is kept."""
     body = await _json(request)
-    return {"mode": await offload(_service(request).set_mode, str(body.get("mode", "")))}
+    project = body.get("project")
+    if project is not None and not isinstance(project, str):
+        raise SemulaError(400, "invalid_request", "'project' must be a string.", param="project")
+    return await offload(partial(_service(request).set_mode, str(body.get("mode", "")), project))
 
 
 @router.get("/pending")

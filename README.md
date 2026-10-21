@@ -45,6 +45,18 @@ uv run semula answer <id> --text "hi from the agent"
 
 The held call returns. Ask the same thing again, even with a different model name or a new timestamp in the prompt, and the stored answer comes back at once. Restart with `SEMULA_MODE=replay` and it works offline; unknown prompts return an error instead of a made-up answer.
 
+### Record or replay, per project
+
+Each project is either recording (a prompt with no stored answer is held for an agent) or replaying (it fails fast), and **a project's choice is kept across restarts**:
+
+```bash
+uv run semula mode                                  # the server default and every project's mode
+uv run semula mode record --project support-bot     # kept
+uv run semula mode record                           # only moves the server default, until a restart
+```
+
+A project that has not chosen follows the server default, which starts as `SEMULA_MODE` (`replay` unless you set it). The dashboard's Record switch sets the mode of the project you are looking at. A project's mode is never exported, and importing a bundle cannot turn recording on.
+
 ### Projects, editing and settings
 
 Keep recordings apart per project and pick one per call with a header or the URL:

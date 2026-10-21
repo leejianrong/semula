@@ -116,7 +116,9 @@ class Service:
         # Answers arrive on worker threads, so waking a waiter must go through its loop.
         self._waiters: dict[str, list[tuple[asyncio.AbstractEventLoop, asyncio.Event]]] = {}
         self._waiters_lock = threading.Lock()
-        self.mode: str = settings.mode
+        # What a project follows until it chooses its own mode. Lives in memory: it starts from
+        # SEMULA_MODE and PUT /api/v1/mode moves it, but a restart returns to the environment.
+        self.default_mode: str = settings.mode
         self.lexical = make_index(db)
         # Semantic matching is optional: with no embedder none of this loads (ADR-0003).
         if embedder is None and settings.embeddings:
@@ -132,16 +134,28 @@ class Service:
         self._logged = 0
 
     # --- mode -----------------------------------------------------------------------
-    def set_mode(self, mode: str) -> str:
-        """Switch between replay and record at runtime. Not persisted: a restart returns to
-        ``SEMULA_MODE``."""
+    def mode_of(self, project: str) -> str:
+        """What a call to ``project`` does when nothing answers it: the project's own mode,
+        else the server's default."""
+        return self.project_settings(project).mode or self.default_mode
+
+    def set_mode(self, mode: str, project: str | None = None) -> dict[str, Any]:
+        """Switch between replay and record.
+
+        For a ``project`` the choice is saved with it (``persisted``) and survives restarts.
+        Without one it moves the server's default, which projects that have not chosen follow;
+        that lives in memory only, so a restart returns it to ``SEMULA_MODE``.
+        """
         if mode not in ("replay", "record"):
             raise SemulaError(
                 422, "invalid_mode", "mode must be 'replay' or 'record'.", param="mode"
             )
-        self.mode = mode
-        self.events.publish({"type": "mode", "mode": mode})
-        return mode
+        if project is not None:
+            self.update_project(project, settings={"mode": mode})  # announces the change
+            return {"mode": self.mode_of(project), "persisted": True, "project": project}
+        self.default_mode = mode
+        self.events.publish({"type": "mode", "project": None, "mode": mode})
+        return {"mode": mode, "persisted": False, "project": None}
 
     # --- projects -----------------------------------------------------------------
     def create_project(self, slug: str, name: str | None = None) -> dict[str, Any]:
@@ -189,7 +203,7 @@ class Service:
             .where(P.c.workspace_id == DEFAULT_WORKSPACE)
             .order_by(P.c.id)
         )
-        return [dict(r) for r in rows]
+        return [{**r, "mode": self.mode_of(r["id"])} for r in map(dict, rows)]
 
     def get_project(self, slug: str) -> dict[str, Any]:
         for project in self.list_projects():
@@ -252,6 +266,8 @@ class Service:
                 if any(getattr(before, f) != getattr(after, f) for f in FINGERPRINT_FIELDS):
                     self._rekey(slug, after, conn)
         self._settings_cache.pop(slug, None)
+        if settings and "mode" in settings and settings["mode"] != before.mode:
+            self.events.publish({"type": "mode", "project": slug, "mode": self.mode_of(slug)})
         return self.get_project(slug)
 
     def _rekey(self, slug: str, settings: ProjectSettings, conn: Connection) -> None:
@@ -990,7 +1006,7 @@ class Service:
             sa.insert(L).values(
                 workspace_id=row["workspace_id"],
                 project_id=row["project_id"],
-                mode=self.mode,
+                mode=self.mode_of(row["project_id"]),
                 outcome=outcome,
                 entry_id=row["id"],
             ),
@@ -1006,7 +1022,7 @@ class Service:
         config = self.project_settings(project).fingerprint_config()
         out: dict[str, Any] = {
             "project": project,
-            "mode": self.mode,
+            "mode": self.mode_of(project),
             "matched": match is not None,
             "tier": match.tier if match else None,
             "entry_id": match.entry_id if match else None,
@@ -1023,7 +1039,7 @@ class Service:
             content = match.stored["message"].get("content") or ""
             out["response_preview"] = content[:200]
         else:
-            out["would"] = "park" if self.mode == "record" else "no_match_error"
+            out["would"] = "park" if self.mode_of(project) == "record" else "no_match_error"
         return out
 
     def _tier_verdicts(self, trace: Trace) -> list[dict[str, Any]]:
@@ -1121,7 +1137,9 @@ class Service:
             "project": {
                 "id": slug,
                 "name": project["name"],
-                "settings": self.project_settings(slug).model_dump(exclude_defaults=True),
+                "settings": self.project_settings(slug).model_dump(
+                    exclude_defaults=True, exclude={"mode"}
+                ),
             },
             "entries": entries,
             "aliases": aliases,
@@ -1642,7 +1660,7 @@ class Service:
             "workspace_id": DEFAULT_WORKSPACE,
             "project_id": project,
             "ts": now_iso(),
-            "mode": self.mode,
+            "mode": self.mode_of(project),
             "outcome": outcome,
             "tier": tier,
             "score": score,
@@ -1809,8 +1827,10 @@ def _log_view(row: Any) -> dict[str, Any]:
 
 
 def _bundle_settings(raw: Any) -> ProjectSettings:
+    """Settings from a bundle. A bundle never sets the mode: whether a project records is a
+    decision about this server, and importing a file must not switch it."""
     try:
-        return ProjectSettings.model_validate(raw or {})
+        return ProjectSettings.model_validate(raw or {}).model_copy(update={"mode": None})
     except ValidationError as exc:
         first = exc.errors()[0]
         where = ".".join(["project", "settings", *(str(p) for p in first["loc"])])

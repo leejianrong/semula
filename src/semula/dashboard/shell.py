@@ -24,7 +24,10 @@ class Tab:
         self.projects: list[str] = dash.project_ids()
         self.counts: indah.Signal[dict[str, int]] = indah.Signal({"pending": 0, "review": 0})
         self.stats: indah.Signal[dict[str, Any]] = indah.Signal(EMPTY_STATS)
-        self.recording: indah.Signal[bool] = indah.Signal(self.service.mode == "record")
+        # Whether *this project* records. ``_applied`` is what the service last said, so the
+        # switch handler can tell a viewer's click from an update that came from the service.
+        self._applied = self.service.default_mode
+        self.recording: indah.Signal[bool] = indah.Signal(self._applied == "record")
         self._stale = asyncio.Event()
         self._stale.set()  # the first refresh is due now
         self._follow_events(ctx)
@@ -36,25 +39,37 @@ class Tab:
 
         def on_event() -> None:
             event = latest.value
-            if event and event.get("type") == "mode":
+            if event and event.get("type") == "mode" and event["project"] == self.project.peek():
+                self._applied = event["mode"]
                 self.recording.set(event["mode"] == "record")
             if event:
-                self._stale.set()
+                self._stale.set()  # a default that moved changes every project that follows it
 
         def on_call() -> None:
             if calls.value is not None:
                 self._stale.set()
 
+        def on_project() -> None:
+            self.project.value  # noqa: B018 (reading it is the point: re-count and re-read the mode)
+            self._stale.set()
+
         indah.effect(on_event)
         indah.effect(on_call)
+        indah.effect(on_project)
         indah.effect(self._push_mode)
 
     def _push_mode(self) -> None:
-        """The viewer chose a mode: tell the service. The service then announces it, and every
-        tab (this one included) already agrees, so that does not loop."""
-        chosen = "record" if self.recording.value else "replay"
-        if chosen != self.service.mode:
-            self.service.set_mode(chosen)
+        """The viewer flipped the switch: save it for this project. The service then announces
+        it and every tab agrees already, so that does not loop."""
+        want = "record" if self.recording.value else "replay"
+        if want == self._applied:
+            return
+        self._applied = want
+        project = self.project.peek()
+        task = asyncio.get_running_loop().create_task(
+            blocking(self.service.set_mode, want, project)
+        )
+        self.ctx.on_close(task.cancel)
 
     async def _refresh(self) -> None:
         """Count again, at most once a second however many events arrived."""
@@ -62,6 +77,9 @@ class Tab:
             return
         self._stale.clear()
         project = self.project.peek()
+        mode = await blocking(self.service.mode_of, project)
+        self._applied = mode
+        self.recording.set(mode == "record")
         self.counts.set(await blocking(self.service.queue_counts, project))
         self.stats.set(await blocking(self.service.log_stats, project, "30m"))
 

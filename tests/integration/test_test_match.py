@@ -69,7 +69,14 @@ async def test_a_replay_miss_error_carries_the_nearest_candidate(
 
 
 async def test_mode_can_be_switched_at_runtime(replay: httpx.AsyncClient) -> None:
-    assert (await replay.get("/api/v1/mode")).json() == {"mode": "replay"}
-    assert (await replay.put("/api/v1/mode", json={"mode": "record"})).json() == {"mode": "record"}
+    assert (await replay.get("/api/v1/mode")).json() == {
+        "mode": "replay",
+        "projects": {"default": "replay"},
+    }
+    assert (await replay.put("/api/v1/mode", json={"mode": "record"})).json() == {
+        "mode": "record",
+        "persisted": False,
+        "project": None,
+    }
     assert (await replay.get("/health")).json()["mode"] == "record"
     assert (await replay.put("/api/v1/mode", json={"mode": "chaos"})).status_code == 422

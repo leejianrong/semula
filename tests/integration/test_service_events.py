@@ -85,7 +85,7 @@ async def test_authoring_an_answer_clears_what_it_supersedes(replay: httpx.Async
 async def test_switching_the_mode_is_announced(replay: httpx.AsyncClient) -> None:
     with service_of(replay).events.subscribe() as sub:
         await replay.put("/api/v1/mode", json={"mode": "record"})
-        assert {"type": "mode", "mode": "record"} in await drain(sub)
+        assert {"type": "mode", "project": None, "mode": "record"} in await drain(sub)
 
 
 async def test_queue_counts(record: httpx.AsyncClient) -> None:

@@ -60,7 +60,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
         return _respond(service, body, match.stored, model)
 
     await offload(service.record_candidates, req, project, found.candidates)  # still a miss
-    if service.mode == "replay":
+    if await offload(service.mode_of, project) == "replay":
         await offload(partial(service.log_call, "miss", started, project=project, req=req))
         raise SemulaError(
             424,
