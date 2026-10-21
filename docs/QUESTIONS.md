@@ -75,6 +75,8 @@ For planning today, indah's existing ADRs that rule things out (e.g. ADR-0008 "n
 | 2026-10-21 | The five headless-core gaps from the dashboard design are built (SEM-E13): redacted 120-character preview per call-log row; `GET /api/v1/log/stats`; per-tier verdicts in `test_match`; `entry_revision` history (latest 50 per entry); entries list filters, sort and flags | `docs/design/README.md` |
 | 2026-10-21 | Log stats: `median_latency_ms` covers hits and misses only (a recorded or timed-out call waited for an agent); `hit_rate` is hits over every call; `parked` ignores the window | SEM-65 |
 | 2026-10-21 | `has_tools` on an entry means an answer calls a tool; the list filter is a LIKE on the stored JSON, checked against the per-row flag | SEM-64 |
+| 2026-10-21 | Hosted design proposed (not accepted, not built): OIDC for people with server-side sessions; opaque hashed `smla_live_` tokens per project with scopes replay < record < admin; actor derived from the credential (the `X-Semula-Actor` header is local-only); roles viewer, editor, admin; audit log | ADR-0010 |
+| 2026-10-21 | Tenancy proposed: workspace from the credential; `Scope` through the service; composite `(workspace_id, id)` keys and Postgres RLS; quotas; 30-day workspace deletion; mode becomes a per-project setting (effective mode = project's, else process default) | ADR-0011 |
 
 ## Deferred
 

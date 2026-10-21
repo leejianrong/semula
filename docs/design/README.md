@@ -53,7 +53,7 @@ Drawing real data exposed gaps in the headless core. These are semula work, not 
 3. ~~**Per-tier verdicts in `test_match`.**~~ Done (SEM-62). `test_match` returns `tiers`: one entry each for exact, normalised, alias, words and meaning, with a `verdict` (`no`, `match`, `candidate`, `skipped`, `off`), an optional `score` and a short `reason`. The trace is collected only when `test_match` asks.
 4. ~~**Entry history.**~~ Done (SEM-66). `GET /api/v1/entries/<id>/history` (`?version=N` for one revision with its snapshot), `semula entry history`, MCP `entry_history`: version, time, actor, a short summary, `forced`, and the responses, selection and pin as the write left them; the latest 50 per entry (table `entry_revision`, ADR-0005 amendment). A 409 `version_conflict` still returns `current`; Compare reads the history.
 5. ~~**Entries list filters and flags.**~~ Done (SEM-64). `GET /api/v1/projects/<id>/entries` takes `pinned`, `has_alias`, `tool_calls`, `never_hit` (bool, AND-combined, `false` selects the others) and `sort` (`hits`, `updated`, `created`) with `order`; each row has `alias_count` and `has_tools`; `total` counts the filtered set. Checked on 10,000 entries: at most 32 ms on SQLite and 55 ms on Postgres (the slowest is the existing text search); one index added, `alias(entry_id)`.
-6. **Hosted: mode per project, tokens, members and roles.** Part of SEM-E11.
+6. **Hosted: mode per project, tokens, members and roles.** Designed in [ADR-0010](../adr/0010-hosted-auth-and-tokens.md) (tokens, scopes, roles, sign-in) and [ADR-0011](../adr/0011-workspace-tenancy-and-per-project-mode.md) (workspaces, quotas, mode per project); proposed, not built.
 
 ## Decisions taken in review
 
