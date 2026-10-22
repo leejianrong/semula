@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from pathlib import Path
 
@@ -357,3 +358,38 @@ def dbmod_url(url: str) -> str:
     from semula.db import normalise_url
 
     return normalise_url(url)
+
+
+def test_a_database_that_is_not_up_to_date_will_not_start_when_migrating_is_off(
+    tmp_path: Path,
+) -> None:
+    from semula.db import DatabaseNeedsMigration, head_revision
+
+    url = _database_at(tmp_path, "0009")
+    with pytest.raises(DatabaseNeedsMigration) as refused:
+        Database(url, migrate=False)
+    assert "semula admin migrate" in str(refused.value)
+    assert Database(url).revision() == head_revision() == HEAD  # migrating brings it up
+    assert Database(url, migrate=False).revision() == HEAD  # and then starting without is fine
+
+
+@pytest.mark.skipif(not os.environ.get("SEMULA_TEST_DATABASE_URL"), reason="Postgres only")
+def test_replicas_that_start_together_take_turns_migrating(tmp_path: Path) -> None:
+    import threading
+
+    url = fresh_database_url(tmp_path)
+    errors: list[BaseException] = []
+
+    def start() -> None:
+        try:
+            Database(url)
+        except BaseException as exc:  # noqa: BLE001 - collected, then asserted on
+            errors.append(exc)
+
+    threads = [threading.Thread(target=start) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+    assert errors == []
+    assert Database(url, migrate=False).revision() == HEAD

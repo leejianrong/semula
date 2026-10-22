@@ -10,6 +10,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Replicas** (ADR-0011): on Postgres, replicas share live events and wake held calls over
+  `LISTEN/NOTIFY`; publishing never waits for the network and the waits look again each second.
+  `SEMULA_MIGRATE=off` with `semula admin migrate` migrates once before rollout; starts that do
+  migrate together take turns.
 - **Deleting a workspace** (migration 0015, ADR-0011): marked deleted with the id typed back,
   its tokens stop at once, restorable for 30 days, then purged in dependency order; the audit log
   keeps the fact. `semula admin workspace-delete`, `-restore` and `-purge`.

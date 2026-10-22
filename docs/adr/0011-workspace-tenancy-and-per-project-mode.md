@@ -83,6 +83,8 @@ None between workspaces in the first hosted build (deferred in QUESTIONS). Expor
 
 ### 8. Shared state across replicas
 
+*Built in SEM-90 (2026-10-23): `cluster.PgBridge` (LISTEN/NOTIFY on a sender and a listener thread, an outbox so publishing never blocks), an `answered` event that releases held calls on other replicas, a one-second look-again in the held-call and pending waits, `SEMULA_MIGRATE=off` with `semula admin migrate`, and an advisory lock for starts that migrate together.*
+
 - **Event bus and held-call wake-ups:** Postgres `LISTEN/NOTIFY`. An answer written on one replica notifies; the replica holding the call wakes its waiter, with a 1 s poll as fallback. The local in-process bus stays for SQLite.
 - **Settings cache:** the 1 s TTL stays; a change is visible within a second everywhere (a mode switch included).
 - **Embedding matrix:** rebuilt per replica from `entry_vector` when its set changes, as now.

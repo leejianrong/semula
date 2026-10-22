@@ -80,6 +80,8 @@ class Settings:
     # Hosted mode: every call needs an API token, which names the workspace (ADR-0010). Off
     # locally, where whoever can reach the port is trusted (or the shared key above).
     hosted: bool = False
+    # Replicas on one Postgres: migrate once, before rollout, instead of on every start.
+    migrate: bool = True
     quotas: Quotas = field(default_factory=Quotas)
     database_url: str | None = field(default=None, repr=False)  # may hold a password
 
@@ -118,6 +120,7 @@ class Settings:
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
             hosted=_flag(os.environ.get("SEMULA_HOSTED", "off")),
+            migrate=_flag(os.environ.get("SEMULA_MIGRATE", "on")),
             quotas=_quotas_from_env(_flag(os.environ.get("SEMULA_HOSTED", "off"))),
             database_url=os.environ.get("SEMULA_DATABASE_URL") or None,
             models=tuple(

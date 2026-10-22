@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import Callable
 from typing import Any
 
 QUEUE_SIZE = 256
@@ -50,6 +51,10 @@ class EventBus:
     def __init__(self) -> None:
         self._subs: list[Subscription] = []
         self._lock = threading.Lock()
+        # With replicas (cluster.PgBridge): ``forward`` queues an event for the others and never
+        # blocks; ``on_remote`` is told of each event that came from another replica.
+        self.forward: Callable[[dict[str, Any]], None] | None = None
+        self.on_remote: list[Callable[[dict[str, Any]], None]] = []
 
     def subscribe(self) -> Subscription:
         """Subscribe from inside a running event loop."""
@@ -58,7 +63,23 @@ class EventBus:
             self._subs.append(sub)
         return sub
 
+    @property
+    def networked(self) -> bool:
+        """Are there other replicas to hear from? Then waits also look again now and then."""
+        return self.forward is not None
+
     def publish(self, event: dict[str, Any]) -> None:
+        self.publish_local(event)
+        if self.forward is not None:
+            self.forward(event)
+
+    def deliver_remote(self, event: dict[str, Any]) -> None:
+        """An event another replica published: tell the local subscribers and hooks only."""
+        self.publish_local(event)
+        for hook in self.on_remote:
+            hook(event)
+
+    def publish_local(self, event: dict[str, Any]) -> None:
         with self._lock:
             subs = list(self._subs)
         for sub in subs:

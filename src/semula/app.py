@@ -91,7 +91,7 @@ class LazyMcp:
 
 def create_app(settings: Settings | None = None, embedder: Embedder | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
-    db = Database(settings.resolved_database_url)
+    db = Database(settings.resolved_database_url, migrate=settings.migrate)
     service = Service(db, settings, embedder)
     service.sync_index()
     service.sync_embeddings()
@@ -107,9 +107,12 @@ def create_app(settings: Settings | None = None, embedder: Embedder | None = Non
     @asynccontextmanager
     async def lifespan(parent: FastAPI) -> AsyncIterator[None]:
         task = asyncio.create_task(mcp.run(parent))
+        if db.dialect == "postgresql":  # replicas share events and wake-ups (ADR-0011 section 8)
+            await asyncio.to_thread(service.start_cluster, settings.resolved_database_url)
         try:
             yield
         finally:
+            await asyncio.to_thread(service.stop_cluster)
             await mcp.stop()
             await task
             if dashboard:
