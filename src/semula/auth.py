@@ -106,7 +106,9 @@ class TokenAuthMiddleware:
     The token names the workspace, the scope and optionally one project; this puts the resulting
     ``Principal`` and ``Scope`` where the routes read them, and refuses a call the scope does not
     allow. ``/health`` stays open. A project-bound token that names no project is given its own;
-    one that names another project gets a 404, as if the project did not exist.
+    one that names another project gets a 404, as if the project did not exist. What a bound
+    token may see through routes that name no project (the pending list, an entry by id) is
+    narrowed by the service itself.
     """
 
     def __init__(
@@ -168,10 +170,10 @@ class TokenAuthMiddleware:
 
     def _check(self, scope: ASGIScope, principal: Principal) -> SemulaError | None:
         path, method = scope["path"], scope["method"]
-        if path.startswith("/mcp"):
-            return SemulaError(
-                503, "mcp_unavailable",
-                "MCP is not available on a hosted server yet; use the REST API with a token.",
+        if path.startswith("/mcp") and any(k.lower() == b"origin" for k, _ in scope["headers"]):
+            return SemulaError(  # a browser page calling MCP (DNS rebinding); clients send none
+                403, "origin_not_allowed", "MCP does not accept browser requests.",
+                err_type="authentication_error",
             )  # fmt: skip
         if PEOPLE_ONLY.fullmatch(path.rstrip("/")):
             return SemulaError(
@@ -192,13 +194,6 @@ class TokenAuthMiddleware:
                 return SemulaError(
                     404, "project_not_found", f"No project '{named}'.", param="project"
                 )
-            if path.startswith("/api/") and not PROJECT_IN_PATH.match(path):
-                return SemulaError(
-                    403, "insufficient_scope",
-                    "A project-bound token can use /v1 and /api/v1/projects/<its project> only "
-                    "for now; use a token for all projects for this call.",
-                    err_type="authentication_error",
-                )  # fmt: skip
         return None
 
     @staticmethod

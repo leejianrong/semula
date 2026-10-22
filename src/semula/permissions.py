@@ -17,6 +17,11 @@ RULES: tuple[tuple[str, str, str], ...] = (
     # The data plane, for an app's own client.
     ("POST", r"/v1/(projects/[^/]+/)?chat/completions", "replay"),
     ("GET", r"/v1/(projects/[^/]+/)?models(/.+)?", "replay"),
+    # MCP: Streamable HTTP. Each tool has its own scope (mcp_server.TOOL_SCOPES); a record token
+    # may open a session, and a replay token reaches nothing here.
+    ("POST", r"/mcp", "record"),
+    ("GET", r"/mcp", "record"),
+    ("DELETE", r"/mcp", "record"),
     # Reading, and the agent's recording work.
     ("GET", r"/api/v1/projects", "record"),
     ("GET", r"/api/v1/projects/[^/]+", "record"),

@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
+from semula import canonical
 from semula.app import create_app
 from semula.config import Settings
 from semula.scope import Scope
@@ -141,9 +142,7 @@ async def test_a_record_token_records_but_cannot_destroy_approve_or_reconfigure(
     )
     # a replay token cannot park, so the recording work is driven by the record token's own app call
     assert (await call).status_code == 424
-    pending = hosted.a.open_pending(
-        __import__("semula.canonical", fromlist=["x"]).from_openai(ask(text="park me")), "other"
-    )
+    pending = hosted.a.open_pending(canonical.from_openai(ask(text="park me")), "other")
     listed = await hosted.client.get("/api/v1/pending", headers=hosted.h("record"))
     assert [p["id"] for p in listed.json()["pending"]] == [pending]
     answered = await hosted.client.post(
@@ -231,15 +230,23 @@ async def test_a_project_bound_token_stays_in_its_project(hosted: Hosted) -> Non
     assert (
         await c.get("/api/v1/projects/shop/entries", headers=hosted.h("shop-only"))
     ).status_code == 200
-    # routes that do not name a project would show other projects: closed until SEM-87
-    for path in (
-        "/api/v1/pending",
-        "/api/v1/log",
-        "/api/v1/projects",
-        f"/api/v1/entries/{hosted.entry}",
-    ):  # type: ignore[attr-defined]
-        resp = await c.get(path, headers=hosted.h("shop-only"))
-        assert resp.status_code == 403, path
+    # routes that name no project show only its own
+    other_entry, _ = hosted.a.upsert_entry(
+        "other", {"messages": [{"role": "user", "content": "secret"}]}, {"content": "x"}
+    )
+    hosted.a.set_mode("record", "other")
+    hosted.a.open_pending(canonical.from_openai(ask(text="other waits")), "other")
+    hosted.a.open_pending(canonical.from_openai(ask(text="shop waits")), "shop")
+    projects = (await c.get("/api/v1/projects", headers=hosted.h("shop-only"))).json()["projects"]
+    assert [p["id"] for p in projects] == ["shop"]
+    pending = (await c.get("/api/v1/pending", headers=hosted.h("shop-only"))).json()["pending"]
+    assert {p["project"] for p in pending} == {"shop"}
+    got = await c.get(f"/api/v1/entries/{other_entry['id']}", headers=hosted.h("shop-only"))
+    assert got.status_code == 404 and got.json()["error"]["code"] == "entry_not_found"
+    assert (await c.get("/api/v1/log", headers=hosted.h("shop-only"))).status_code == 200
+    assert (await c.get("/api/v1/mode", headers=hosted.h("shop-only"))).json()["projects"] == {
+        "shop": "replay"
+    }
 
 
 async def test_revoking_cuts_a_token_off_at_once(hosted: Hosted) -> None:
@@ -250,9 +257,7 @@ async def test_revoking_cuts_a_token_off_at_once(hosted: Hosted) -> None:
     assert (await hosted.client.get("/v1/models", headers=headers)).status_code == 401
 
 
-async def test_mcp_and_the_dashboard_are_closed_to_a_hosted_server_for_now(hosted: Hosted) -> None:
-    resp = await hosted.client.post("/mcp/", json={}, headers=hosted.h("admin"))
-    assert resp.status_code == 503 and resp.json()["error"]["code"] == "mcp_unavailable"
+async def test_the_open_dashboard_is_not_served_by_a_hosted_server(hosted: Hosted) -> None:
     ui = await hosted.client.get("/ui/projects/default/log", follow_redirects=True)
     assert ui.status_code != 200 or "sign" in ui.text.lower() or "off" in ui.text.lower()
 
@@ -261,8 +266,6 @@ async def test_a_token_pasted_into_a_prompt_is_not_stored(hosted: Hosted) -> Non
     hosted.a.set_mode("record", "other")
     secret = hosted.tokens["admin"]
     asked = ask(text=f"my token is {secret}, keep it safe")
-    from semula import canonical
-
     pending = hosted.a.open_pending(canonical.from_openai(asked), "other")
     stored = hosted.a.get_pending(pending)["request"]["messages"][0]["content"]
     assert secret not in stored and "[REDACTED]" in stored

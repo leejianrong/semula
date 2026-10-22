@@ -22,7 +22,9 @@ from fastmcp.server import create_proxy
 
 from . import __version__, canonical
 from .errors import SemulaError
+from .scope import Principal, Scope
 from .service import Service
+from .tokens import LEVEL
 
 T = TypeVar("T")
 
@@ -39,6 +41,73 @@ anything that changes per call with a template: {{now}}, {{uuid}}, {{request.mod
 Near-misses wait in a review queue (list_candidates); a human normally decides them.
 Errors come back as JSON with a 'code' and 'param'; fix what they name and resubmit.
 """
+
+
+# The lowest token scope for each tool (ADR-0010): `record` is the agent's own work; `admin` is
+# what a human decides. A tool not listed here is refused to tokens, so a new one is closed first.
+TOOL_SCOPES = {
+    "get_status": "record", "list_projects": "record", "get_project_settings": "record",
+    "list_pending": "record", "wait_for_pending": "record", "get_pending": "record",
+    "answer_pending": "record", "list_entries": "record", "get_entry": "record",
+    "entry_history": "record", "upsert_entry": "record", "update_entry": "record",
+    "test_match": "record", "list_calls": "record", "log_stats": "record",
+    "list_candidates": "record", "get_candidate": "record",
+    "set_mode": "admin", "create_project": "admin", "update_project_settings": "admin",
+    "delete_entry": "admin", "approve_candidate": "admin", "reject_candidate": "admin",
+}  # fmt: skip
+
+
+def _principal() -> Principal | None:
+    """Who is calling this tool: the credential the HTTP request carried (hosted), else nobody
+    (local mode, where the server's own scope applies)."""
+    try:
+        from fastmcp.server.dependencies import get_http_request
+
+        found = getattr(get_http_request().state, "principal", None)
+    except RuntimeError:  # not inside an HTTP request: a direct call, as in tests
+        return None
+    return found if isinstance(found, Principal) else None
+
+
+def _refuse(code: str, message: str) -> ToolError:
+    body = {
+        "error": {"message": message, "type": "authentication_error", "param": None, "code": code}
+    }
+    return ToolError(json.dumps(body))
+
+
+def _scoped(fn: Callable[..., T]) -> Callable[..., T]:
+    """Refuse a token whose scope is below what the tool needs, or that tries to force."""
+    needed = TOOL_SCOPES.get(fn.__name__, "admin")
+
+    def check(kwargs: dict[str, Any]) -> None:
+        who = _principal()
+        if who is None or who.kind != "token":
+            return
+        level = LEVEL.get(who.scope or "", 0)
+        if level < LEVEL[needed]:
+            raise _refuse(
+                "insufficient_scope",
+                f"This token has scope '{who.scope}'; this tool needs '{needed}'.",
+            )
+        if kwargs.get("force") and who.scope != "admin":
+            raise _refuse("insufficient_scope", "Forcing past a pin needs an admin token.")
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_checked(*args: Any, **kwargs: Any) -> Any:
+            check(kwargs)
+            return await fn(*args, **kwargs)
+
+        return async_checked  # type: ignore[return-value]
+
+    @functools.wraps(fn)
+    def checked(*args: Any, **kwargs: Any) -> T:
+        check(kwargs)
+        return fn(*args, **kwargs)
+
+    return checked
 
 
 def _guard(fn: Callable[..., T]) -> Callable[..., T]:
@@ -65,11 +134,22 @@ def _guard(fn: Callable[..., T]) -> Callable[..., T]:
     return wrapper
 
 
-def build_mcp(service: Service) -> FastMCP:
+def build_mcp(base: Service) -> FastMCP:
     mcp: FastMCP = FastMCP("semula", instructions=INSTRUCTIONS, version=__version__)
 
+    class PerCall:
+        """The service as the current call sees it: bound to the workspace and project of the
+        token that made the HTTP request when hosted, the server's own scope otherwise."""
+
+        def __getattr__(self, name: str) -> Any:
+            who = _principal()
+            scoped = base.for_scope(Scope(who.workspace_id, who)) if who else base
+            return getattr(scoped, name)
+
+    service: Service = PerCall()  # type: ignore[assignment]
+
     def tool(fn: Callable[..., Any]) -> Any:
-        return mcp.tool(_guard(fn))
+        return mcp.tool(_guard(_scoped(fn)))
 
     @tool
     def get_status() -> dict[str, Any]:

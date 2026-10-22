@@ -6,7 +6,7 @@ Locally, semula trusts whoever can reach its port. To share one server between t
 SEMULA_HOSTED=on SEMULA_DATABASE_URL=postgresql://... semula serve
 ```
 
-In hosted mode the dashboard and the MCP endpoint are off, and `X-Semula-Actor` means nothing. `/health` stays open for load balancers.
+In hosted mode the open dashboard is off, and `X-Semula-Actor` means nothing. `/health` stays open for load balancers.
 
 ## Workspaces and tokens
 
@@ -27,7 +27,18 @@ Only a hash of the token is stored, so a lost token cannot be recovered, only re
 
 ## Scopes
 
-A token has one of three scopes, each including the ones above it, and may be limited to one project.
+A token has one of three scopes, each including the ones above it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist, and listings (projects, pending, the log) hold only its own. It cannot create projects.
+
+## MCP
+
+A coding agent connects over MCP with the same token. Use a `record` token, bound to the project the agent works on:
+
+```bash
+claude mcp add --transport http semula https://semula.example.com/mcp/ \
+  --header "Authorization: Bearer $SEMULA_TOKEN"
+```
+
+Each tool needs a scope. The agent's own work (`wait_for_pending`, `answer_pending`, `get_entry`, `upsert_entry`, `update_entry`, `test_match` and the reads) needs `record`. `delete_entry`, `approve_candidate`, `reject_candidate`, `set_mode`, `create_project`, `update_project_settings` and anything with `force` need `admin`, which a recording agent should not hold. MCP refuses any request that carries an `Origin` header, so a web page cannot drive it.
 
 | Scope | May | May not |
 |---|---|---|
@@ -82,6 +93,4 @@ Hosting wants Postgres. Every tenant table has a [row-level-security](../referen
 ## What is not there yet
 
 - **People.** No sign-in, roles or invitations; the dashboard is off.
-- **MCP.** A hosted server answers `/mcp/` with `mcp_unavailable`. Agents use the REST API with a `record` token. Binding MCP to a token is next.
-- **Project-bound tokens are narrow.** One bound to a project can use `/v1` and `/api/v1/projects/<its project>/...`; routes that do not name a project (the pending list, the log) need an all-projects token until they learn to filter.
 - **Quotas and an audit log**, and deleting a whole workspace.

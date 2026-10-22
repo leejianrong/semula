@@ -32,7 +32,7 @@ def test_each_call_needs_its_scope(method: str, path: str, scope: str) -> None:
 
 
 def test_unknown_routes_and_methods_are_closed_to_every_token() -> None:
-    for method, path in (("GET", "/api/v1/nope"), ("DELETE", "/api/v1/pending"), ("GET", "/mcp/")):
+    for method, path in (("GET", "/api/v1/nope"), ("DELETE", "/api/v1/pending"), ("GET", "/ui/")):
         assert required_scope(method, path) is None
         assert not allows("admin", required_scope(method, path))
 
