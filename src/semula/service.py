@@ -115,6 +115,7 @@ class MatchResult:
     nearest: dict[str, Any] | None = None
 
 
+WORKSPACE_GRACE_DAYS = 30  # a deleted workspace can be restored for this long, then it is purged
 AUDIT_RETENTION_DAYS = 365  # the audit log is kept this long, then pruned (never edited)
 TOKEN_CACHE_TTL = 30.0  # seconds a verified token is trusted without asking the database
 TOKEN_TOUCH_EVERY = 60.0  # a token's last-used time is written at most this often
@@ -335,9 +336,14 @@ class Service:
             cached = self._tokens.cache.get(digest)
         if cached and cached[0] > now and (cached[2] is None or cached[2] > now_iso()):
             return cached[1]
-        row = self.db.for_workspace(None).one(sa.select(T).where(T.c.token_hash == digest))
+        row = self.db.for_workspace(None).one(
+            sa.select(T, WS.c.deleted_at.label("workspace_deleted_at"))
+            .select_from(T.join(WS, WS.c.id == T.c.workspace_id))
+            .where(T.c.token_hash == digest)
+        )
         if (
             row is None
+            or row["workspace_deleted_at"] is not None
             or row["revoked_at"] is not None
             or (row["expires_at"] is not None and row["expires_at"] <= now_iso())
         ):
@@ -608,6 +614,88 @@ class Service:
             )
             fresh._reserve(conn, projects=1)  # the default project
             fresh._audit("workspace.create", workspace_id, conn=conn)
+
+    # --- deleting a workspace (ADR-0011 section 5) ------------------------------------------
+    def workspace_status(self) -> dict[str, Any]:
+        """Whether this workspace is deleted, and when it will be purged for good."""
+        row = self.db.one(sa.select(WS.c.deleted_at).where(WS.c.id == self.workspace_id))
+        deleted = row["deleted_at"] if row else None
+        purge_after = (
+            iso(
+                datetime.fromisoformat(deleted.replace("Z", "+00:00"))
+                + timedelta(days=WORKSPACE_GRACE_DAYS)
+            )
+            if deleted
+            else None
+        )
+        return {"id": self.workspace_id, "deleted_at": deleted, "purge_after": purge_after}
+
+    def delete_workspace(self, confirm: str) -> dict[str, Any]:
+        """Delete this workspace: its tokens stop working at once and it is purged after
+        ``WORKSPACE_GRACE_DAYS``, until when it can still be exported or restored. The workspace
+        id must be typed back, and only a person or the operator may do it, never a token."""
+        self._not_a_token()
+        if self.workspace_id == DEFAULT_WORKSPACE:
+            raise SemulaError(409, "default_workspace", "The default workspace cannot be deleted.")
+        if confirm != self.workspace_id:
+            raise SemulaError(
+                422,
+                "confirmation_mismatch",
+                f"Type the workspace id, '{self.workspace_id}', to confirm.",
+                param="confirm",
+            )
+        with self.db.begin() as conn:
+            self.db.execute(
+                sa.update(WS)
+                .where(WS.c.id == self.workspace_id, WS.c.deleted_at.is_(None))
+                .values(deleted_at=now_iso()),
+                conn,
+            )
+            self._audit("workspace.delete", self.workspace_id, conn=conn)
+        self._forget_workspace_tokens()
+        return self.workspace_status()
+
+    def restore_workspace(self) -> dict[str, Any]:
+        """Bring a deleted workspace back during its grace period, tokens and all."""
+        self._not_a_token()
+        if self.workspace_status()["deleted_at"] is None:
+            raise SemulaError(409, "workspace_not_deleted", "This workspace is not deleted.")
+        with self.db.begin() as conn:
+            self.db.execute(
+                sa.update(WS).where(WS.c.id == self.workspace_id).values(deleted_at=None), conn
+            )
+            self._audit("workspace.restore", self.workspace_id, conn=conn)
+        return self.workspace_status()
+
+    def purge_workspaces(self) -> list[str]:
+        """Hard-delete every workspace whose grace period is over, in dependency order, and say
+        which. The operator's job (run it from a schedule); the audit log keeps the fact."""
+        cutoff = iso(datetime.now(UTC) - timedelta(days=WORKSPACE_GRACE_DAYS))
+        rows = self.db.rows(
+            sa.select(WS.c.id).where(WS.c.deleted_at.is_not(None), WS.c.deleted_at < cutoff)
+        )
+        purged = []
+        for row in rows:
+            self.for_scope(Scope(row["id"], self.principal, self.request_id, self.client))._purge()
+            purged.append(row["id"])
+        return purged
+
+    def _purge(self) -> None:
+        ws = self.workspace_id
+        with self.db.begin() as conn:
+            self._audit("workspace.purge", ws, conn=conn)  # the one thing left behind, no content
+            self.db.execute(sa.delete(L).where(L.c.workspace_id == ws), conn)
+            self.lexical.delete_workspace(ws, conn)
+            # projects, entries and everything under them, and tokens, go with the workspace row
+            self.db.execute(sa.delete(U).where(U.c.workspace_id == ws), conn)
+            self.db.execute(sa.delete(WS).where(WS.c.id == ws), conn)
+        self._forget_workspace_tokens()
+
+    def _forget_workspace_tokens(self) -> None:
+        with self._tokens.lock:
+            for digest, (_, principal, _) in list(self._tokens.cache.items()):
+                if principal.workspace_id == self.workspace_id:
+                    del self._tokens.cache[digest]
 
     def mode_of(self, project: str) -> str:
         """What a call to ``project`` does when nothing answers it: the project's own mode,

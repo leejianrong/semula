@@ -110,3 +110,18 @@ def test_usage_and_recount(env: str, capsys: pytest.CaptureFixture[str]) -> None
     assert main(["--json", "admin", "recount", "--workspace", "acme"]) == 0
     used = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert used["projects"] == 1 and used["entries"] == 0  # the default project
+
+
+def test_deleting_restoring_and_purging_a_workspace(
+    env: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["admin", "workspace-create", "acme"])
+    assert main(["admin", "workspace-delete", "acme", "--confirm", "wrong"]) == 4
+    assert "confirmation_mismatch" in capsys.readouterr().err
+    assert main(["admin", "workspace-delete", "acme", "--confirm", "acme"]) == 0
+    assert "can be restored until" in capsys.readouterr().out
+    assert main(["admin", "workspace-purge"]) == 0
+    assert "purged nothing" in capsys.readouterr().out  # inside its 30 days
+    assert main(["admin", "workspace-restore", "acme"]) == 0
+    assert "restored" in capsys.readouterr().out
+    assert main(["admin", "workspace-restore", "acme"]) == 4  # not deleted

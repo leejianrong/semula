@@ -150,6 +150,9 @@ S: dict[str, Callable[[World], None]] = {
     "list_tokens": lambda w: forbidden(lambda: w.bound.list_tokens()),
     "list_audit": lambda w: forbidden(lambda: w.bound.list_audit()),
     "usage": lambda w: forbidden(lambda: w.bound.usage()),
+    "workspace_status": lambda w: _equal(w.bound.workspace_status()["id"], "a"),
+    "delete_workspace": lambda w: forbidden(lambda: w.bound.delete_workspace("a")),
+    "restore_workspace": lambda w: forbidden(lambda: w.bound.restore_workspace()),
     "recount_usage": lambda w: forbidden(lambda: w.bound.recount_usage()),
     "revoke_token": lambda w: forbidden(lambda: w.bound.revoke_token("x")),
     "rotate_token": lambda w: forbidden(lambda: w.bound.rotate_token("x")),
@@ -161,7 +164,7 @@ S: dict[str, Callable[[World], None]] = {
 EXEMPT = {
     "for_scope", "owns", "create_workspace", "authenticate_token", "sync_index",
     "sync_embeddings", "prune_log", "log_call", "embeddings_status", "wait_for_answer",
-    "prune_audit",
+    "prune_audit", "purge_workspaces",
 }  # fmt: skip
 
 

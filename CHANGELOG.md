@@ -10,6 +10,9 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Deleting a workspace** (migration 0015, ADR-0011): marked deleted with the id typed back,
+  its tokens stop at once, restorable for 30 days, then purged in dependency order; the audit log
+  keeps the fact. `semula admin workspace-delete`, `-restore` and `-purge`.
 - **Quotas and limits** for a hosted workspace (migration 0014, ADR-0011): projects, entries,
   stored bytes, parked calls, tokens, request body size, `record_timeout`, and a per-token rate
   limit, each with a clear error naming the limit. Counters are kept in the write's own

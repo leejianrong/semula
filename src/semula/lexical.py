@@ -55,6 +55,8 @@ class LexicalIndex(Protocol):
         self, workspace_id: str, project_id: str, conn: Connection | None = None
     ) -> None: ...
 
+    def delete_workspace(self, workspace_id: str, conn: Connection | None = None) -> None: ...
+
     def indexed_ids(self, workspace_id: str, conn: Connection | None = None) -> set[str] | None:
         """A workspace's entry ids currently indexed, or None if this index keeps no state to
         repair."""
@@ -123,6 +125,12 @@ class Fts5Index:
             sa.text("DELETE FROM entry_fts WHERE workspace_id = :w AND project_id = :p").bindparams(
                 w=workspace_id, p=project_id
             ),
+            conn,
+        )
+
+    def delete_workspace(self, workspace_id: str, conn: Connection | None = None) -> None:
+        self.db.execute(
+            sa.text("DELETE FROM entry_fts WHERE workspace_id = :w").bindparams(w=workspace_id),
             conn,
         )
 
@@ -213,6 +221,9 @@ class ScanIndex:
     def delete_project(
         self, workspace_id: str, project_id: str, conn: Connection | None = None
     ) -> None:
+        return None
+
+    def delete_workspace(self, workspace_id: str, conn: Connection | None = None) -> None:
         return None
 
     def indexed_ids(self, workspace_id: str, conn: Connection | None = None) -> set[str] | None:

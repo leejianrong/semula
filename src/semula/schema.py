@@ -44,6 +44,7 @@ workspace = sa.Table(
     sa.Column("id", sa.Text, primary_key=True),
     sa.Column("name", sa.Text, nullable=False),
     _ts("created_at"),
+    sa.Column("deleted_at", sa.Text),  # set when an admin deletes it; purged after the grace
 )
 
 project = sa.Table(

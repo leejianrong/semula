@@ -675,6 +675,35 @@ def _admin_workspace(args: argparse.Namespace) -> int:
     return _ok(args, {"workspace": args.id}, f"created workspace {args.id}")
 
 
+def _admin_workspace_state(args: argparse.Namespace) -> int:
+    """Delete (with the id typed back), restore, or purge workspaces: the operator's side of
+    ADR-0011 section 5."""
+    try:
+        service = _admin_service(args, getattr(args, "workspace", None))
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    from .errors import SemulaError
+
+    try:
+        if args.verb == "purge":
+            purged = service.purge_workspaces()
+            return _ok(args, {"purged": purged}, f"purged {', '.join(purged) or 'nothing'}")
+        if args.verb == "delete":
+            status = service.delete_workspace(args.confirm)
+        else:
+            status = service.restore_workspace()
+    except SemulaError as exc:
+        print(f"error: {exc.code}: {exc.message}", file=sys.stderr)
+        return EXIT_REJECTED
+    deleted = status["deleted_at"]
+    human = (
+        f"workspace {status['id']} is deleted; it can be restored until {status['purge_after']}"
+        if deleted
+        else f"workspace {status['id']} is restored"
+    )
+    return _ok(args, status, human)
+
+
 def _admin_recount(args: argparse.Namespace) -> int:
     try:
         service = _admin_service(args, args.workspace)
@@ -925,6 +954,22 @@ def build_parser() -> argparse.ArgumentParser:
     wscreate = add(asub, "workspace-create", _admin_workspace, "Create a workspace")
     wscreate.add_argument("id", help="a slug: lowercase letters, digits, hyphens")
     wscreate.add_argument("--name", default=None)
+    for verb, helptext in (
+        ("delete", "Delete a workspace: tokens stop at once, purged after 30 days"),
+        ("restore", "Bring a deleted workspace back during its 30 days"),
+    ):
+        ws = add(asub, f"workspace-{verb}", _admin_workspace_state, helptext)
+        ws.set_defaults(verb=verb)
+        ws.add_argument("workspace", help="the workspace id")
+        if verb == "delete":
+            ws.add_argument("--confirm", required=True, help="the workspace id again, to confirm")
+    purge = add(
+        asub,
+        "workspace-purge",
+        _admin_workspace_state,
+        "Hard-delete every workspace whose 30 days are over",
+    )
+    purge.set_defaults(verb="purge")
     recount = add(
         asub, "recount", _admin_recount, "Rebuild a workspace's quota counters from what is stored"
     )
