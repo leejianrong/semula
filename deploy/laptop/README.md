@@ -7,7 +7,7 @@ a reboot.
 ```bash
 cd deploy/laptop
 docker compose up -d --wait        # pulls the image and starts it
-curl localhost:8787/health         # {"status":"ok", ...}
+curl localhost:8731/health         # {"status":"ok", ...}
 ```
 
 ## Getting the image
@@ -27,7 +27,7 @@ built yourself, set it to that tag.
 
 | From | Address | Notes |
 |---|---|---|
-| A process on this machine (your app, a test runner, an agent) | `http://127.0.0.1:8787/v1` | Fixed port, loopback only. Change it with `SEMULA_PORT`. Always works. |
+| A process on this machine (your app, a test runner, an agent) | `http://127.0.0.1:8731/v1` | Fixed port, loopback only. Change it with `SEMULA_PORT`. Always works. |
 | A browser | `http://semula.localhost/ui/` | Needs the Traefik layer below. |
 | Another container | `http://semula:8080/v1` | Needs the Traefik layer: both containers join the `proxy` network. |
 
@@ -53,7 +53,7 @@ Give each project its own name, so recordings stay apart. The project is created
 its name through the API (`semula project create my-app`), and every call carries it in the URL:
 
 ```bash
-export OPENAI_BASE_URL=http://127.0.0.1:8787/v1/projects/my-app
+export OPENAI_BASE_URL=http://127.0.0.1:8731/v1/projects/my-app
 export OPENAI_API_KEY=anything
 ```
 
@@ -71,10 +71,10 @@ docker exec semula semula mode replay --project my-app
 A coding agent answers over MCP instead; register the endpoint once:
 
 ```bash
-claude mcp add --transport http semula http://127.0.0.1:8787/mcp/
+claude mcp add --transport http semula http://127.0.0.1:8731/mcp/
 ```
 
-The dashboard is at `http://semula.localhost/ui/` (or `http://127.0.0.1:8787/ui/`).
+The dashboard is at `http://semula.localhost/ui/` (or `http://127.0.0.1:8731/ui/`).
 
 ## Upgrade, stop, back up
 
