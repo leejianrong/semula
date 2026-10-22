@@ -21,6 +21,8 @@ The workspace comes from the credential, never from the URL or a header alone. A
 
 The service takes a `Scope(workspace_id, principal)` as its first argument and passes it down; the 50 hard-coded constants go. A cross-tenant id is a **404**, the same as a missing one.
 
+*Built in SEM-81 (2026-10-22), with one change of shape: instead of a `Scope` first argument on every method, `Service.for_scope(scope)` returns the service bound to that workspace (same database, caches and event bus), and the routes call it with `scope_of(request)`. A method cannot forget to pass the scope, and every query reads `self.workspace_id`. Events carry their `workspace` and live views and streams skip other workspaces'. Meaning-based matching is built only for the local workspace so far. `tests/integration/test_tenant_isolation.py` calls every public service method as workspace A with workspace B's ids and fails when a new method is not listed; it found and fixed one leak (a waiter could read another workspace's answer through a pending id).*
+
 ### 2. Isolation, in three layers
 
 1. **Application:** every query filters by `scope.workspace_id`; a test builds two workspaces and calls every service method and every route with the other's ids, expecting 404 or an empty list. A new method without this test fails review.

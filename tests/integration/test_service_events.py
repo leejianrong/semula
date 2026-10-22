@@ -50,11 +50,11 @@ async def test_parking_and_answering_a_call_say_the_queues_changed(
     record: httpx.AsyncClient, events: Any
 ) -> None:
     call, pending_id = await park(record, "wait for me")
-    assert {"type": "queues", "project": "default"} in await drain(events)
+    assert {"type": "queues", "project": "default", "workspace": "default"} in await drain(events)
     await record.post(f"/api/v1/pending/{pending_id}/answer", json={"content": "ok"})
     await call
     seen = await drain(events)
-    assert {"type": "queues", "project": "default"} in seen
+    assert {"type": "queues", "project": "default", "workspace": "default"} in seen
     assert any(e["type"] == "call" and e["outcome"] == "recorded" for e in seen)
 
 
@@ -64,10 +64,10 @@ async def test_a_queued_candidate_and_its_decision_say_the_queues_changed(
     await seed(replay)
     with service_of(replay).events.subscribe() as sub:
         await replay.post("/v1/chat/completions", json=ask(WEAK))
-        assert {"type": "queues", "project": "default"} in await drain(sub)
+        assert {"type": "queues", "project": "default", "workspace": "default"} in await drain(sub)
         (found,) = (await replay.get("/api/v1/candidates")).json()["candidates"]
         await replay.post(f"/api/v1/candidates/{found['id']}/reject")
-        assert {"type": "queues", "project": "default"} in await drain(sub)
+        assert {"type": "queues", "project": "default", "workspace": "default"} in await drain(sub)
 
 
 async def test_authoring_an_answer_clears_what_it_supersedes(replay: httpx.AsyncClient) -> None:
@@ -79,13 +79,18 @@ async def test_authoring_an_answer_clears_what_it_supersedes(replay: httpx.Async
             json={"request": ask(WEAK), "response": {"content": "its own answer"}},
         )
         assert resp.status_code == 201
-        assert {"type": "queues", "project": "default"} in await drain(sub)
+        assert {"type": "queues", "project": "default", "workspace": "default"} in await drain(sub)
 
 
 async def test_switching_the_mode_is_announced(replay: httpx.AsyncClient) -> None:
     with service_of(replay).events.subscribe() as sub:
         await replay.put("/api/v1/mode", json={"mode": "record"})
-        assert {"type": "mode", "project": None, "mode": "record"} in await drain(sub)
+        assert {
+            "type": "mode",
+            "project": None,
+            "mode": "record",
+            "workspace": "default",
+        } in await drain(sub)
 
 
 async def test_queue_counts(record: httpx.AsyncClient) -> None:
@@ -123,7 +128,7 @@ def test_the_public_stream_still_carries_only_calls(tmp_path: Any) -> None:
 async def test_every_entry_write_says_the_entries_changed(
     record: httpx.AsyncClient, events: Any
 ) -> None:
-    moved = {"type": "entries", "project": "default"}
+    moved = {"type": "entries", "project": "default", "workspace": "default"}
     body = {"request": {"messages": [{"role": "user", "content": "events"}]}}
 
     created = await record.post(

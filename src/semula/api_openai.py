@@ -14,6 +14,7 @@ from . import canonical
 from .db import DEFAULT_PROJECT
 from .errors import SemulaError
 from .responses import build_completion
+from .scope import scope_of
 from .service import Service
 from .streaming import sse_events
 from .templating import expand_stored
@@ -34,7 +35,7 @@ def _project(request: Request, service: Service) -> str:
 @router.post("/chat/completions", response_model=None)
 @router.post("/projects/{project_id}/chat/completions", response_model=None)
 async def chat_completions(request: Request) -> JSONResponse | StreamingResponse:
-    service: Service = request.app.state.service
+    service: Service = request.app.state.service.for_scope(scope_of(request))
     project = await offload(_project, request, service)
     started = time.perf_counter()
     body = await _read_body(request)
@@ -126,7 +127,7 @@ def _model(model_id: str) -> dict[str, Any]:
 @router.get("/models")
 @router.get("/projects/{project_id}/models")
 async def models(request: Request) -> dict[str, Any]:
-    service: Service = request.app.state.service
+    service: Service = request.app.state.service.for_scope(scope_of(request))
     project = await offload(_project, request, service)
     return {
         "object": "list",
@@ -137,7 +138,7 @@ async def models(request: Request) -> dict[str, Any]:
 @router.get("/models/{model_id:path}")
 @router.get("/projects/{project_id}/models/{model_id:path}")
 async def retrieve_model(model_id: str, request: Request) -> dict[str, Any]:
-    service: Service = request.app.state.service
+    service: Service = request.app.state.service.for_scope(scope_of(request))
     project = await offload(_project, request, service)
     if model_id not in await offload(service.list_models, project):
         raise SemulaError(
