@@ -392,3 +392,92 @@ def near_text(result: dict[str, Any]) -> str:
     if waiting and not result["matched"]:
         parts.append(f"{len(waiting)} weak candidate(s) would go to the review queue.")
     return " ".join(parts)
+
+
+def stamp(ts: str | None) -> str:
+    """``2026-10-22 10:03`` from a stored time, or an empty cell."""
+    return ts[:16].replace("T", " ") if ts else ""
+
+
+def member_row(member: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": member["person_id"],
+        "who": member["name"] or member["email"],
+        "email": member["email"],
+        "role": member["role"],
+        "since": stamp(member.get("since")),
+    }
+
+
+def invitation_row(invitation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": invitation["id"],
+        "email": invitation["email"],
+        "role": invitation["role"],
+        "status": invitation["status"],
+        "expires": stamp(invitation["expires_at"]),
+    }
+
+
+def token_row(token: dict[str, Any]) -> dict[str, Any]:
+    state = "revoked" if token["revoked_at"] else "active"
+    if state == "active" and token["expires_at"] and token["expires_at"] <= now_stamp():
+        state = "expired"
+    return {
+        "id": token["id"],
+        "name": token["name"],
+        "scope": token["scope"],
+        "project": token["project"] or "all projects",
+        "prefix": token["prefix"] + "…",
+        "used": (
+            f"{stamp(token['last_used_at'])} from {token['last_used_from']}"
+            if token["last_used_at"] and token.get("last_used_from")
+            else stamp(token["last_used_at"]) or "never"
+        ),
+        "state": state,
+    }
+
+
+def now_stamp() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def audit_row(event: dict[str, Any]) -> dict[str, Any]:
+    who = event["principal_kind"] + (
+        "" if event["principal_kind"] == "local" else ":" + event["principal_id"][-6:]
+    )
+    detail = json.dumps(event["detail"], sort_keys=True) if event["detail"] else ""
+    return {
+        "id": str(event["id"]),
+        "when": stamp(event["ts"]),
+        "who": who,
+        "action": event["action"],
+        "target": event["target"] or "",
+        "detail": detail,
+    }
+
+
+def usage_lines(usage: dict[str, Any]) -> list[dict[str, str]]:
+    """The usage panel: one line per thing counted, with its limit if there is one."""
+    used, limits = usage["used"], usage["limits"]
+    spec = [
+        ("projects", "Projects", limits.get("projects")),
+        ("entries", "Entries", limits.get("entries")),
+        ("bytes", "Stored text", limits.get("bytes")),
+        ("parked", "Parked calls", limits.get("parked_per_workspace")),
+        ("tokens", "Active tokens", limits.get("tokens")),
+    ]
+    out = []
+    for key, label, cap in spec:
+        value = used[key]
+        shown = f"{value:,}" if key != "bytes" else _size(value)
+        limit = "no limit" if cap is None else (_size(cap) if key == "bytes" else f"{cap:,}")
+        out.append({"id": key, "label": label, "value": shown, "limit": limit})
+    return out
+
+
+def _size(n: int) -> str:
+    for unit, size in (("MB", 1_000_000), ("kB", 1000)):
+        if n >= size:
+            return f"{n / size:.1f} {unit}"
+    return f"{n} B"
