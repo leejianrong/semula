@@ -144,3 +144,12 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen --extra dev --extra e2e
       - run: uv run pytest -m e2e -q
+
+  # The documentation site must build (broken links, bad nav, a diagram that will not parse fail
+  # here, before merge). The deploy is .github/workflows/docs.yml, on main only.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: make docs

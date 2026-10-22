@@ -37,6 +37,9 @@ prompt replays that answer for free.
 - **The CLI as a standalone binary** (about 22 MB, no Python needed) for Linux and macOS, amd64
   and arm64, attached to each GitHub Release with checksums. It has the HTTP commands; `serve`
   and `mcp` stay in the image and the Python package.
+- **Documentation site** (Zensical, on GitHub Pages): a tutorial of nine short pages, an install
+  and operations guide, and reference tables for the CLI, MCP tools, REST API, settings and
+  errors that tests keep equal to the code. `make docs` builds it, `make docs-serve` previews it.
 - **Mode per project**, kept across restarts (`semula mode record --project <id>`).
 - **Redaction** of secrets in everything stored, export and import of a project as JSON files.
 - **Observability.** A call log with a live tail, per-minute stats and a prompt preview;

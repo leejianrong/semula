@@ -5,7 +5,7 @@
 PORT ?= 8080
 FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: run demo docker image-check image-smoke release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: docs docs-serve run demo docker image-check image-smoke release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -46,6 +46,13 @@ image-smoke: ## Start IMAGE (default semula:check) and check /health, /v1, a mis
 
 release-check: ## Would TAG (like v0.1.0) release? Tag, pyproject, lockfile and CHANGELOG must agree
 	python3 scripts/release.py check $(TAG)
+
+ZENSICAL ?= zensical==0.0.71
+docs: ## Build the documentation site into site/ (Zensical; fails on a broken build)
+	uv run --no-project --with $(ZENSICAL) zensical build --clean --strict
+
+docs-serve: ## Serve the documentation with live reload on http://127.0.0.1:8000
+	uv run --no-project --with $(ZENSICAL) zensical serve
 
 cli-binary: ## Build the standalone CLI binary into dist/ (PyInstaller; HTTP commands only)
 	scripts/build_cli_binary.sh dist

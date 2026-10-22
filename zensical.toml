@@ -1,0 +1,114 @@
+# The documentation site (https://leejianrong.github.io/semula/). Build: `make docs`.
+[project]
+site_name = "semula"
+site_description = "A fake OpenAI-compatible server that learns its answers from your coding agent."
+site_url = "https://leejianrong.github.io/semula/"
+repo_url = "https://github.com/leejianrong/semula"
+repo_name = "leejianrong/semula"
+docs_dir = "docs"
+site_dir = "site"
+# The planning notes, design boards and chat logs stay in the repo and out of the site.
+exclude_docs = """
+PLAN.md
+SLICES.md
+QUESTIONS.md
+E2E.md
+INDAH-*.md
+initial-chat.md
+design/
+indah/
+adr/README.md
+"""
+nav = [
+  { "Home" = "index.md" },
+  { "Tutorial" = [
+    { "Your first recording" = "tutorial/first-recording.md" },
+    { "Replay without a recorder" = "tutorial/replay.md" },
+    { "Let an agent answer" = "tutorial/agent.md" },
+    { "Tool calls and streaming" = "tutorial/tools-and-streaming.md" },
+    { "One project per app" = "tutorial/projects.md" },
+    { "Edit, pin and template" = "tutorial/editing.md" },
+    { "Near misses and review" = "tutorial/near-misses.md" },
+    { "Keep recordings in git" = "tutorial/cassettes.md" },
+    { "Watch it in the dashboard" = "tutorial/dashboard.md" },
+  ] },
+  { "Guide" = [
+    { "Install" = "guide/install.md" },
+    { "Run it as a service" = "guide/service.md" },
+    { "Upgrade and back up" = "guide/upgrade-and-backup.md" },
+  ] },
+  { "Reference" = [
+    { "CLI" = "reference/cli.md" },
+    { "MCP tools" = "reference/mcp.md" },
+    { "REST API" = "reference/rest.md" },
+    { "Configuration" = "reference/configuration.md" },
+    { "Errors" = "reference/errors.md" },
+  ] },
+  { "Agents" = ["agents/PLAYBOOK.md"] },
+  { "Decisions" = [
+    { "Python, FastAPI, one process" = "adr/0001-python-fastapi-single-process.md" },
+    { "The record queue" = "adr/0002-record-mode-park-and-answer-queue.md" },
+    { "Tiered matching" = "adr/0003-tiered-matching-safe-by-default.md" },
+    { "SQLite and workspaces" = "adr/0004-sqlite-with-workspace-id-from-day-one.md" },
+    { "One service layer" = "adr/0005-one-service-layer-optimistic-concurrency.md" },
+    { "Headless first, dashboard on indah" = "adr/0006-headless-first-dashboard-on-indah.md" },
+    { "Request fingerprint" = "adr/0007-request-fingerprint-and-canonical-request.md" },
+    { "Streaming storage" = "adr/0008-streaming-storage-and-replay.md" },
+    { "SQLAlchemy and Postgres" = "adr/0009-sqlalchemy-core-alembic-postgres-path.md" },
+    { "Hosted auth and tokens" = "adr/0010-hosted-auth-and-tokens.md" },
+    { "Tenancy and mode per project" = "adr/0011-workspace-tenancy-and-per-project-mode.md" },
+  ] },
+  { "Contributing" = ["RELEASING.md"] },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+def_list = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.betterem = {}
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
