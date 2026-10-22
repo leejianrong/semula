@@ -1,3 +1,8 @@
 """semula: a record-replay fake LLM server."""
 
-__version__ = "0.0.1"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("semula")  # one source of truth: ``version`` in pyproject.toml
+except PackageNotFoundError:  # run from a bare source tree, not installed
+    __version__ = "0.0.0+unknown"

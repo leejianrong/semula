@@ -1,0 +1,162 @@
+name: Release
+
+# Pushing vX.Y.Z publishes a GitHub Release and the container image (docs/RELEASING.md).
+# A dry run (Actions > Release > Run workflow, or a pull request that touches the release
+# machinery) builds and smoke-tests everything and publishes nothing.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - Dockerfile
+      - scripts/release.py
+      - scripts/smoke_image.sh
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never cancel a publish half way
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # to read the CI run of this commit
+    outputs:
+      tag: ${{ steps.what.outputs.tag }}
+      version: ${{ steps.flags.outputs.version }}
+      prerelease: ${{ steps.flags.outputs.prerelease }}
+      latest: ${{ steps.flags.outputs.latest }}
+      publish: ${{ steps.what.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: what
+        name: Which tag, and are we publishing?
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            version=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')
+            echo "tag=v$version" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: The tagged commit is on main
+        if: steps.what.outputs.publish == 'true'
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$GITHUB_REF_NAME is not on main; release from the merge commit"; exit 1; }
+      - name: CI passed on this exact commit
+        if: steps.what.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          green=$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --event push \
+            --json conclusion,headBranch \
+            -q '[.[] | select(.conclusion == "success" and .headBranch == "main")] | length')
+          [ "${green:-0}" -ge 1 ] \
+            || { echo "::error::no green CI run on main for $GITHUB_SHA"; exit 1; }
+      - name: Tag, pyproject.toml, uv.lock and CHANGELOG agree
+        if: steps.what.outputs.publish == 'true'
+        run: python3 scripts/release.py check "${{ steps.what.outputs.tag }}"
+      - id: flags
+        run: python3 scripts/release.py flags "${{ steps.what.outputs.tag }}" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: verify
+    if: needs.verify.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create the GitHub Release from the CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it as it is."
+            exit 0
+          fi
+          python3 scripts/release.py notes "$TAG" > notes.md
+          flag=""
+          [ "$PRERELEASE" = true ] && flag="--prerelease"
+          gh release create "$TAG" --verify-tag --title "semula $VERSION" --notes-file notes.md $flag
+
+  image:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+    env:
+      PUBLISH: ${{ needs.verify.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v4.4.0
+        if: env.PUBLISH == 'true'
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.6.0
+        if: env.PUBLISH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ${{ steps.name.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ needs.verify.outputs.version }}
+            type=raw,value=${{ needs.verify.outputs.version }}-dev,enable=${{ env.PUBLISH != 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.verify.outputs.version }}
+            type=raw,value=latest,enable=${{ env.PUBLISH == 'true' && needs.verify.outputs.latest == 'true' }}
+          labels: |
+            org.opencontainers.image.title=semula
+            org.opencontainers.image.description=A record-replay fake OpenAI-compatible server for development and tests
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+      # Published: both architectures, pushed. Dry run: this runner's architecture, kept local.
+      - id: build
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: ${{ env.PUBLISH == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: ${{ env.PUBLISH == 'true' }}
+          load: ${{ env.PUBLISH != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: ${{ env.PUBLISH == 'true' && 'mode=max' || 'false' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test the image users will pull
+        run: |
+          if [ "$PUBLISH" = true ]; then
+            docker pull "${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
+            scripts/smoke_image.sh "${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
+          else
+            scripts/smoke_image.sh "${{ steps.name.outputs.image }}:${{ needs.verify.outputs.version }}-dev"
+          fi
+      - name: What was published
+        if: env.PUBLISH == 'true'
+        run: |
+          {
+            echo "### Image"
+            echo '```'
+            echo "docker pull ${{ steps.name.outputs.image }}:${{ needs.verify.outputs.version }}"
+            echo "digest: ${{ steps.build.outputs.digest }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

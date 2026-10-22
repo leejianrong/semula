@@ -5,7 +5,7 @@
 PORT ?= 8080
 FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: run demo docker image-check bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: run demo docker image-check image-smoke release-check bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -40,6 +40,12 @@ typecheck: ## Type-check with mypy (strict)
 
 image-check: ## Build the image and enforce its size, cold-start and /data budgets (needs Docker)
 	scripts/check_image.sh semula:check
+
+image-smoke: ## Start IMAGE (default semula:check) and check /health, /v1, a miss and /ui (needs Docker)
+	scripts/smoke_image.sh $(or $(IMAGE),semula:check)
+
+release-check: ## Would TAG (like v0.1.0) release? Tag, pyproject, lockfile and CHANGELOG must agree
+	python3 scripts/release.py check $(TAG)
 
 bench: ## Replay latency on a 1k-entry project; fails over the 15 ms p95 budget
 	uv run pytest -m perf -s -q
