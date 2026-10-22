@@ -10,7 +10,7 @@
 
 Locally semula trusts whoever can reach the port; `SEMULA_API_KEY` is one shared secret ([`auth.py`](../../src/semula/auth.py)). A hosted semula has people (using the dashboard) and programs (an app's OpenAI client replaying calls, a coding agent recording over MCP) in several workspaces. These are different problems: a person signs in, a program carries a long-lived credential. One thing is currently unsafe to carry over: `X-Semula-Actor: human` decides whether a write may pass a pin ([`api_admin.py`](../../src/semula/api_admin.py)), and any caller can send it.
 
-The hosted screens are drawn ([`docs/design/`](../design/README.md): sign-in, tokens, members). MCP clients authenticate to remote servers with OAuth 2.1 or a bearer header; the artboard's connect snippet uses the header (`claude mcp add --transport http ... --header "Authorization: Bearer smla_..."`).
+The hosted screens are drawn (`docs/design/` in the repository: sign-in, tokens, members). MCP clients authenticate to remote servers with OAuth 2.1 or a bearer header; the artboard's connect snippet uses the header (`claude mcp add --transport http ... --header "Authorization: Bearer smla_..."`).
 
 ## Decision
 
