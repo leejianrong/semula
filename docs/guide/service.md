@@ -5,20 +5,20 @@ If you work on several projects, one always-on semula that all of them share is 
 ```bash
 cd deploy/laptop
 docker compose up -d --wait
-curl localhost:8787/health
+curl localhost:8731/health
 ```
 
 ```json
 {"status":"ok","version":"0.1.0","mode":"replay"}
 ```
 
-It runs the published image, keeps recordings in a Docker volume, and starts again after a reboot. The port is fixed at `8787` on loopback (change it with `SEMULA_PORT`).
+It runs the published image, keeps recordings in a Docker volume, and starts again after a reboot. The port is fixed at `8731` on loopback (change it with `SEMULA_PORT`).
 
 ## Three ways in
 
 | From | Address |
 |---|---|
-| A process on this machine: your app, a test runner, an agent | `http://127.0.0.1:8787/v1` |
+| A process on this machine: your app, a test runner, an agent | `http://127.0.0.1:8731/v1` |
 | A browser, through the shared Traefik proxy | `http://semula.localhost/ui/` |
 | Another container on the `proxy` network | `http://semula:8080/v1` |
 

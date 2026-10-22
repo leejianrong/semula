@@ -17,7 +17,7 @@ services:
     ports:
       # Loopback only, on a fixed port so scripts, test runners and agents on this machine always
       # find it. Not 8080: that one is for whatever you are developing.
-      - "127.0.0.1:${SEMULA_PORT:-8787}:8080"
+      - "127.0.0.1:${SEMULA_PORT:-8731}:8080"
     volumes:
       - semula-data:/data # recordings, projects, settings: `docker compose down` keeps them
     environment:
