@@ -55,7 +55,7 @@ RULES: tuple[tuple[str, str, str], ...] = (
 _COMPILED = tuple((m, re.compile(p), s) for m, p, s in RULES)
 
 # Never for a token, whatever its scope: only a person (or local mode) manages credentials.
-PEOPLE_ONLY = re.compile(r"/api/v1/tokens(/.*)?")
+PEOPLE_ONLY = re.compile(r"/api/v1/(tokens|audit)(/.*)?")
 
 PROJECT_IN_PATH = re.compile(r"/(?:api/v1|v1)/projects/([^/]+)")
 

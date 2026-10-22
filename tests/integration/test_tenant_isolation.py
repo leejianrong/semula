@@ -176,6 +176,8 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
         lambda: w.a.create_token("t", "record", project="shop"), "project_not_found"
     ),
     "list_tokens": lambda w: nothing_of_b(w.a.list_tokens()),
+    "list_audit": lambda w: nothing_of_b(w.a.list_audit(limit=500)),
+    "prune_audit": lambda w: (w.a.prune_audit(), _equal(len(w.b.list_audit()) > 0, True)),
     "revoke_token": lambda w: missing(lambda: w.a.revoke_token(_b_token(w)), "token_not_found"),
     "rotate_token": lambda w: missing(lambda: w.a.rotate_token(_b_token(w)), "token_not_found"),
 }

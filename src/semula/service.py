@@ -47,6 +47,7 @@ from .responses import parse_answer, validate_tool_calls
 from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE, iso, now_iso
 from .schema import alias as A
 from .schema import api_token as T
+from .schema import audit_log as AU
 from .schema import call_log as L
 from .schema import candidate as C
 from .schema import entry as E
@@ -113,6 +114,7 @@ class MatchResult:
     nearest: dict[str, Any] | None = None
 
 
+AUDIT_RETENTION_DAYS = 365  # the audit log is kept this long, then pruned (never edited)
 TOKEN_CACHE_TTL = 30.0  # seconds a verified token is trusted without asking the database
 TOKEN_TOUCH_EVERY = 60.0  # a token's last-used time is written at most this often
 
@@ -141,6 +143,10 @@ class Service:
         # A project-bound token reaches this project and no other (ADR-0010); None is all.
         self.project_limit: str | None = None
         self.acting_as_token = False
+        # Who is acting and where from, for the audit log (ADR-0010 section 4).
+        self.principal: Principal | None = None
+        self.request_id: str | None = None
+        self.client: str | None = None
         self._process: dict[str, str] = {"mode": settings.mode}  # shared by every scoped copy
         self._tokens = _TokenState()
         self.lexical = make_index(self.db)
@@ -176,6 +182,9 @@ class Service:
         bound = copy.copy(self)
         bound.workspace_id = scope.workspace_id
         principal = scope.principal
+        bound.principal = principal
+        bound.request_id = scope.request_id
+        bound.client = scope.client
         bound.acting_as_token = principal is not None and principal.kind == "token"
         bound.project_limit = principal.project if bound.acting_as_token and principal else None
         bound.db = self.db.for_workspace(scope.workspace_id)
@@ -242,19 +251,24 @@ class Service:
             self.require_project(project)
         secret = tok.generate()
         token_id = new_ulid()
-        self.db.execute(
-            sa.insert(T).values(
-                workspace_id=self.workspace_id,
-                id=token_id,
-                project_id=project,
-                name=label,
-                scope=scope,
-                prefix=tok.display_prefix(secret),
-                token_hash=tok.digest(secret),
-                created_by=created_by,
-                expires_at=expires_at,
+        with self.db.begin() as conn:
+            self.db.execute(
+                sa.insert(T).values(
+                    workspace_id=self.workspace_id,
+                    id=token_id,
+                    project_id=project,
+                    name=label,
+                    scope=scope,
+                    prefix=tok.display_prefix(secret),
+                    token_hash=tok.digest(secret),
+                    created_by=created_by,
+                    expires_at=expires_at,
+                ),
+                conn,
             )
-        )
+            self._audit(
+                "token.create", token_id, {"scope": scope, "project": project, "name": label}, conn
+            )
         return {**self._token_view(self._token_row(token_id)), "token": secret}
 
     def list_tokens(self) -> list[dict[str, Any]]:
@@ -271,11 +285,14 @@ class Service:
         has the token cached notices within ``TOKEN_CACHE_TTL`` seconds."""
         self._not_a_token()
         self._token_row(token_id)
-        self.db.execute(
-            sa.update(T)
-            .where(*self._pk(T, token_id), T.c.revoked_at.is_(None))
-            .values(revoked_at=now_iso())
-        )
+        with self.db.begin() as conn:
+            self.db.execute(
+                sa.update(T)
+                .where(*self._pk(T, token_id), T.c.revoked_at.is_(None))
+                .values(revoked_at=now_iso()),
+                conn,
+            )
+            self._audit("token.revoke", token_id, conn=conn)
         self._forget_token(token_id)
         return self._token_view(self._token_row(token_id))
 
@@ -292,8 +309,12 @@ class Service:
             created_by=old["created_by"],
         )
         ends = iso(datetime.now(UTC) + timedelta(seconds=max(0.0, grace_seconds)))
-        if old["expires_at"] is None or old["expires_at"] > ends:
-            self.db.execute(sa.update(T).where(*self._pk(T, token_id)).values(expires_at=ends))
+        with self.db.begin() as conn:
+            if old["expires_at"] is None or old["expires_at"] > ends:
+                self.db.execute(
+                    sa.update(T).where(*self._pk(T, token_id)).values(expires_at=ends), conn
+                )
+            self._audit("token.rotate", token_id, {"successor": successor["id"]}, conn)
         self._forget_token(token_id)
         return successor
 
@@ -365,6 +386,66 @@ class Service:
             "last_used_from": row["last_used_from"],
         }
 
+    # --- audit log (ADR-0010 section 4) ---------------------------------------------------
+    def _audit(
+        self,
+        action: str,
+        target: str | None = None,
+        detail: dict[str, Any] | None = None,
+        conn: Connection | None = None,
+    ) -> None:
+        """Record who did ``action`` to ``target``, in ``conn``'s transaction when there is one.
+        ``detail`` is for counts and key names only: never a prompt, an answer or a secret."""
+        who = self.principal
+        self.db.execute(
+            sa.insert(AU).values(
+                workspace_id=self.workspace_id,
+                principal_kind=who.kind if who else "local",
+                principal_id=who.id if who else "local",
+                action=action,
+                target=target,
+                detail=json.dumps(detail, sort_keys=True) if detail else None,
+                request_id=self.request_id,
+                client=self.client,
+            ),
+            conn,
+        )
+
+    def list_audit(
+        self, limit: int = 50, before_id: int | None = None, action: str | None = None
+    ) -> list[dict[str, Any]]:
+        """This workspace's audit log, newest first. For people and the operator, not tokens."""
+        self._not_a_token()
+        conditions = [AU.c.workspace_id == self.workspace_id]
+        if before_id is not None:
+            conditions.append(AU.c.id < before_id)
+        if action:
+            conditions.append(AU.c.action == action)
+        rows = self.db.rows(
+            sa.select(AU).where(*conditions).order_by(AU.c.id.desc()).limit(max(1, min(limit, 500)))
+        )
+        return [
+            {
+                "id": r["id"],
+                "ts": r["ts"],
+                "principal_kind": r["principal_kind"],
+                "principal_id": r["principal_id"],
+                "action": r["action"],
+                "target": r["target"],
+                "detail": json.loads(r["detail"]) if r["detail"] else None,
+                "request_id": r["request_id"],
+                "client": r["client"],
+            }
+            for r in rows
+        ]
+
+    def prune_audit(self) -> int:
+        """Delete this workspace's audit rows past the retention (the only way a row leaves)."""
+        cutoff = iso(datetime.now(UTC) - timedelta(days=AUDIT_RETENTION_DAYS))
+        return self.db.execute(
+            sa.delete(AU).where(AU.c.workspace_id == self.workspace_id, AU.c.ts < cutoff)
+        )
+
     def create_workspace(self, workspace_id: str, name: str | None = None) -> None:
         """Add a workspace (a tenant). Local use has only ``default``; this is for hosting."""
         if self.db.one(sa.select(WS.c.id).where(WS.c.id == workspace_id)):
@@ -375,6 +456,9 @@ class Service:
                 sa.insert(P).values(workspace_id=workspace_id, id=DEFAULT_PROJECT, name="Default"),
                 conn,
             )
+            self.for_scope(
+                Scope(workspace_id, self.principal, self.request_id, self.client)
+            )._audit("workspace.create", workspace_id, conn=conn)
 
     def mode_of(self, project: str) -> str:
         """What a call to ``project`` does when nothing answers it: the project's own mode,
@@ -422,9 +506,12 @@ class Service:
             )
         if self.db.one(sa.select(P.c.id).where(*self._pk(P, slug))):
             raise SemulaError(409, "project_exists", f"Project '{slug}' already exists.")
-        self.db.execute(
-            sa.insert(P).values(workspace_id=self.workspace_id, id=slug, name=name or slug)
-        )
+        with self.db.begin() as conn:
+            self.db.execute(
+                sa.insert(P).values(workspace_id=self.workspace_id, id=slug, name=name or slug),
+                conn,
+            )
+            self._audit("project.create", slug, conn=conn)
         self._publish({"type": "projects"})
         return self.get_project(slug)
 
@@ -494,7 +581,9 @@ class Service:
         before = self.project_settings(slug)
         self._settings_cache.pop((self.workspace_id, slug), None)
         if name:
-            self.db.execute(sa.update(P).where(*self._pk(P, slug)).values(name=name))
+            with self.db.begin() as conn:
+                self.db.execute(sa.update(P).where(*self._pk(P, slug)).values(name=name), conn)
+                self._audit("project.rename", slug, {"name": name}, conn)
         if settings:
             merged = before.model_dump(exclude_defaults=True)
             for key, value in settings.items():
@@ -522,6 +611,15 @@ class Service:
                 )
                 if any(getattr(before, f) != getattr(after, f) for f in FINGERPRINT_FIELDS):
                     self._rekey(slug, after, conn)
+                changed = sorted(
+                    k
+                    for k in settings
+                    if k != "mode" and getattr(before, k, None) != getattr(after, k, None)
+                )
+                if changed:
+                    self._audit("project.settings", slug, {"changed": changed}, conn)
+                if "mode" in settings and settings["mode"] != before.mode:
+                    self._audit("project.mode", slug, {"mode": after.mode}, conn)
         self._settings_cache.pop((self.workspace_id, slug), None)
         if settings and "mode" in settings and settings["mode"] != before.mode:
             self._publish({"type": "mode", "project": slug, "mode": self.mode_of(slug)})
@@ -587,6 +685,7 @@ class Service:
             )
             self.db.execute(sa.delete(P).where(*self._pk(P, slug)), conn)
             self.lexical.delete_project(self.workspace_id, slug, conn)
+            self._audit("project.delete", slug, conn=conn)
         for row in parked:
             self._release(row["id"])  # held calls find no answer and time out cleanly
         self._publish({"type": "projects"})
@@ -1193,6 +1292,7 @@ class Service:
             )
             if forced:
                 self._log_forced(row, "forced_write", conn)
+                self._audit("entry.forced_write", entry_id, {"project": row["project_id"]}, conn)
         self._entries_changed(row["project_id"])
         return self.get_entry(entry_id)
 
@@ -1274,6 +1374,9 @@ class Service:
             self.lexical.delete(entry_id, self.workspace_id, conn)  # candidates, aliases cascade
             if forced:
                 self._log_forced(row, "forced_delete", conn)
+                self._audit("entry.forced_delete", entry_id, {"project": row["project_id"]}, conn)
+            else:
+                self._audit("entry.delete", entry_id, {"project": row["project_id"]}, conn)
         self._queues_changed(row["project_id"])  # candidates of the entry went with it
         self._entries_changed(row["project_id"])
 
@@ -1485,6 +1588,12 @@ class Service:
                         param="aliases",
                     )
                 self._import_alias(item, slug, config, report["aliases"], conn)
+            self._audit(
+                "project.import",
+                slug,
+                {"entries": report["entries"], "aliases": report["aliases"]},
+                conn,
+            )
         if report["created_project"]:
             self._publish({"type": "projects"})
         self._queues_changed(slug)
@@ -1748,6 +1857,7 @@ class Service:
                 conn,
             )
             self._supersede(conn, row["project_id"], row["fingerprint"])  # others are moot now
+            self._audit("candidate.approve", candidate_id, {"project": row["project_id"]}, conn)
         self._queues_changed(row["project_id"])
         return self.get_candidate(candidate_id)
 
@@ -1756,6 +1866,7 @@ class Service:
         row = self._candidate_row(candidate_id)
         with self.db.begin() as conn:
             self._decide(candidate_id, "rejected", conn)
+            self._audit("candidate.reject", candidate_id, {"project": row["project_id"]}, conn)
         self._queues_changed(row["project_id"])
         return self.get_candidate(candidate_id)
 

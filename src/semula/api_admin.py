@@ -372,6 +372,16 @@ async def answer_pending(pending_id: str, request: Request) -> dict[str, Any]:
     return {"entry_id": entry_id, "pending_id": pending_id, "status": "answered"}
 
 
+@router.get("/audit")
+async def list_audit(
+    request: Request, limit: int = 50, before_id: int | None = None, action: str | None = None
+) -> dict[str, Any]:
+    """The workspace's audit log, newest first. People and local use only; a token cannot read
+    it (the middleware refuses it, and so does the service)."""
+    events = await offload(_service(request).list_audit, limit, before_id, action)
+    return {"events": events}
+
+
 @router.get("/tokens")
 async def list_tokens(request: Request) -> dict[str, Any]:
     """The workspace's API tokens, without their secrets. For people and local use: a token
