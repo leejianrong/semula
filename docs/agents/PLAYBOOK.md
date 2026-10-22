@@ -14,13 +14,30 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/
 claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Authorization: Bearer $SEMULA_API_KEY"
 ```
 
-**Any client that only speaks stdio** (`semula mcp` forwards to the running server; set `SEMULA_URL` and, if needed, `SEMULA_API_KEY` in its environment):
+**Any client that only speaks stdio** (`semula mcp` forwards to the running server; it is in the Python package and not in the standalone binary; set `SEMULA_URL` and, if needed, `SEMULA_API_KEY` in its environment):
 
 ```json
 { "mcpServers": { "semula": { "command": "uv", "args": ["run", "--project", "/path/to/semula", "semula", "mcp"], "env": { "SEMULA_URL": "http://127.0.0.1:8080" } } } }
 ```
 
-**Codex:** register the same stdio command in Codex's MCP configuration (`codex mcp add semula -- uv run --project /path/to/semula semula mcp`). This syntax is not verified against every Codex version; if it differs, use the CLI below.
+**Codex, MCP over HTTP:**
+
+```bash
+codex mcp add semula --url http://127.0.0.1:8080/mcp/
+# if the server has SEMULA_API_KEY set, export it and add: --bearer-token-env-var SEMULA_API_KEY
+```
+
+`codex exec` (non-interactive) refuses MCP tool calls it cannot ask about, so approve semula's tools in `~/.codex/config.toml`; the sandbox stays on:
+
+```toml
+[mcp_servers.semula]
+url = "http://127.0.0.1:8080/mcp/"
+default_tools_approval_mode = "approve"
+```
+
+**Claude Code, non-interactive** (`claude -p`) needs the tools allowed up front, for example `--allowedTools "mcp__semula__wait_for_pending,mcp__semula__get_pending,mcp__semula__answer_pending"`.
+
+Both were run against the container on 2026-10-22 (Claude Code 2.1.308, Codex CLI 0.155.1): each waited, read a parked call and answered it, and the app's held call returned that answer.
 
 **CLI only:** `export SEMULA_URL=http://127.0.0.1:8080` (and `SEMULA_API_KEY` if set). Add `--json` to any command for machine-readable output.
 
