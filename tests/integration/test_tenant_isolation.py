@@ -177,6 +177,12 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
     ),
     "list_tokens": lambda w: nothing_of_b(w.a.list_tokens()),
     "list_audit": lambda w: nothing_of_b(w.a.list_audit(limit=500)),
+    "workspace_status": lambda w: _equal(w.a.workspace_status()["id"], "a"),
+    "delete_workspace": lambda w: (
+        refused_422(lambda: w.a.delete_workspace("b")),  # naming B's id does not delete B
+        _equal(w.b.workspace_status()["deleted_at"], None),
+    ),
+    "restore_workspace": lambda w: missing_409(lambda: w.a.restore_workspace()),
     "usage": lambda w: _equal(w.a.usage()["used"]["entries"], 1),  # its own one, not B's
     "recount_usage": lambda w: (
         w.a.recount_usage(),
@@ -196,6 +202,7 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
 # Methods that do not take tenant data, or that are maintenance for the whole database.
 EXEMPT = {
     "authenticate_token": "finds the workspace from the credential, so no tenant exists yet",
+    "purge_workspaces": "the operator's schedule: purges deleted workspaces past their grace",
     "for_scope": "builds a scoped view",
     "owns": "says whether an event belongs to this workspace",
     "create_workspace": "creates the tenant itself",
@@ -207,8 +214,16 @@ EXEMPT = {
 del EXEMPT["set_mode_default"]
 
 
-def _b_token(w: World) -> str:
-    return str(w.b.create_token("b's token", "admin", project="shop")["id"])
+def refused_422(call: Callable[[], Any]) -> None:
+    with pytest.raises(SemulaError) as caught:
+        call()
+    assert caught.value.status == 422
+
+
+def missing_409(call: Callable[[], Any]) -> None:
+    with pytest.raises(SemulaError) as caught:
+        call()
+    assert caught.value.status == 409
 
 
 def _b_token(w: World) -> str:

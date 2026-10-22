@@ -103,6 +103,14 @@ A hosted workspace has limits so that one tenant cannot use up the server. Defau
 
 The error body names the limit: `{"quota": {"name": "entries", "limit": 50000, "used": 50000}}`. Counters are kept as writes happen, in the same transaction, so a replay hit never counts anything and stays fast; `semula usage` shows them, and `semula admin recount` rebuilds them if they ever drift. A local server has no limits.
 
+## Deleting a workspace
+
+```bash
+semula admin workspace-delete acme --confirm acme
+```
+
+The id has to be typed back. The workspace is marked deleted: its tokens stop working at once (on other replicas within 30 seconds) and its data stays, so the operator can still export it, for **30 days**. `semula admin workspace-restore acme` brings it back, tokens included. After the grace, `semula admin workspace-purge` (run it on a schedule) deletes everything of that workspace in dependency order: the call log, the search index, entries and all they own, projects, tokens and the workspace itself. The audit log keeps a `workspace.delete` and a `workspace.purge` row and nothing else. The `default` workspace cannot be deleted, and a token never can. Backups hold deleted data until they expire.
+
 ## The audit log
 
 Every change that matters is written to an append-only log: who did it (the operator, a token or, later, a person), what, to which target, from which address, with which request id. It covers tokens (create, rotate, revoke), projects (create, rename, delete, settings, mode, import), deleting an entry, every forced write and forced delete, approving or rejecting a review candidate and creating a workspace.
@@ -120,4 +128,4 @@ Hosting wants Postgres. Every tenant table has a [row-level-security](../referen
 ## What is not there yet
 
 - **People.** No sign-in, roles or invitations; the dashboard is off.
-- **Quotas**, and deleting a whole workspace.
+- **A delete button.** A signed-in admin will delete a workspace from the dashboard; today it is the operator's command.

@@ -56,6 +56,9 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula usage` |  | What the workspace holds against its limits |
 | `semula audit` | `--limit` `--action` `--before` | Show the audit log, newest first (people and the operator) |
 | `semula admin workspace-create` | `<id>` `--name` | Create a workspace |
+| `semula admin workspace-delete` | `<workspace>` `--confirm` | Delete a workspace: tokens stop at once, purged after 30 days |
+| `semula admin workspace-restore` | `<workspace>` | Bring a deleted workspace back during its 30 days |
+| `semula admin workspace-purge` |  | Hard-delete every workspace whose 30 days are over |
 | `semula admin recount` | `--workspace` | Rebuild a workspace's quota counters from what is stored |
 | `semula admin token-create` | `--workspace` `--name` `--scope` `--project` `--expires` | Mint an API token for a workspace (the secret is shown once) |
 | `semula admin token-list` | `--workspace` | List a workspace's API tokens |
