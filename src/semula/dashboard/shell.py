@@ -8,6 +8,8 @@ from typing import Any
 
 import indah
 
+from .pages.entries import entries_page
+from .pages.entry import entry_page
 from .pages.log import log_page
 from .pages.pending import pending_page
 from .state import Dash, blocking, cancel, every
@@ -27,6 +29,7 @@ class Tab:
         self.counts: indah.Signal[dict[str, int]] = indah.Signal({"pending": 0, "review": 0})
         # Bumped when this project's pending or review queue moves, for screens that list it.
         self.queues_moved: indah.Signal[int] = indah.Signal(0)
+        self.entries_moved: indah.Signal[int] = indah.Signal(0)  # same, for the entries list
         self.stats: indah.Signal[dict[str, Any]] = indah.Signal(EMPTY_STATS)
         # Whether *this project* records. ``_applied`` is what the service last said, so the
         # switch handler can tell a viewer's click from an update that came from the service.
@@ -52,6 +55,8 @@ class Tab:
                     self.recording.set(event["mode"] == "record")
                 if event.get("type") == "queues" and event["project"] == self.project.peek():
                     self.queues_moved.set(self.queues_moved.peek() + 1)
+                if event.get("type") == "entries" and event["project"] == self.project.peek():
+                    self.entries_moved.set(self.entries_moved.peek() + 1)
                 self._stale.set()  # a default that moved changes every project that follows it
 
         ring.listen(on_events)
@@ -102,6 +107,7 @@ def nav(tab: Tab) -> indah.Component:
         children=[
             indah.Select(_chosen(tab), options=tab.projects, label="Project"),
             indah.Link(tab.ctx, "Live log", to=to("log"), match="prefix"),
+            indah.Link(tab.ctx, "Entries", to=to("entries"), match="prefix"),
             indah.Row(
                 children=[
                     indah.Link(tab.ctx, "Pending", to=to("pending"), match="prefix"),
@@ -144,6 +150,8 @@ def build_session(ctx: indah.Context, dash: Dash) -> indah.Session:
         routes={
             "/projects/{project}/log": log_page(tab),
             "/projects/{project}/pending": pending_page(tab),
+            "/projects/{project}/entries": entries_page(tab),
+            "/projects/{project}/entries/{entry}": entry_page(tab),
         },
         not_found=indah.Text("### There is nothing at this address.", markdown=True),
     )

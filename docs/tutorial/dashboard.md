@@ -21,6 +21,12 @@ Select a call to read the whole request: the system prompt, the messages and any
 - If semula rejects the answer, the reason appears under the box and the call stays held. Fix it and send again.
 - A call answered somewhere else, by an agent or the CLI, leaves the list on its own.
 
+## Entries
+
+The **Entries** screen lists what a project has recorded: the prompt, how often it has been hit, how many answers it holds, and flags for pinned, tool-call and aliased entries. Search by text, filter (pinned, never hit, has tool calls, has aliases) and sort (most hits, changed lately). New recordings appear as they are made.
+
+Select a row to open the entry at its own address (`/ui/projects/<project>/entries/<id>`), so you can paste the link to a colleague. It shows the request, every answer and the history of changes.
+
 ## Good to know
 
 The dashboard is built on the first visit to `/ui`, so the server starts as fast as ever. `SEMULA_UI=off` hides it.

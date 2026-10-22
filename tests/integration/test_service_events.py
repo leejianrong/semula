@@ -118,3 +118,32 @@ def test_the_public_stream_still_carries_only_calls(tmp_path: Any) -> None:
         httpx.post(url + "/v1/chat/completions", json=chat("parks, then times out"), timeout=5)
         t.join(5)
         assert [x for x in lines if x.startswith("event:")] == ["event: call"]
+
+
+async def test_every_entry_write_says_the_entries_changed(
+    record: httpx.AsyncClient, events: Any
+) -> None:
+    moved = {"type": "entries", "project": "default"}
+    body = {"request": {"messages": [{"role": "user", "content": "events"}]}}
+
+    created = await record.post(
+        "/api/v1/projects/default/entries", json={**body, "response": {"content": "a"}}
+    )
+    assert moved in await drain(events), "creating an entry"
+
+    entry = created.json()
+    edited = await record.put(
+        f"/api/v1/entries/{entry['id']}", json={"version": 1, "response": {"content": "b"}}
+    )
+    assert moved in await drain(events), "editing an entry"
+
+    await record.delete(
+        f"/api/v1/entries/{entry['id']}", params={"version": edited.json()["version"]}
+    )
+    assert moved in await drain(events), "deleting an entry"
+
+    call, pending_id = await park(record, "answered into an entry")
+    await drain(events)
+    await record.post(f"/api/v1/pending/{pending_id}/answer", json={"content": "ok"})
+    await call
+    assert moved in await drain(events), "recording an answer"

@@ -8,6 +8,13 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Added
+
+- **Entries screen** in the dashboard: every recorded entry of a project with search, a filter
+  menu (pinned, never hit, tool calls, aliases), sort, hit counts and flags, kept up to date as
+  entries are recorded. Selecting one opens it at its own address with its request, answers and
+  history. The service now announces entry writes (`entries` events) for live views.
+
 ## [0.1.0] - 2026-10-22
 
 The first public release. semula is a fake OpenAI-compatible server for development and tests:
