@@ -177,6 +177,20 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
     ),
     "list_tokens": lambda w: nothing_of_b(w.a.list_tokens()),
     "list_audit": lambda w: nothing_of_b(w.a.list_audit(limit=500)),
+    "list_members": lambda w: _equal(w.a.list_members(), []),
+    "list_invitations": lambda w: _equal(w.a.list_invitations(), []),
+    "set_member_role": lambda w: missing(
+        lambda: w.a.set_member_role(_b_member(w), "viewer"), "member_not_found"
+    ),
+    "remove_member": lambda w: missing(lambda: w.a.remove_member(_b_member(w)), "member_not_found"),
+    "create_invitation": lambda w: (
+        _equal(w.b.list_invitations()[0]["email"], "someone@example.com")
+        if w.a.create_invitation("x@example.com", "viewer") and _b_invitation(w)
+        else None
+    ),
+    "revoke_invitation": lambda w: missing(
+        lambda: w.a.revoke_invitation(_b_invitation(w)), "invitation_not_found"
+    ),
     "workspace_status": lambda w: _equal(w.a.workspace_status()["id"], "a"),
     "delete_workspace": lambda w: (
         refused_422(lambda: w.a.delete_workspace("b")),  # naming B's id does not delete B
@@ -202,6 +216,12 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
 # Methods that do not take tenant data, or that are maintenance for the whole database.
 EXEMPT = {
     "authenticate_token": "finds the workspace from the credential, so no tenant exists yet",
+    "workspaces_of": "a person's workspaces: people are global",
+    "membership_of": "a person's role in a named workspace: people are global",
+    "principal_for_session": "a signed-in person's identity: global",
+    "switch_workspace": "a person's own session: checks their membership",
+    "invitation_preview": "found by its secret token, before a workspace is known",
+    "accept_invitation": "found by its secret token, before a workspace is known",
     "purge_workspaces": "the operator's schedule: purges deleted workspaces past their grace",
     "sign_in_identity": "people are global, not tenant data (ADR-0011 section 3)",
     "create_session": "a person's sign-in: global",
@@ -231,6 +251,24 @@ def missing_409(call: Callable[[], Any]) -> None:
     with pytest.raises(SemulaError) as caught:
         call()
     assert caught.value.status == 409
+
+
+def _b_member(w: World) -> str:
+    from semula.oidc import Identity
+
+    person = w.service.sign_in_identity(
+        Identity("https://idp.test", "m1", "member@example.com", True, "M")
+    )
+    secret = w.b.create_invitation("member@example.com", "admin")["token"]
+    w.service.accept_invitation(secret, person["id"])
+    return str(person["id"])
+
+
+def _b_invitation(w: World) -> str:
+    existing = w.b.list_invitations()
+    if existing:
+        return str(existing[0]["id"])
+    return str(w.b.create_invitation("someone@example.com", "viewer")["id"])
 
 
 def _b_token(w: World) -> str:

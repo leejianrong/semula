@@ -125,3 +125,31 @@ def test_deleting_restoring_and_purging_a_workspace(
     assert main(["admin", "workspace-restore", "acme"]) == 0
     assert "restored" in capsys.readouterr().out
     assert main(["admin", "workspace-restore", "acme"]) == 4  # not deleted
+
+
+def test_the_operator_invites_the_first_admin_who_then_joins(
+    env: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from semula.oidc import Identity
+
+    monkeypatch.setenv("SEMULA_PUBLIC_URL", "https://semula.example.com")
+    main(["admin", "workspace-create", "acme"])
+    capsys.readouterr()
+    assert (
+        main(["--json", "admin", "invite", "--workspace", "acme", "--email", "Boss@Example.com"])
+        == 0
+    )
+    made = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert made["role"] == "admin" and made["email"] == "boss@example.com"
+    assert made["link"].startswith("https://semula.example.com/auth/invite/smla_inv_")
+
+    service = Service(Database(env), Settings(data_dir=tmp_path))
+    person = service.sign_in_identity(
+        Identity("https://idp.test", "b1", "boss@example.com", True, "Boss")
+    )
+    service.accept_invitation(made["link"].rsplit("/", 1)[1], person["id"])
+    assert main(["admin", "members", "--workspace", "acme"]) == 0
+    listing = capsys.readouterr().out
+    assert person["id"] in listing and "admin" in listing and "boss@example.com" in listing
+    assert main(["admin", "invite", "--workspace", "acme", "--email", "not-an-email"]) == 4
+    assert "invalid_email" in capsys.readouterr().err

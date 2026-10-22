@@ -337,3 +337,47 @@ person_session = sa.Table(
     ),
     sa.Index("idx_person_session_person", "person_id"),
 )
+
+# Who belongs to a workspace and in what role (ADR-0010 section 3): viewer, editor or admin,
+# applying to every project in it. The last admin cannot leave or be demoted.
+membership = sa.Table(
+    "membership",
+    metadata,
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("person_id", sa.Text, nullable=False),
+    sa.Column("role", sa.Text, nullable=False),
+    _ts("created_at"),
+    sa.Column("invited_by", sa.Text),
+    sa.PrimaryKeyConstraint("workspace_id", "person_id", name="pk_membership"),
+    sa.ForeignKeyConstraint(
+        ["workspace_id"], ["workspace.id"], ondelete="CASCADE", name="fk_membership_workspace"
+    ),
+    sa.ForeignKeyConstraint(
+        ["person_id"], ["person.id"], ondelete="CASCADE", name="fk_membership_person"
+    ),
+    sa.Index("idx_membership_person", "person_id"),
+)
+
+# An offer to join, by email and role. Single use, seven days. Only a hash of its token is kept.
+# Accepting needs a signed-in person whose *verified* email matches: an invitation is never a way
+# to sign in.
+invitation = sa.Table(
+    "invitation",
+    metadata,
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("id", sa.Text, nullable=False),
+    sa.Column("email", sa.Text, nullable=False),
+    sa.Column("role", sa.Text, nullable=False),
+    sa.Column("token_hash", sa.Text, nullable=False),
+    sa.Column("invited_by", sa.Text),
+    _ts("created_at"),
+    sa.Column("expires_at", sa.Text, nullable=False),
+    sa.Column("accepted_at", sa.Text),
+    sa.Column("accepted_by", sa.Text),
+    sa.Column("revoked_at", sa.Text),
+    sa.PrimaryKeyConstraint("workspace_id", "id", name="pk_invitation"),
+    sa.ForeignKeyConstraint(
+        ["workspace_id"], ["workspace.id"], ondelete="CASCADE", name="fk_invitation_workspace"
+    ),
+    sa.Index("uq_invitation_hash", "token_hash", unique=True),
+)
