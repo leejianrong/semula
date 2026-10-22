@@ -34,6 +34,9 @@ prompt replays that answer for free.
   select one to read it, answer it in a text box (plain text, or JSON for tool calls and
   streams) and the held call is released. A rejected answer shows the server's error beside the
   field and the call stays held.
+- **The CLI as a standalone binary** (about 22 MB, no Python needed) for Linux and macOS, amd64
+  and arm64, attached to each GitHub Release with checksums. It has the HTTP commands; `serve`
+  and `mcp` stay in the image and the Python package.
 - **Mode per project**, kept across restarts (`semula mode record --project <id>`).
 - **Redaction** of secrets in everything stored, export and import of a project as JSON files.
 - **Observability.** A call log with a live tail, per-minute stats and a prompt preview;
