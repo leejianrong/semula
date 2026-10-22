@@ -12,6 +12,7 @@ from .pages.entries import entries_page
 from .pages.entry import entry_page
 from .pages.log import log_page
 from .pages.pending import pending_page
+from .pages.playground import playground_page
 from .pages.review import review_page
 from .state import Dash, blocking, cancel, every
 
@@ -109,6 +110,7 @@ def nav(tab: Tab) -> indah.Component:
             indah.Select(_chosen(tab), options=tab.projects, label="Project"),
             indah.Link(tab.ctx, "Live log", to=to("log"), match="prefix"),
             indah.Link(tab.ctx, "Entries", to=to("entries"), match="prefix"),
+            indah.Link(tab.ctx, "Playground", to=to("playground"), match="prefix"),
             indah.Row(
                 children=[
                     indah.Link(tab.ctx, "Review", to=to("review"), match="prefix"),
@@ -161,6 +163,7 @@ def build_session(ctx: indah.Context, dash: Dash) -> indah.Session:
             "/projects/{project}/log": log_page(tab),
             "/projects/{project}/pending": pending_page(tab),
             "/projects/{project}/review": review_page(tab),
+            "/projects/{project}/playground": playground_page(tab),
             "/projects/{project}/entries": entries_page(tab),
             "/projects/{project}/entries/{entry}": entry_page(tab),
         },

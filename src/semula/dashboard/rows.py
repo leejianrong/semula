@@ -362,3 +362,33 @@ def candidate_row(candidate: dict[str, Any]) -> dict[str, Any]:
         "prompt": short((candidate.get("last_message") or "").replace("\n", " "), 48),
         "entry": short((candidate.get("entry_last_message") or "").replace("\n", " "), 48),
     }
+
+
+def verdict_text(result: dict[str, Any]) -> str:
+    """The playground's one-line answer, from a ``test_match`` result."""
+    if result["matched"]:
+        score = result.get("score")
+        tier = TIERS.get(result["tier"], result["tier"])
+        shown = (
+            f", score {score:.2f}"
+            if score is not None and result["tier"] in ("bm25", "embedding")
+            else ""
+        )
+        return f"Would serve the recorded answer ({tier}{shown})."
+    if result["would"] == "park":
+        return "Would park this call for an agent to answer (the project is recording)."
+    return "Would fail with 424: nothing recorded matches (the project is replaying)."
+
+
+def near_text(result: dict[str, Any]) -> str:
+    """What came close on a miss: the nearest entry and any weak candidates for review."""
+    parts = []
+    nearest = result.get("nearest")
+    if nearest:
+        parts.append(
+            f'Nearest recorded prompt: "{nearest["last_message"]}" (score {nearest["score"]:.2f}).'
+        )
+    waiting = result.get("candidates") or []
+    if waiting and not result["matched"]:
+        parts.append(f"{len(waiting)} weak candidate(s) would go to the review queue.")
+    return " ".join(parts)

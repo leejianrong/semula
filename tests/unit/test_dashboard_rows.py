@@ -238,3 +238,22 @@ def test_a_candidate_row_and_the_comparison_text() -> None:
                                       {"role": "user", "content": "Hi"}],
                          "tools": [{"type": "function", "function": {"name": "f"}}]})  # fmt: skip
     assert text == "system:\nBe brief\n\nuser:\nHi\n\ntools: f"
+
+
+def test_the_playground_words_a_match_and_a_miss() -> None:
+    from semula.dashboard.rows import near_text, verdict_text
+
+    hit = {"matched": True, "tier": "bm25", "score": 0.987, "would": "serve"}
+    assert verdict_text(hit) == "Would serve the recorded answer (Words, score 0.99)."
+    assert verdict_text({"matched": True, "tier": "exact", "score": 1.0, "would": "serve"}) == (
+        "Would serve the recorded answer (Exact)."
+    )
+    assert verdict_text({"matched": False, "would": "park"}).startswith("Would park")
+    assert verdict_text({"matched": False, "would": "no_match_error"}).startswith(
+        "Would fail with 424"
+    )
+    miss = {"matched": False, "nearest": {"last_message": "Name a fruit.", "score": 0.667},
+            "candidates": [{"entry_id": "E"}]}  # fmt: skip
+    assert near_text(miss) == ('Nearest recorded prompt: "Name a fruit." (score 0.67). '
+                               "1 weak candidate(s) would go to the review queue.")  # fmt: skip
+    assert near_text({"matched": True, "candidates": []}) == ""

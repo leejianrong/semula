@@ -10,6 +10,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Playground**: type a prompt (with an optional system prompt and tools) and see what semula
+  would do with it in this project: the tier that answers and its score, the recorded answer, or
+  the nearest prompt on a miss, and whether the call would park or fail. Nothing is served,
+  logged or counted.
 - **Review screen**: the near misses of a project with their score and tier, a side-by-side
   comparison of the new prompt against the recorded one (changed words marked), the recorded
   answer with a reminder to check it fits, and Approve and Reject. The nav shows how many wait.
