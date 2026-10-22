@@ -31,6 +31,8 @@ class Dash:
 
     def publish(self, event: dict[str, Any]) -> None:
         """Called on the event loop for every service event."""
+        if not self.service.owns(event):
+            return  # another workspace's event: this dashboard shows one
         if event.get("type") == "call":
             if event["id"] > self._seeded_up_to:  # else the seed already has it
                 self.calls.publish(call_row(event))

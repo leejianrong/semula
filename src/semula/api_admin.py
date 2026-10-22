@@ -14,13 +14,14 @@ from starlette.concurrency import run_in_threadpool as offload
 
 from . import canonical
 from .errors import SemulaError
+from .scope import scope_of
 from .service import Service
 
 router = APIRouter(prefix="/api/v1")
 
 
 def _service(request: Request) -> Service:
-    service: Service = request.app.state.service
+    service: Service = request.app.state.service.for_scope(scope_of(request))
     return service
 
 
@@ -287,7 +288,7 @@ async def log_stream(request: Request, project: str | None = None) -> StreamingR
                 except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
-                if event.get("type") != "call":
+                if event.get("type") != "call" or not service.owns(event):
                     continue  # the dashboard hears more; this stream's contract is calls
                 if project and event.get("project") != project:
                     continue

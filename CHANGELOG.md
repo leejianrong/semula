@@ -10,6 +10,11 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Workspace isolation in the service** (groundwork for hosting, ADR-0011): the service is bound
+  to one workspace per request, every query is filtered by it, events and the log stream carry
+  their workspace, and a test calls every method as another workspace to prove nothing leaks.
+  It found one leak, fixed: a waiter could read another workspace's answer by pending id. Local
+  use has one workspace and sees no change.
 - **Playground**: type a prompt (with an optional system prompt and tools) and see what semula
   would do with it in this project: the tier that answers and its score, the recorded answer, or
   the nearest prompt on a miss, and whether the call would park or fail. Nothing is served,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import re
@@ -50,6 +51,8 @@ from .schema import entry as E
 from .schema import entry_revision as R
 from .schema import pending as Q
 from .schema import project as P
+from .schema import workspace as WS
+from .scope import Scope
 
 log = logging.getLogger("semula.service")
 
@@ -118,6 +121,7 @@ class Service:
         self._waiters_lock = threading.Lock()
         # What a project follows until it chooses its own mode. Lives in memory: it starts from
         # SEMULA_MODE and PUT /api/v1/mode moves it, but a restart returns to the environment.
+        self.workspace_id = DEFAULT_WORKSPACE  # ``for_scope`` binds a copy to another workspace
         self.default_mode: str = settings.mode
         self.lexical = make_index(db)
         # Semantic matching is optional: with no embedder none of this loads (ADR-0003).
@@ -130,10 +134,32 @@ class Service:
             Indexer(self.vectors, self._texts_to_embed, DEFAULT_WORKSPACE) if self.vectors else None
         )
         self.events = EventBus()
-        self._settings_cache: dict[str, tuple[float, ProjectSettings]] = {}
+        self._settings_cache: dict[tuple[str, str], tuple[float, ProjectSettings]] = {}
         self._logged = 0
 
     # --- mode -----------------------------------------------------------------------
+    def for_scope(self, scope: Scope) -> Service:
+        """This service bound to ``scope``'s workspace: same database, caches and event bus,
+        every query filtered by that workspace. Meaning-based matching is only built for the
+        local workspace so far, so another workspace has it switched off."""
+        if scope.workspace_id == self.workspace_id:
+            return self
+        bound = copy.copy(self)
+        bound.workspace_id = scope.workspace_id
+        if scope.workspace_id != DEFAULT_WORKSPACE:
+            bound.vectors = None
+            bound.indexer = None
+        return bound
+
+    def _pk(self, table: sa.Table, slug: str) -> tuple[Any, Any]:
+        return (table.c.workspace_id == self.workspace_id, table.c.id == slug)
+
+    def create_workspace(self, workspace_id: str, name: str | None = None) -> None:
+        """Add a workspace (a tenant). Local use has only ``default``; this is for hosting."""
+        if self.db.one(sa.select(WS.c.id).where(WS.c.id == workspace_id)):
+            raise SemulaError(409, "workspace_exists", f"Workspace '{workspace_id}' exists.")
+        self.db.execute(sa.insert(WS).values(id=workspace_id, name=name or workspace_id))
+
     def mode_of(self, project: str) -> str:
         """What a call to ``project`` does when nothing answers it: the project's own mode,
         else the server's default."""
@@ -154,7 +180,7 @@ class Service:
             self.update_project(project, settings={"mode": mode})  # announces the change
             return {"mode": self.mode_of(project), "persisted": True, "project": project}
         self.default_mode = mode
-        self.events.publish({"type": "mode", "project": None, "mode": mode})
+        self._publish({"type": "mode", "project": None, "mode": mode})
         return {"mode": mode, "persisted": False, "project": None}
 
     # --- projects -----------------------------------------------------------------
@@ -167,12 +193,12 @@ class Service:
                 "starting with a letter or digit.",
                 param="id",
             )
-        if self.db.one(sa.select(P.c.id).where(*_pk(P, slug))):
+        if self.db.one(sa.select(P.c.id).where(*self._pk(P, slug))):
             raise SemulaError(409, "project_exists", f"Project '{slug}' already exists.")
         self.db.execute(
-            sa.insert(P).values(workspace_id=DEFAULT_WORKSPACE, id=slug, name=name or slug)
+            sa.insert(P).values(workspace_id=self.workspace_id, id=slug, name=name or slug)
         )
-        self.events.publish({"type": "projects"})
+        self._publish({"type": "projects"})
         return self.get_project(slug)
 
     def list_projects(self) -> list[dict[str, Any]]:
@@ -200,7 +226,7 @@ class Service:
                 entries.label("entries"),
                 parked.label("pending"),
             )
-            .where(P.c.workspace_id == DEFAULT_WORKSPACE)
+            .where(P.c.workspace_id == self.workspace_id)
             .order_by(P.c.id)
         )
         return [{**r, "mode": self.mode_of(r["id"])} for r in map(dict, rows)]
@@ -219,15 +245,15 @@ class Service:
     def project_settings(self, slug: str) -> ProjectSettings:
         """A project's settings. Read on every call, so cached for ``SETTINGS_TTL`` seconds;
         a change made here is visible at once, one made by another replica within the TTL."""
-        cached = self._settings_cache.get(slug)
+        cached = self._settings_cache.get((self.workspace_id, slug))
         if cached and time.monotonic() - cached[0] < SETTINGS_TTL:
             return cached[1]
-        row = self.db.one(sa.select(P.c.settings).where(*_pk(P, slug)))
+        row = self.db.one(sa.select(P.c.settings).where(*self._pk(P, slug)))
         if not row:
-            self._settings_cache.pop(slug, None)
+            self._settings_cache.pop((self.workspace_id, slug), None)
             raise SemulaError(404, "project_not_found", f"No project '{slug}'.", param="project")
         settings = ProjectSettings.model_validate(json.loads(row["settings"]))
-        self._settings_cache[slug] = (time.monotonic(), settings)
+        self._settings_cache[(self.workspace_id, slug)] = (time.monotonic(), settings)
         return settings
 
     def update_project(
@@ -235,9 +261,9 @@ class Service:
     ) -> dict[str, Any]:
         """Rename and/or patch settings. A ``null`` value resets that setting to its default."""
         before = self.project_settings(slug)
-        self._settings_cache.pop(slug, None)
+        self._settings_cache.pop((self.workspace_id, slug), None)
         if name:
-            self.db.execute(sa.update(P).where(*_pk(P, slug)).values(name=name))
+            self.db.execute(sa.update(P).where(*self._pk(P, slug)).values(name=name))
         if settings:
             merged = before.model_dump(exclude_defaults=True)
             for key, value in settings.items():
@@ -259,15 +285,15 @@ class Service:
             with self.db.begin() as conn:
                 self.db.execute(
                     sa.update(P)
-                    .where(*_pk(P, slug))
+                    .where(*self._pk(P, slug))
                     .values(settings=after.model_dump_json(exclude_defaults=True)),
                     conn,
                 )
                 if any(getattr(before, f) != getattr(after, f) for f in FINGERPRINT_FIELDS):
                     self._rekey(slug, after, conn)
-        self._settings_cache.pop(slug, None)
+        self._settings_cache.pop((self.workspace_id, slug), None)
         if settings and "mode" in settings and settings["mode"] != before.mode:
-            self.events.publish({"type": "mode", "project": slug, "mode": self.mode_of(slug)})
+            self._publish({"type": "mode", "project": slug, "mode": self.mode_of(slug)})
         return self.get_project(slug)
 
     def _rekey(self, slug: str, settings: ProjectSettings, conn: Connection) -> None:
@@ -276,7 +302,7 @@ class Service:
         for table in (E, Q, A, C):
             rows = self.db.rows(
                 sa.select(table.c.id, table.c.canonical_request).where(
-                    table.c.workspace_id == DEFAULT_WORKSPACE, table.c.project_id == slug
+                    table.c.workspace_id == self.workspace_id, table.c.project_id == slug
                 ),
                 conn,
             )
@@ -302,7 +328,7 @@ class Service:
         a later pattern cannot clean."""
         rows = self.db.rows(
             sa.select(L.c.id, L.c.preview).where(
-                L.c.workspace_id == DEFAULT_WORKSPACE,
+                L.c.workspace_id == self.workspace_id,
                 L.c.project_id == slug,
                 L.c.preview.is_not(None),
             ),
@@ -315,40 +341,48 @@ class Service:
 
     def delete_project(self, slug: str) -> None:
         self.require_project(slug)
-        self._settings_cache.pop(slug, None)
+        self._settings_cache.pop((self.workspace_id, slug), None)
         if slug == DEFAULT_PROJECT:
             raise SemulaError(409, "default_project", "The default project cannot be deleted.")
         parked = self.db.rows(
-            sa.select(Q.c.id).where(Q.c.workspace_id == DEFAULT_WORKSPACE, Q.c.project_id == slug)
+            sa.select(Q.c.id).where(Q.c.workspace_id == self.workspace_id, Q.c.project_id == slug)
         )
         with self.db.begin() as conn:
             # entries, pending rows, candidates and aliases go with the project (ON DELETE CASCADE);
             # call_log has no FK
             self.db.execute(
-                sa.delete(L).where(L.c.workspace_id == DEFAULT_WORKSPACE, L.c.project_id == slug),
+                sa.delete(L).where(L.c.workspace_id == self.workspace_id, L.c.project_id == slug),
                 conn,
             )
-            self.db.execute(sa.delete(P).where(*_pk(P, slug)), conn)
-            self.lexical.delete_project(DEFAULT_WORKSPACE, slug, conn)
+            self.db.execute(sa.delete(P).where(*self._pk(P, slug)), conn)
+            self.lexical.delete_project(self.workspace_id, slug, conn)
         for row in parked:
             self._release(row["id"])  # held calls find no answer and time out cleanly
-        self.events.publish({"type": "projects"})
+        self._publish({"type": "projects"})
 
     # --- what live views hear besides calls -------------------------------------------
     def _queues_changed(self, project: str) -> None:
         """Tell live views that the pending or review queue of ``project`` moved. They count
         again; the event carries no numbers, so it cannot go stale."""
-        self.events.publish({"type": "queues", "project": project})
+        self._publish({"type": "queues", "project": project})
+
+    def _publish(self, event: dict[str, Any]) -> None:
+        """Announce ``event`` to live views, tagged with the workspace it happened in."""
+        self.events.publish({**event, "workspace": self.workspace_id})
+
+    def owns(self, event: dict[str, Any]) -> bool:
+        """Is ``event`` about this service's workspace? Live views and streams skip the rest."""
+        return bool(event.get("workspace", DEFAULT_WORKSPACE) == self.workspace_id)
 
     def _entries_changed(self, project: str) -> None:
         """Tell live views that an entry of ``project`` was added, changed or removed."""
-        self.events.publish({"type": "entries", "project": project})
+        self._publish({"type": "entries", "project": project})
 
     def queue_counts(self, project: str | None = None) -> dict[str, int]:
         """How many requests are parked and how many near-matches wait for review, for one
         project or all of them."""
-        mine_q = [Q.c.workspace_id == DEFAULT_WORKSPACE, Q.c.status == "pending"]
-        mine_c = [C.c.workspace_id == DEFAULT_WORKSPACE, C.c.status == "open"]
+        mine_q = [Q.c.workspace_id == self.workspace_id, Q.c.status == "pending"]
+        mine_c = [C.c.workspace_id == self.workspace_id, C.c.status == "open"]
         if project:
             self.require_project(project)
             mine_q.append(Q.c.project_id == project)
@@ -404,7 +438,7 @@ class Service:
             row = self.db.one(
                 _entry_for_serving()
                 .where(
-                    E.c.workspace_id == DEFAULT_WORKSPACE,
+                    E.c.workspace_id == self.workspace_id,
                     E.c.project_id == project,
                     column == value,
                 )
@@ -425,7 +459,7 @@ class Service:
             _entry_for_serving()
             .join(A, A.c.entry_id == E.c.id)
             .where(
-                A.c.workspace_id == DEFAULT_WORKSPACE,
+                A.c.workspace_id == self.workspace_id,
                 A.c.project_id == project,
                 A.c.fingerprint == fp,
             )
@@ -447,7 +481,7 @@ class Service:
         """Score the index's proposals by word overlap. Serve one only if it clears the
         project's high bar *and* has the same conversation shape; keep the rest as candidates."""
         words = lexical_tokens(req, config)
-        hits = self.lexical.search(DEFAULT_WORKSPACE, project, words, config, LEXICAL_POOL)
+        hits = self.lexical.search(self.workspace_id, project, words, config, LEXICAL_POOL)
         if not hits:
             if trace is not None:
                 trace["words"] = ("no", None, "no similar entry")
@@ -456,7 +490,7 @@ class Service:
             r["entry_id"]
             for r in self.db.rows(
                 sa.select(C.c.entry_id).where(
-                    C.c.workspace_id == DEFAULT_WORKSPACE,
+                    C.c.workspace_id == self.workspace_id,
                     C.c.project_id == project,
                     C.c.fingerprint == normalised_fingerprint(req, config),
                     C.c.status == "rejected",
@@ -530,7 +564,7 @@ class Service:
             return found
         try:
             query = vectors.embedder.embed([text])[0]
-            neighbours = vectors.search(DEFAULT_WORKSPACE, project, query, LEXICAL_POOL)
+            neighbours = vectors.search(self.workspace_id, project, query, LEXICAL_POOL)
         except Exception:  # an optional extra must never break a call that works without it
             log.warning("The embedding tier failed; continuing without it.", exc_info=True)
             if trace is not None:
@@ -583,7 +617,7 @@ class Service:
             r["entry_id"]
             for r in self.db.rows(
                 sa.select(C.c.entry_id).where(
-                    C.c.workspace_id == DEFAULT_WORKSPACE,
+                    C.c.workspace_id == self.workspace_id,
                     C.c.project_id == project,
                     C.c.fingerprint == normalised_fingerprint(req, config),
                     C.c.status == "rejected",
@@ -615,8 +649,8 @@ class Service:
         """Queue every entry that has no vector yet (a fresh start, a new model, old data)."""
         if not self.vectors or not self.indexer:
             return
-        have = self.vectors.indexed(DEFAULT_WORKSPACE)
-        for row in self.db.rows(sa.select(E.c.id).where(E.c.workspace_id == DEFAULT_WORKSPACE)):
+        have = self.vectors.indexed(self.workspace_id)
+        for row in self.db.rows(sa.select(E.c.id).where(E.c.workspace_id == self.workspace_id)):
             if row["id"] not in have:
                 self.indexer.schedule(row["id"])
 
@@ -626,13 +660,13 @@ class Service:
         entries = self.db.one(
             sa.select(sa.func.count().label("n"))
             .select_from(E)
-            .where(E.c.workspace_id == DEFAULT_WORKSPACE)
+            .where(E.c.workspace_id == self.workspace_id)
         )
         return {
             "enabled": True,
             "model": self.vectors.embedder.model_id,
             "entries": entries["n"] if entries else 0,
-            "indexed": self.vectors.count(DEFAULT_WORKSPACE),
+            "indexed": self.vectors.count(self.workspace_id),
             "backlog": self.indexer.backlog,
         }
 
@@ -681,7 +715,7 @@ class Service:
             )
         if order not in (None, "asc", "desc"):
             raise SemulaError(422, "invalid_param", "order must be 'asc' or 'desc'.", param="order")
-        conditions = [E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == project]
+        conditions = [E.c.workspace_id == self.workspace_id, E.c.project_id == project]
         if q:
             escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(E.c.canonical_request.ilike(f"%{escaped}%", escape="\\"))
@@ -746,7 +780,7 @@ class Service:
         existing = self.db.one(
             sa.select(E.c.id)
             .where(
-                E.c.workspace_id == DEFAULT_WORKSPACE,
+                E.c.workspace_id == self.workspace_id,
                 E.c.project_id == project,
                 E.c.fingerprint == fp,
             )
@@ -774,7 +808,7 @@ class Service:
             self.db.execute(
                 sa.insert(E).values(
                     id=entry_id,
-                    workspace_id=DEFAULT_WORKSPACE,
+                    workspace_id=self.workspace_id,
                     project_id=project,
                     fingerprint=fp,
                     exact_fingerprint=exact_fingerprint(req, config),
@@ -796,7 +830,7 @@ class Service:
 
     def _entry_row(self, entry_id: str) -> Any:
         row = self.db.one(
-            sa.select(E).where(E.c.id == entry_id, E.c.workspace_id == DEFAULT_WORKSPACE)
+            sa.select(E).where(E.c.id == entry_id, E.c.workspace_id == self.workspace_id)
         )
         if not row:
             raise SemulaError(404, "entry_not_found", f"No entry {entry_id}.")
@@ -943,7 +977,7 @@ class Service:
         self.db.execute(
             sa.insert(R).values(
                 entry_id=entry_id,
-                workspace_id=DEFAULT_WORKSPACE,
+                workspace_id=self.workspace_id,
                 version=version,
                 actor=actor if actor == "human" else "agent",
                 summary=summary[:120],
@@ -1077,7 +1111,7 @@ class Service:
         config: FingerprintConfig,
         conn: Connection,
     ) -> None:
-        self.lexical.upsert(entry_id, DEFAULT_WORKSPACE, project, lexical_tokens(req, config), conn)
+        self.lexical.upsert(entry_id, self.workspace_id, project, lexical_tokens(req, config), conn)
         if self.indexer:
             self.indexer.schedule(entry_id)  # vectors are made off the write path
 
@@ -1089,7 +1123,7 @@ class Service:
             return
         rows = self.db.rows(
             sa.select(E.c.id, E.c.project_id, E.c.canonical_request).where(
-                E.c.workspace_id == DEFAULT_WORKSPACE
+                E.c.workspace_id == self.workspace_id
             )
         )
         known = {r["id"] for r in rows}
@@ -1112,7 +1146,7 @@ class Service:
         approved aliases. Runtime state (hit counts, pending, the call log, the review queue)
         is left out so an unchanged project exports unchanged and diffs stay quiet."""
         project = self.get_project(slug)
-        mine = (E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == slug)
+        mine = (E.c.workspace_id == self.workspace_id, E.c.project_id == slug)
         entries = [
             {
                 "id": r["id"],
@@ -1135,7 +1169,7 @@ class Service:
             }
             for r in self.db.rows(
                 sa.select(A)
-                .where(A.c.workspace_id == DEFAULT_WORKSPACE, A.c.project_id == slug)
+                .where(A.c.workspace_id == self.workspace_id, A.c.project_id == slug)
                 .order_by(A.c.id)
             )
         ]
@@ -1177,11 +1211,11 @@ class Service:
             "aliases": {"created": 0, "updated": 0, "unchanged": 0},
         }
         with self.db.begin() as conn:
-            if not self.db.one(sa.select(P.c.id).where(*_pk(P, slug)), conn):
+            if not self.db.one(sa.select(P.c.id).where(*self._pk(P, slug)), conn):
                 settings = _bundle_settings(manifest["project"].get("settings"))
                 self.db.execute(
                     sa.insert(P).values(
-                        workspace_id=DEFAULT_WORKSPACE,
+                        workspace_id=self.workspace_id,
                         id=slug,
                         name=manifest["project"].get("name") or slug,
                         settings=settings.model_dump_json(exclude_defaults=True),
@@ -1196,7 +1230,7 @@ class Service:
                 r["id"]
                 for r in self.db.rows(
                     sa.select(E.c.id).where(
-                        E.c.workspace_id == DEFAULT_WORKSPACE, E.c.project_id == slug
+                        E.c.workspace_id == self.workspace_id, E.c.project_id == slug
                     ),
                     conn,
                 )
@@ -1212,13 +1246,13 @@ class Service:
                     )
                 self._import_alias(item, slug, config, report["aliases"], conn)
         if report["created_project"]:
-            self.events.publish({"type": "projects"})
+            self._publish({"type": "projects"})
         self._queues_changed(slug)
         self._entries_changed(slug)
         return report
 
     def _config_in(self, slug: str, conn: Connection) -> FingerprintConfig:
-        row = self.db.one(sa.select(P.c.settings).where(*_pk(P, slug)), conn)
+        row = self.db.one(sa.select(P.c.settings).where(*self._pk(P, slug)), conn)
         raw = json.loads(row["settings"]) if row else {}
         return ProjectSettings.model_validate(raw).fingerprint_config()
 
@@ -1264,7 +1298,7 @@ class Service:
             "pinned": bool(item.get("pinned", False)),
         }
         row = self.db.one(sa.select(E).where(E.c.id == item["id"]), conn)
-        if row and (row["workspace_id"], row["project_id"]) != (DEFAULT_WORKSPACE, slug):
+        if row and (row["workspace_id"], row["project_id"]) != (self.workspace_id, slug):
             raise SemulaError(
                 409,
                 "entry_in_other_project",
@@ -1276,7 +1310,7 @@ class Service:
             self.db.execute(
                 sa.insert(E).values(
                     id=item["id"],
-                    workspace_id=DEFAULT_WORKSPACE,
+                    workspace_id=self.workspace_id,
                     project_id=slug,
                     **values,
                     **extra,
@@ -1347,7 +1381,7 @@ class Service:
             "canonical_request": redact_request(req, config).to_json(),
         }
         row = self.db.one(sa.select(A).where(A.c.id == item["id"]), conn)
-        if row and (row["workspace_id"], row["project_id"]) != (DEFAULT_WORKSPACE, slug):
+        if row and (row["workspace_id"], row["project_id"]) != (self.workspace_id, slug):
             raise SemulaError(
                 409,
                 "alias_in_other_project",
@@ -1359,7 +1393,7 @@ class Service:
             self.db.execute(
                 sa.insert(A).values(
                     id=item["id"],
-                    workspace_id=DEFAULT_WORKSPACE,
+                    workspace_id=self.workspace_id,
                     project_id=slug,
                     **values,
                     **extra,
@@ -1388,7 +1422,7 @@ class Service:
             r["entry_id"]
             for r in self.db.rows(
                 sa.select(C.c.entry_id).where(
-                    C.c.workspace_id == DEFAULT_WORKSPACE,
+                    C.c.workspace_id == self.workspace_id,
                     C.c.project_id == project,
                     C.c.fingerprint == fp,
                 )
@@ -1402,7 +1436,7 @@ class Service:
             self.db.execute(
                 sa.insert(C).values(
                     id=new_ulid(),
-                    workspace_id=DEFAULT_WORKSPACE,
+                    workspace_id=self.workspace_id,
                     project_id=project,
                     entry_id=found.entry_id,
                     fingerprint=fp,
@@ -1418,7 +1452,7 @@ class Service:
     def list_candidates(
         self, project: str | None = None, status: str | None = "open"
     ) -> list[dict[str, Any]]:
-        conditions = [C.c.workspace_id == DEFAULT_WORKSPACE]
+        conditions = [C.c.workspace_id == self.workspace_id]
         if project:
             self.require_project(project)
             conditions.append(C.c.project_id == project)
@@ -1442,7 +1476,7 @@ class Service:
         row = self.db.one(
             sa.select(C, E.c.canonical_request.label("entry_request"))
             .select_from(C.join(E, E.c.id == C.c.entry_id))
-            .where(C.c.id == candidate_id, C.c.workspace_id == DEFAULT_WORKSPACE)
+            .where(C.c.id == candidate_id, C.c.workspace_id == self.workspace_id)
         )
         if not row:
             raise SemulaError(404, "candidate_not_found", f"No review candidate {candidate_id}.")
@@ -1499,7 +1533,7 @@ class Service:
         return self.db.execute(
             sa.update(C)
             .where(
-                C.c.workspace_id == DEFAULT_WORKSPACE,
+                C.c.workspace_id == self.workspace_id,
                 C.c.project_id == project,
                 C.c.fingerprint == fingerprint,
                 C.c.status == "open",
@@ -1514,7 +1548,7 @@ class Service:
         config = self.project_settings(project).fingerprint_config()
         fp = normalised_fingerprint(req, config)
         open_request = sa.select(Q.c.id).where(
-            Q.c.workspace_id == DEFAULT_WORKSPACE,
+            Q.c.workspace_id == self.workspace_id,
             Q.c.project_id == project,
             Q.c.fingerprint == fp,
             Q.c.status == "pending",
@@ -1527,7 +1561,7 @@ class Service:
             self.db.execute(
                 sa.insert(Q).values(
                     id=pid,
-                    workspace_id=DEFAULT_WORKSPACE,
+                    workspace_id=self.workspace_id,
                     project_id=project,
                     fingerprint=fp,
                     exact_fingerprint=exact_fingerprint(req, config),
@@ -1568,10 +1602,18 @@ class Service:
                     self._waiters.pop(pending_id, None)
 
     def _answer_for(self, pending_id: str) -> dict[str, Any] | None:
-        row = self.db.one(sa.select(Q.c.entry_id).where(Q.c.id == pending_id))
+        row = self.db.one(
+            sa.select(Q.c.entry_id).where(
+                Q.c.id == pending_id, Q.c.workspace_id == self.workspace_id
+            )
+        )
         if not row or not row["entry_id"]:
             return None
-        entry = self.db.one(sa.select(E.c.responses).where(E.c.id == row["entry_id"]))
+        entry = self.db.one(
+            sa.select(E.c.responses).where(
+                E.c.id == row["entry_id"], E.c.workspace_id == self.workspace_id
+            )
+        )
         return json.loads(entry["responses"])[0] if entry else None
 
     def _release(self, pending_id: str) -> None:
@@ -1584,7 +1626,7 @@ class Service:
     def list_pending(
         self, status: str | None = "pending", project: str | None = None
     ) -> list[dict[str, Any]]:
-        conditions = [Q.c.workspace_id == DEFAULT_WORKSPACE]
+        conditions = [Q.c.workspace_id == self.workspace_id]
         if status:
             conditions.append(Q.c.status == status)
         if project:
@@ -1612,14 +1654,18 @@ class Service:
                     async with asyncio.timeout(remaining):
                         while True:  # sleep until the queue of this project moves
                             event = await sub.get()
-                            if event["type"] == "queues" and project in (None, event["project"]):
+                            if (
+                                event["type"] == "queues"
+                                and self.owns(event)
+                                and project in (None, event["project"])
+                            ):
                                 break
                 except TimeoutError:
                     return await run_in_threadpool(self.list_pending, "pending", project)
 
     def get_pending(self, pending_id: str) -> dict[str, Any]:
         row = self.db.one(
-            sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == DEFAULT_WORKSPACE)
+            sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == self.workspace_id)
         )
         if not row:
             raise SemulaError(404, "pending_not_found", f"No pending request {pending_id}.")
@@ -1628,7 +1674,7 @@ class Service:
     def answer_pending(self, pending_id: str, payload: Any, *, actor: str = "agent") -> str:
         """Validate an answer, save it as an entry, and release any held calls."""
         row = self.db.one(
-            sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == DEFAULT_WORKSPACE)
+            sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == self.workspace_id)
         )
         if not row:
             raise SemulaError(404, "pending_not_found", f"No pending request {pending_id}.")
@@ -1690,7 +1736,7 @@ class Service:
             preview_text(req, self.project_settings(project).fingerprint_config()) if req else None
         )
         values = {
-            "workspace_id": DEFAULT_WORKSPACE,
+            "workspace_id": self.workspace_id,
             "project_id": project,
             "ts": now_iso(),
             "mode": self.mode_of(project),
@@ -1708,7 +1754,7 @@ class Service:
                     sa.update(E).where(E.c.id == entry_id).values(hit_count=E.c.hit_count + 1), conn
                 )
             key = conn.execute(sa.insert(L).values(**values)).inserted_primary_key
-        self.events.publish({"type": "call", "id": key[0] if key else None, **_log_view(values)})
+        self._publish({"type": "call", "id": key[0] if key else None, **_log_view(values)})
         self._logged += 1
         if self._logged % PRUNE_EVERY == 0:
             self.prune_log()
@@ -1721,7 +1767,7 @@ class Service:
         before_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """Recent calls, newest first. ``before_id`` pages backwards."""
-        conditions = [L.c.workspace_id == DEFAULT_WORKSPACE]
+        conditions = [L.c.workspace_id == self.workspace_id]
         if project:
             self.require_project(project)
             conditions.append(L.c.project_id == project)
@@ -1755,8 +1801,8 @@ class Service:
                 "window must be a number of minutes, hours or days from 1m to 24h, like 30m.",
                 param="window",
             )
-        conditions = [L.c.workspace_id == DEFAULT_WORKSPACE]
-        pending = [Q.c.workspace_id == DEFAULT_WORKSPACE, Q.c.status == "pending"]
+        conditions = [L.c.workspace_id == self.workspace_id]
+        pending = [Q.c.workspace_id == self.workspace_id, Q.c.status == "pending"]
         if project:
             self.require_project(project)
             conditions.append(L.c.project_id == project)
@@ -1808,7 +1854,7 @@ class Service:
     def prune_log(self) -> int:
         """Drop calls older than the retention window, then the oldest beyond the row cap."""
         cutoff = iso(datetime.now(UTC) - timedelta(days=self.settings.log_retention_days))
-        mine = L.c.workspace_id == DEFAULT_WORKSPACE
+        mine = L.c.workspace_id == self.workspace_id
         with self.db.begin() as conn:
             deleted = self.db.execute(sa.delete(L).where(mine, L.c.ts < cutoff), conn)
             edge = self.db.one(
@@ -1911,10 +1957,6 @@ def _parse_bundle(bundle: Any) -> tuple[dict[str, Any], list[dict[str, Any]], li
             seen.add(item["id"])
         lists.append(items)
     return {"project": project}, lists[0], lists[1]
-
-
-def _pk(table: sa.Table, slug: str) -> tuple[Any, Any]:
-    return (table.c.workspace_id == DEFAULT_WORKSPACE, table.c.id == slug)
 
 
 def _entry_for_serving(*extra: Any) -> sa.Select[Any]:

@@ -171,10 +171,10 @@ async def test_a_change_is_announced_with_its_project(replay: httpx.AsyncClient)
     with service.events.subscribe() as sub:
         await set_project_mode(replay, "p", "record")
         event = await asyncio.wait_for(sub.get(), 2)
-        assert event == {"type": "mode", "project": "p", "mode": "record"}
+        assert event == {"type": "mode", "project": "p", "mode": "record", "workspace": "default"}
         await replay.put("/api/v1/mode", json={"mode": "record"})
         event = await asyncio.wait_for(sub.get(), 2)
-        assert event == {"type": "mode", "project": None, "mode": "record"}
+        assert event == {"type": "mode", "project": None, "mode": "record", "workspace": "default"}
 
 
 async def test_the_listing_and_health_show_modes(replay: httpx.AsyncClient) -> None:
