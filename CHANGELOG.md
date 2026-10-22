@@ -10,6 +10,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Postgres row-level security** (migration 0011): tenant tables carry a policy on
+  `workspace_id`, and every transaction states which workspace it acts for, so a query that forgot
+  its filter sees nothing of another workspace's. Owners and superusers bypass it; see the
+  configuration reference.
 - **Composite keys** (migration 0010): an entry, pending request, review candidate or alias is
   keyed by its workspace and id, and its children point at their entry inside the same workspace.
   The same id can now live in two workspaces, so importing one bundle into two workspaces works

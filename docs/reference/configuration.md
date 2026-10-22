@@ -69,6 +69,9 @@ SEMULA_DATABASE_URL=postgresql://user:pass@host:5432/semula uv run semula serve
 
 In the image, build with `--build-arg UV_EXTRAS="--extra postgres"`.
 
+!!! note "Row-level security"
+    On Postgres every tenant table has a row-level-security policy that compares its `workspace_id` with the workspace the connection is acting for, as a second line of defence behind the application's own filters. The role that owns the tables and any superuser bypass policies, which is what you want for migrations and a single-user setup. When several workspaces share a database, run semula as a role that is neither, and migrate with the owner first.
+
 ## Semantic matching
 
 Paraphrases share few words, so the word tiers miss them. With the `embeddings` extra installed and `SEMULA_EMBEDDINGS=on`, semula also compares meaning. The first start downloads a 65 MB model into the model directory; later starts need no network. `semula embeddings fetch` downloads it ahead of time, and `semula embeddings status` shows progress. Paraphrases go to the review queue with their score and are never served unless you set `embedding_serve_threshold`.

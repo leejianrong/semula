@@ -38,6 +38,8 @@ class LexicalHit(NamedTuple):
 
 
 class LexicalIndex(Protocol):
+    def bound(self, db: Database) -> LexicalIndex: ...
+
     def upsert(
         self,
         entry_id: str,
@@ -79,6 +81,10 @@ def similarity(a: Sequence[str], b: Sequence[str]) -> float:
 class Fts5Index:
     def __init__(self, db: Database) -> None:
         self.db = db
+
+    def bound(self, db: Database) -> Fts5Index:
+        """The same index reading through ``db`` (a handle acting for another workspace)."""
+        return Fts5Index(db)
 
     def upsert(
         self,
@@ -186,6 +192,10 @@ class ScanIndex:
 
     def __init__(self, db: Database) -> None:
         self.db = db
+
+    def bound(self, db: Database) -> ScanIndex:
+        """The same index reading through ``db`` (a handle acting for another workspace)."""
+        return ScanIndex(db)
 
     def upsert(
         self,
