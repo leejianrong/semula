@@ -10,6 +10,9 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Review screen**: the near misses of a project with their score and tier, a side-by-side
+  comparison of the new prompt against the recorded one (changed words marked), the recorded
+  answer with a reminder to check it fits, and Approve and Reject. The nav shows how many wait.
 - **New entry** on the Entries screen: write a prompt (with an optional system prompt and
   tools) and its answer, optionally pin it, and see the reason beside the field when it is
   rejected. An existing prompt is never overwritten from the form.

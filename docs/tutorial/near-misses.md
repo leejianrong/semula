@@ -60,6 +60,8 @@ docker exec semula semula review approve 01M5HH2EBM7AV0TKB5H9MCBNDC
 approved candidate 01M5HH2EBM7AV0TKB5H9MCBNDC
 ```
 
+The dashboard has a **Review** screen for the same job: pick a near miss, read the two prompts side by side with the changed words marked, look at the recorded answer, then approve or reject.
+
 From now on that prompt is served by the `alias` tier, edits to the entry included. If the answer is wrong for it, `review reject <id>` and that pairing never comes back.
 
 !!! note "The parked call still needs an answer"

@@ -165,7 +165,7 @@ def test_the_show_menu_filters_the_table(server: str, tab: Tab) -> None:
     mark = tab.mark()
     httpx.post(server + "/v1/chat/completions", json=ask("a miss while filtered"))
     time.sleep(0.6)
-    assert "a miss while filtered" not in tab.since(mark)
+    assert "a miss while filtered" not in tab.changes_to(table, mark)
 
 
 def test_pausing_stops_the_table_and_resuming_catches_up(server: str, tab: Tab) -> None:
@@ -175,9 +175,19 @@ def test_pausing_stops_the_table_and_resuming_catches_up(server: str, tab: Tab) 
     mark = tab.mark()
     httpx.post(server + "/v1/chat/completions", json=ask("while paused"))
     time.sleep(0.8)
-    assert "while paused" not in tab.since(mark)
+    calls = tab.find("table", label="Calls")
+    assert "while paused" not in tab.changes_to(calls, mark)
     tab.send(live, "change", {"value": True})
-    tab.wait_for(lambda m: "while paused" in str(m), 3, mark)
+    tab.wait_for(
+        lambda m: (
+            m["type"] == "patch"
+            and any(
+                c.get("target") == calls["id"] and "while paused" in str(c) for c in m["changes"]
+            )
+        ),
+        3,
+        mark,
+    )
 
 
 def test_choosing_another_project_moves_the_tab_there(server: str, tab: Tab) -> None:

@@ -336,3 +336,29 @@ def new_entry_request(prompt: str, system: str, tools_text: str) -> dict[str, An
             raise ValueError("The tools must be a JSON list of tool objects.")
         request["tools"] = tools
     return request
+
+
+def request_text(request: dict[str, Any]) -> str:
+    """A request as plain text for a side-by-side comparison: one block per message, then the
+    names of the tools it offers."""
+    blocks = []
+    for message in request.get("messages", []):
+        content = message.get("content")
+        text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+        blocks.append(f"{message.get('role', '')}:\n{text}")
+    names = [(t.get("function") or t).get("name", "?") for t in request.get("tools") or []]
+    if names:
+        blocks.append("tools: " + ", ".join(names))
+    return "\n\n".join(blocks)
+
+
+def candidate_row(candidate: dict[str, Any]) -> dict[str, Any]:
+    """One near miss as the review table shows it, from a ``list_candidates`` item."""
+    score = candidate.get("score")
+    return {
+        "id": candidate["id"],
+        "score": f"{score:.2f}" if score is not None else "",
+        "tier": TIERS.get(candidate.get("tier") or "", candidate.get("tier") or ""),
+        "prompt": short((candidate.get("last_message") or "").replace("\n", " "), 48),
+        "entry": short((candidate.get("entry_last_message") or "").replace("\n", " "), 48),
+    }
