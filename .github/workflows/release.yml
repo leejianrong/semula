@@ -135,11 +135,12 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
           for t in linux-amd64 linux-arm64 macos-arm64 macos-amd64; do
-            [ -x "binaries/semula-$VERSION-$t" ] || { echo "::error::missing binary for $t"; exit 1; }
+            [ -s "binaries/semula-$VERSION-$t" ] || { echo "::error::missing binary for $t"; exit 1; }
             [ -s "binaries/semula-$VERSION-$t.sha256" ] || { echo "::error::missing checksum for $t"; exit 1; }
           done
           (cd binaries && cat semula-*.sha256 > SHA256SUMS && sha256sum -c SHA256SUMS)
           rm binaries/*.sha256
+          chmod +x binaries/semula-*
           ls -l binaries
       - name: Create the GitHub Release from the CHANGELOG, with the binaries
         env:
