@@ -1585,6 +1585,30 @@ class Service:
         rows = self.db.rows(sa.select(Q).where(*conditions).order_by(Q.c.id))
         return [_pending_view(r, full=False) for r in rows]
 
+    async def wait_for_pending(
+        self, project: str | None = None, timeout: float = 30.0
+    ) -> list[dict[str, Any]]:
+        """The parked requests, waiting up to ``timeout`` seconds for one if none is parked.
+
+        Subscribes before the first look, so a call parked in between is not missed. Every
+        database read runs in a worker thread and none is open while waiting.
+        """
+        deadline = time.monotonic() + timeout
+        with self.events.subscribe() as sub:
+            while True:
+                found = await run_in_threadpool(self.list_pending, "pending", project)
+                remaining = deadline - time.monotonic()
+                if found or remaining <= 0:
+                    return found
+                try:
+                    async with asyncio.timeout(remaining):
+                        while True:  # sleep until the queue of this project moves
+                            event = await sub.get()
+                            if event["type"] == "queues" and project in (None, event["project"]):
+                                break
+                except TimeoutError:
+                    return await run_in_threadpool(self.list_pending, "pending", project)
+
     def get_pending(self, pending_id: str) -> dict[str, Any]:
         row = self.db.one(
             sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == DEFAULT_WORKSPACE)

@@ -42,7 +42,7 @@ def _call(args: argparse.Namespace, method: str, path: str, **kwargs: Any) -> ht
     if getattr(args, "as_human", False):
         headers["X-Semula-Actor"] = "human"
     return httpx.request(
-        method, args.url.rstrip("/") + path, timeout=30.0, headers=headers, **kwargs
+        method, args.url.rstrip("/") + path, headers=headers, **{"timeout": 30.0, **kwargs}
     )
 
 
@@ -122,7 +122,9 @@ def _pending(args: argparse.Namespace) -> int:
     params = {"status": "all" if args.all else "pending"}
     if args.project:
         params["project"] = args.project
-    resp = _call(args, "GET", "/api/v1/pending", params=params)
+    if args.wait is not None:
+        params["wait"] = str(min(args.wait, 60))
+    resp = _call(args, "GET", "/api/v1/pending", params=params, timeout=(args.wait or 0) + 10)
     if resp.status_code != 200:
         return _fail(args, resp)
     items = resp.json()["pending"]
@@ -578,6 +580,13 @@ def build_parser() -> argparse.ArgumentParser:
     pending = add(sub, "pending", _pending, "List parked requests waiting for an answer")
     pending.add_argument("--all", action="store_true", help="include answered requests")
     pending.add_argument("--project", default=None)
+    pending.add_argument(
+        "--wait",
+        type=float,
+        metavar="SECONDS",
+        default=None,
+        help="if nothing waits, hold up to this long (max 60) for a call to be parked",
+    )
 
     add(sub, "show", _show, "Show one pending request in full").add_argument("id")
 

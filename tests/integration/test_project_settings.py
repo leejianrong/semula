@@ -42,9 +42,9 @@ async def test_a_setting_changes_matching_and_defaults_stay_unchanged(
     assert (await patch(record, "default", {"include_params": ["temperature"]})).status_code == 200
     # recorded temperature 0.1 now differs from 0.9: the call parks instead of hitting
     call = asyncio.create_task(record.post("/v1/chat/completions", json=hot))
-    await asyncio.sleep(0.05)
+    parked = await record.get("/api/v1/pending", params={"wait": 10})  # waits for the park
     assert not call.done()
-    pid = (await record.get("/api/v1/pending")).json()["pending"][0]["id"]
+    pid = parked.json()["pending"][0]["id"]
     await record.post(f"/api/v1/pending/{pid}/answer", json={"content": "hot"})
     assert (await call).json()["choices"][0]["message"]["content"] == "hot"
     # the original temperature still hits its own entry (entries were re-keyed)

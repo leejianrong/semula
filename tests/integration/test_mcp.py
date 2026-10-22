@@ -16,7 +16,8 @@ pytestmark = pytest.mark.integration
 
 EXPECTED_TOOLS = {
     "get_status", "set_mode", "list_projects", "create_project", "get_project_settings",
-    "update_project_settings", "list_pending", "get_pending", "answer_pending", "list_entries",
+    "update_project_settings", "list_pending", "wait_for_pending", "get_pending", "answer_pending",
+    "list_entries",
     "get_entry", "upsert_entry", "update_entry", "delete_entry", "test_match",
     "list_calls", "log_stats", "entry_history", "list_candidates", "get_candidate",
     "approve_candidate", "reject_candidate",
