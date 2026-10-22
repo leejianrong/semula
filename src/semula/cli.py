@@ -22,6 +22,8 @@ import sys
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from . import __version__
+
 if TYPE_CHECKING:  # httpx is only imported by commands that talk to a server: `serve` starts faster
     import httpx
 
@@ -550,6 +552,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(__doc__ or "").split("Exit codes", 1)[-1].strip(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"semula {__version__}")
     parser.add_argument(
         "--url", default=os.environ.get("SEMULA_URL", DEFAULT_URL), help="server URL (SEMULA_URL)"
     )
