@@ -197,3 +197,75 @@ def answer_from_text(text: str) -> Any:
                 f"That looks like JSON but is not valid: {exc.msg} (line {exc.lineno})."
             ) from exc
     return {"content": text}
+
+
+# The Entries screen: the filter menu (label -> list_entries arguments) and the sort menu.
+ENTRY_FILTERS: dict[str, dict[str, bool]] = {
+    "All": {},
+    "Pinned": {"pinned": True},
+    "Never hit": {"never_hit": True},
+    "Has tool calls": {"has_tools": True},
+    "Has aliases": {"has_alias": True},
+}
+ENTRY_SORTS: dict[str, tuple[str | None, str | None]] = {
+    "Oldest first": (None, None),
+    "Most hits": ("hits", "desc"),
+    "Changed lately": ("updated", "desc"),
+    "Newest first": ("created", "desc"),
+}
+ENTRY_PAGE = 50
+
+
+def entry_filters(label: str) -> dict[str, bool]:
+    """The ``list_entries`` arguments a filter-menu label stands for."""
+    found = dict(ENTRY_FILTERS.get(label, {}))
+    if "has_tools" in found:  # the service calls it tool_calls
+        found["tool_calls"] = found.pop("has_tools")
+    return found
+
+
+def entry_flags(entry: dict[str, Any]) -> str:
+    flags = []
+    if entry.get("pinned"):
+        flags.append("Pinned")
+    if entry.get("has_tools"):
+        flags.append("Tools")
+    aliases = entry.get("alias_count") or 0
+    if aliases:
+        flags.append(f"{aliases} alias" if aliases == 1 else f"{aliases} aliases")
+    return " · ".join(flags)
+
+
+def entry_row(entry: dict[str, Any]) -> dict[str, Any]:
+    """One entry as the Entries table shows it, from a ``list_entries`` item."""
+    answers = entry.get("responses")
+    answers = answers if isinstance(answers, int) else len(answers or [])
+    selection = entry.get("selection") or "first"
+    return {
+        "id": entry["id"],
+        "prompt": short((entry.get("last_message") or "").replace("\n", " ")),
+        "hits": entry.get("hit_count", 0),
+        "answers": str(answers) if answers <= 1 else f"{answers}, {selection}",
+        "flags": entry_flags(entry),
+        "version": f"v{entry['version']}",
+        "updated": entry["updated_at"][:16].replace("T", " "),
+    }
+
+
+def page_text(total: int, offset: int, shown: int) -> str:
+    """``1 to 50 of 123``, or ``No entries``."""
+    if not total:
+        return "No entries"
+    return f"{offset + 1} to {offset + shown} of {total}"
+
+
+def revision_row(revision: dict[str, Any], tz: tzinfo | None = None) -> dict[str, Any]:
+    """One line of an entry's history, from an ``entry_history`` revision."""
+    forced = " (forced past a pin)" if revision.get("forced") else ""
+    return {
+        "id": f"h{revision['version']}",
+        "version": f"v{revision['version']}",
+        "when": clock(parse_ts(revision["ts"]), tz) if revision.get("ts") else "",
+        "actor": revision["actor"],
+        "summary": revision["summary"] + forced,
+    }

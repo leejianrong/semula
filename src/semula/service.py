@@ -340,6 +340,10 @@ class Service:
         again; the event carries no numbers, so it cannot go stale."""
         self.events.publish({"type": "queues", "project": project})
 
+    def _entries_changed(self, project: str) -> None:
+        """Tell live views that an entry of ``project`` was added, changed or removed."""
+        self.events.publish({"type": "entries", "project": project})
+
     def queue_counts(self, project: str | None = None) -> dict[str, int]:
         """How many requests are parked and how many near-matches wait for review, for one
         project or all of them."""
@@ -784,6 +788,7 @@ class Service:
             self._revise(conn, entry_id, 1, actor, "created", [stored], "first", False)
         if superseded:
             self._queues_changed(project)
+        self._entries_changed(project)
         return self.get_entry(entry_id), True
 
     def get_entry(self, entry_id: str) -> dict[str, Any]:
@@ -917,6 +922,7 @@ class Service:
             )
             if forced:
                 self._log_forced(row, "forced_write", conn)
+        self._entries_changed(row["project_id"])
         return self.get_entry(entry_id)
 
     # --- history ------------------------------------------------------------------
@@ -1000,6 +1006,7 @@ class Service:
             if forced:
                 self._log_forced(row, "forced_delete", conn)
         self._queues_changed(row["project_id"])  # candidates of the entry went with it
+        self._entries_changed(row["project_id"])
 
     def _log_forced(self, row: Any, outcome: str, conn: Connection) -> None:
         self.db.execute(
@@ -1207,6 +1214,7 @@ class Service:
         if report["created_project"]:
             self.events.publish({"type": "projects"})
         self._queues_changed(slug)
+        self._entries_changed(slug)
         return report
 
     def _config_in(self, slug: str, conn: Connection) -> FingerprintConfig:
@@ -1657,6 +1665,7 @@ class Service:
             self._revise(conn, entry_id, 1, actor, "recorded", [stored], "first", False)
         self._release(pending_id)
         self._queues_changed(row["project_id"])
+        self._entries_changed(row["project_id"])
         return entry_id
 
     # --- call log -----------------------------------------------------------------

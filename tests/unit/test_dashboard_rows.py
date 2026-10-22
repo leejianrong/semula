@@ -153,3 +153,31 @@ def test_typed_answers_are_text_unless_they_start_like_json() -> None:
     for bad in ("", "   ", '{"content": '):
         with pytest.raises(ValueError):
             answer_from_text(bad)
+
+
+def test_entries_become_rows_with_flags_and_a_page_line() -> None:
+    from semula.dashboard.rows import entry_filters, entry_row, page_text
+
+    entry = {"id": "E1", "version": 3, "pinned": True, "hit_count": 12, "responses": 3,
+             "selection": "sequence", "last_message": "Classify\nthis", "alias_count": 2,
+             "has_tools": True, "updated_at": "2026-10-22T10:03:34.075Z"}  # fmt: skip
+    row = entry_row(entry)
+    assert row == {"id": "E1", "prompt": "Classify this", "hits": 12, "answers": "3, sequence",
+                   "flags": "Pinned · Tools · 2 aliases", "version": "v3",
+                   "updated": "2026-10-22 10:03"}  # fmt: skip
+    assert entry_row({**entry, "responses": 1, "alias_count": 0, "pinned": False,
+                      "has_tools": False})["flags"] == ""  # fmt: skip
+    assert entry_filters("Has tool calls") == {"tool_calls": True}
+    assert entry_filters("Never hit") == {"never_hit": True} and entry_filters("All") == {}
+    assert page_text(123, 50, 50) == "51 to 100 of 123" and page_text(0, 0, 0) == "No entries"
+
+
+def test_a_revision_becomes_a_history_line() -> None:
+    from semula.dashboard.rows import revision_row
+
+    rev = {"version": 2, "ts": "2026-10-22T10:03:31.081Z", "actor": "agent",
+           "summary": "answer replaced", "forced": True}  # fmt: skip
+    assert revision_row(rev, UTC) == {
+        "id": "h2", "version": "v2", "when": "10:03:31.081", "actor": "agent",
+        "summary": "answer replaced (forced past a pin)",
+    }  # fmt: skip
