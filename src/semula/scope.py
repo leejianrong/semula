@@ -7,6 +7,7 @@ Locally there is one workspace, ``default``, and nothing else changes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -47,6 +48,9 @@ class Principal:
     project: str | None = None  # a token's project, or None for all of them
     role: str | None = None  # a person's role: viewer | editor | admin
     name: str = ""
+    # A person's role is looked up again whenever it is checked, so a role revoked while their
+    # dashboard is open fails closed on the next click (ADR-0035: check again at dispatch).
+    live_role: Callable[[], str | None] | None = None
 
     @property
     def actor(self) -> str | None:

@@ -7,9 +7,12 @@ import contextlib
 import logging
 import threading
 from typing import Any
+from urllib.parse import urlencode
 
 from starlette.types import Receive, Scope, Send
 
+from ..api_auth import Cookies
+from ..config import Settings
 from ..schema import DEFAULT_PROJECT
 from ..service import Service
 
@@ -37,11 +40,11 @@ async def _plain(send: Send, status: int, message: str) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
-async def _redirect(send: Send, location: str) -> None:
+async def _redirect(send: Send, location: str, status: int = 307) -> None:
     await send(
         {
             "type": "http.response.start",
-            "status": 307,
+            "status": status,
             "headers": [(b"location", location.encode()), (b"content-length", b"0")],
         }
     )
@@ -73,8 +76,11 @@ class LazyDashboard:
     open tab follows the log; ``stop`` ends it with the server.
     """
 
-    def __init__(self, service: Service) -> None:
+    def __init__(self, service: Service, settings: Settings | None = None) -> None:
         self._service = service
+        self._settings = settings
+        self._hosted = settings is not None and settings.hosted
+        self._cookie = Cookies(settings.public_url).session if settings else ""
         self._app: Any = None
         self._bridge_task: asyncio.Task[None] | None = None
         self._built = asyncio.Event()
@@ -85,7 +91,7 @@ class LazyDashboard:
             if self._app is None:
                 from .app import build_dashboard
 
-                self._app = build_dashboard(self._service)
+                self._app = build_dashboard(self._service, self._settings)
         return self._app
 
     def _landing_project(self) -> str:
@@ -121,9 +127,33 @@ class LazyDashboard:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._bridge_task
 
+    async def _signed_in(self, scope: Scope) -> bool:
+        """Does this page request carry a live sign-in? (The app's own ``/api`` calls answer 401
+        themselves; a page load is sent to the sign-in page instead.)"""
+        cookies = {
+            k.strip(): v
+            for part in dict(scope["headers"]).get(b"cookie", b"").decode().split(";")
+            if "=" in part
+            for k, v in [part.split("=", 1)]
+        }
+        found = await asyncio.to_thread(
+            self._service.authenticate_session, cookies.get(self._cookie, "")
+        )
+        return found is not None
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            self._hosted
+            and scope["type"] == "http"
+            and not scope["path"].startswith(f"{scope.get('root_path', '')}/api/")
+            and not await self._signed_in(scope)
+        ):
+            await _redirect(send, "/auth/login?" + urlencode({"next": scope["path"]}), 302)
+            return
         if scope["type"] == "http" and scope["path"].rstrip("/") == scope.get("root_path", ""):
-            project = await asyncio.to_thread(self._landing_project)
+            project = (
+                DEFAULT_PROJECT if self._hosted else await asyncio.to_thread(self._landing_project)
+            )
             await _redirect(send, f"{scope.get('root_path', '')}/projects/{project}/log")
             return
         app = await self._ensure()

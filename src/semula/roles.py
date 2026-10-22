@@ -59,7 +59,8 @@ UNRESTRICTED = frozenset(
         "prune_log", "prune_audit", "wait_for_answer", "sync_index", "sync_embeddings",
         "start_cluster", "stop_cluster", "create_workspace", "purge_workspaces",
         "authenticate_token", "sign_in_identity", "create_session", "authenticate_session",
-        "end_session", "end_sessions_of", "workspaces_of", "membership_of", "principal_for_session",
+        "end_session", "end_session_id", "end_sessions_of", "workspaces_of", "membership_of",
+        "principal_for_session",
         "switch_workspace", "invitation_preview", "accept_invitation",
     }
 )  # fmt: skip

@@ -24,6 +24,8 @@ def running_server(data_dir: Path, **settings: object) -> Iterator[str]:
     port = sock.getsockname()[1]
     sock.close()
     settings.setdefault("database_url", fresh_database_url(data_dir))
+    if settings.get("hosted"):  # cookies and redirect URIs are made from the address people use
+        settings.setdefault("public_url", f"http://127.0.0.1:{port}")
     app = create_app(Settings(data_dir=data_dir, **settings))  # type: ignore[arg-type]
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)

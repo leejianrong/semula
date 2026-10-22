@@ -235,11 +235,12 @@ class Service:
         who = self.principal
         if who is None or who.kind != "person":
             return
-        if ROLE_LEVEL.get(who.role or "", 0) < ROLE_LEVEL[role]:
+        current = who.live_role() if who.live_role else who.role
+        if ROLE_LEVEL.get(current or "", 0) < ROLE_LEVEL[role]:
             raise SemulaError(
                 403,
                 "insufficient_role",
-                f"This needs the {role} role" + (f"; you are a {who.role}." if who.role else "."),
+                f"This needs the {role} role" + (f"; you are a {current}." if current else "."),
                 err_type="authentication_error",
             )
 
@@ -1086,11 +1087,16 @@ class Service:
             "name": row["name"],
             "active_workspace": row["active_workspace"],
             "csrf": row["csrf"],
+            "session_id": sid,
         }
 
     def end_session(self, secret: str) -> None:
         if secret:
-            self.db.for_workspace(None).execute(sa.delete(SE).where(SE.c.id == tok.digest(secret)))
+            self.end_session_id(tok.digest(secret))
+
+    def end_session_id(self, session_id: str) -> None:
+        """End a session by the id ``authenticate_session`` reports (never the cookie secret)."""
+        self.db.for_workspace(None).execute(sa.delete(SE).where(SE.c.id == session_id))
 
     def end_sessions_of(self, person_id: str) -> int:
         """End every sign-in a person has, on every device."""
