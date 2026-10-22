@@ -8,12 +8,15 @@ from typing import TYPE_CHECKING, Any
 
 import indah
 
+from ...errors import SemulaError
 from ..rows import (
     ENTRY_FILTERS,
     ENTRY_PAGE,
     ENTRY_SORTS,
+    answer_from_text,
     entry_filters,
     entry_row,
+    new_entry_request,
     page_text,
 )
 from ..state import blocking, cancel
@@ -96,6 +99,92 @@ def entries_page(tab: Tab) -> indah.Component:
         if offset.peek() + ENTRY_PAGE < total.peek():
             step(ENTRY_PAGE)
 
+    # The New entry form, in a dialog.
+    creating: indah.Signal[bool] = indah.Signal(False)
+    prompt: indah.Signal[str] = indah.Signal("")
+    system: indah.Signal[str] = indah.Signal("")
+    tools: indah.Signal[str] = indah.Signal("")
+    answer: indah.Signal[str] = indah.Signal("")
+    pin: indah.Signal[bool] = indah.Signal(False)
+    problem: indah.Signal[str] = indah.Signal("")
+
+    def start() -> None:
+        problem.set("")
+        creating.set(True)
+
+    def cancel_form() -> None:
+        creating.set(False)
+
+    async def create() -> None:
+        try:
+            request = new_entry_request(prompt.peek(), system.peek(), tools.peek())
+            reply = answer_from_text(answer.peek())
+        except ValueError as exc:
+            problem.set(str(exc))
+            return
+        project = tab.project.peek()
+        try:
+            made, _ = await blocking(
+                partial(tab.service.upsert_entry, project, request, reply, actor="human")
+            )
+            if pin.peek():
+                made = await blocking(
+                    partial(
+                        tab.service.update_entry,
+                        made["id"],
+                        made["version"],
+                        {"pinned": True},
+                        actor="human",
+                    )
+                )
+        except SemulaError as exc:
+            if exc.code == "entry_exists":
+                existing = (exc.extra.get("current") or {}).get("id", "")
+                problem.set(
+                    f"An entry for this prompt already exists ({existing}). Open it from the "
+                    "list to change its answer."
+                )
+            else:
+                where = f" (at {exc.param})" if exc.param else ""
+                problem.set(f"{exc.code}: {exc.message}{where}")
+            return
+        for field in (prompt, system, tools, answer):
+            field.set("")
+        pin.set(False)
+        problem.set("")
+        creating.set(False)
+        ctx.navigate(f"/projects/{project}/entries/{made['id']}")
+
+    form = indah.Modal(
+        open=creating,
+        title="New entry",
+        size="lg",
+        on_close=cancel_form,
+        children=[
+            indah.CodeEditor(
+                prompt, language="text", lint=False, height="6rem", label="Prompt",
+                placeholder="What the app will send as the user message",
+            ),
+            indah.TextInput(system, label="System prompt (optional)"),
+            indah.CodeEditor(
+                tools, language="json", lint=False, height="6rem", label="Tools (optional)"
+            ),
+            indah.CodeEditor(
+                answer, language="text", lint=False, height="8rem", label="New answer",
+                placeholder="What the real model would say. Start with { for a tool call or stream",
+            ),
+            indah.Switch(pin, label="Pin it, so agents cannot overwrite it"),
+            indah.Text(lambda: problem.value, size="body"),  # plain: codes have underscores
+            indah.Row(
+                children=[
+                    indah.Button("Create entry", create),
+                    indah.Button("Cancel", cancel_form, variant="outlined"),
+                ],
+                align="center",
+            ),
+        ],
+    )  # fmt: skip
+
     table = indah.Table(
         rows=shown,
         key="id",
@@ -114,7 +203,14 @@ def entries_page(tab: Tab) -> indah.Component:
     )
     return indah.Column(
         children=[
-            indah.Text("# Entries", markdown=True),
+            indah.Row(
+                children=[
+                    indah.Text("# Entries", markdown=True),
+                    indah.Button("New entry", start),
+                ],
+                align="center",
+            ),
+            form,
             indah.Row(
                 children=[
                     indah.TextInput(query, label="Search", placeholder="Find a prompt"),

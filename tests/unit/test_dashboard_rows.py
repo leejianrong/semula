@@ -210,3 +210,15 @@ def test_stored_answers_open_in_the_editor_and_survive_a_round_trip() -> None:
     for bad in ("not json", "{}", "[]"):
         with pytest.raises(ValueError):
             answers_from_editor(bad, multiple=True)
+
+
+def test_the_new_entry_form_becomes_a_chat_request() -> None:
+    from semula.dashboard.rows import new_entry_request
+
+    assert new_entry_request("Hi", "", "") == {"messages": [{"role": "user", "content": "Hi"}]}
+    full = new_entry_request("Hi", "Be brief", '[{"type": "function"}]')
+    assert full["messages"][0] == {"role": "system", "content": "Be brief"}
+    assert full["tools"] == [{"type": "function"}]
+    for prompt, tools in (("  ", ""), ("Hi", "{"), ("Hi", '{"a": 1}'), ("Hi", "[1]")):
+        with pytest.raises(ValueError):
+            new_entry_request(prompt, "", tools)

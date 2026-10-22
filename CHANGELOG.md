@@ -10,6 +10,9 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **New entry** on the Entries screen: write a prompt (with an optional system prompt and
+  tools) and its answer, optionally pin it, and see the reason beside the field when it is
+  rejected. An existing prompt is never overwritten from the form.
 - **Entries screen** in the dashboard: every recorded entry of a project with search, a filter
   menu (pinned, never hit, tool calls, aliases), sort, hit counts and flags, kept up to date as
   entries are recorded. Selecting one opens it at its own address with its request, answers and
