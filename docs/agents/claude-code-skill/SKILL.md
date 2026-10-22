@@ -7,7 +7,7 @@ description: Answer parked LLM calls recorded by semula, the record-replay fake 
 
 semula parks any LLM call it has no recorded answer for. You answer it as the real model would; semula validates and saves it, the app's call completes, and later identical calls replay for free.
 
-Install: copy this folder to `.claude/skills/semula-record/` and connect the MCP server (`claude mcp add --transport http semula http://127.0.0.1:8080/mcp/`, add `--header "Authorization: Bearer $SEMULA_API_KEY"` if the server has a key). With no MCP, use the `semula` CLI with `--json`.
+Install: copy this folder to `.claude/skills/semula-record/` and connect the MCP server (`claude mcp add --transport http semula http://127.0.0.1:8080/mcp/`, add `--header "Authorization: Bearer $SEMULA_API_KEY"` if the server has a key). Codex: `codex mcp add semula --url http://127.0.0.1:8080/mcp/` (see the playbook for headless approval). With no MCP, use the `semula` CLI with `--json`.
 
 ## Loop
 

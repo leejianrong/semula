@@ -166,6 +166,8 @@ def build_mcp(service: Service) -> FastMCP:
               {"function": {"name": "...", "arguments": {...}}}]}}  request offered, arguments must
                                                                 satisfy that tool's JSON schema
           {"chunks": ["Hel", "lo"]}                             a stream with these chunk boundaries
+        'answer' must be an object or list: a bare string is rejected, so wrap plain text as
+        {"content": "..."}.
         Match the format the app's prompt demands (if it asks for JSON, reply with valid JSON).
         Use templates for values that change per call: {{now}}, {{uuid}}, {{request.model}}; never
         paste a real timestamp or id. On a 422 error the call stays held: fix the field named in
