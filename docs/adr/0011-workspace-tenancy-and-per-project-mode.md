@@ -1,6 +1,6 @@
 # ADR-0011: Workspace tenancy: isolation, quotas, deletion, and mode per project
 
-- Status: Proposed
+- Status: Accepted (2026-10-22, owner)
 - Date: 2026-10-21
 - Deciders: Jian (owner)
 - Builds on: [ADR-0004](0004-sqlite-with-workspace-id-from-day-one.md), [ADR-0009](0009-sqlalchemy-core-alembic-postgres-path.md), [ADR-0010](0010-hosted-auth-and-tokens.md)
@@ -103,4 +103,4 @@ None between workspaces in the first hosted build (deferred in QUESTIONS). Expor
 - The "every table carries `workspace_id`" test gains an explicit allow-list (`workspace`, `user`, `identity`, `session`).
 - A project's mode survives restarts and replicas; locally the old `PUT /mode` still works as a default.
 - Quota numbers are starting points to tune against real use.
-- Build slices (not filed yet): `Scope` through the service with the cross-tenant matrix; composite-key and RLS migration; mode as a project setting (can ship locally first, no hosted dependency); per-workspace retention and counters; workspace deletion and purge; `LISTEN/NOTIFY` bus.
+- Build slices (filed on the board, epic SEM-E11): `Scope` through the service with the cross-tenant matrix; composite-key and RLS migration; mode as a project setting (can ship locally first, no hosted dependency); per-workspace retention and counters; workspace deletion and purge; `LISTEN/NOTIFY` bus.

@@ -1,6 +1,6 @@
 # ADR-0010: Hosted identity: OIDC for people, scoped API tokens for programs
 
-- Status: Proposed
+- Status: Accepted (2026-10-22, owner)
 - Date: 2026-10-21
 - Deciders: Jian (owner)
 - Builds on: [ADR-0004](0004-sqlite-with-workspace-id-from-day-one.md), [ADR-0005](0005-one-service-layer-optimistic-concurrency.md), [ADR-0006](0006-headless-first-dashboard-on-indah.md)
@@ -115,4 +115,4 @@ How well indah answers H1 to H3 and H6 decides the SEM-55 spike. Everything on t
 - Local mode is unchanged: no credentials, workspace `default`, the optional shared key, the actor header.
 - Revocation can lag 30 s on other replicas. Accepted and stated.
 - `record` is intentionally less than what a local agent can do today. Local mode keeps its current power; the PLAYBOOK says which calls need `admin` hosted.
-- Build slices (not filed yet): principal and middleware with tokens and scopes; people, OIDC and sessions; members, roles and invitations; audit; the MCP project binding; quotas (ADR-0011).
+- Build slices (filed on the board, epic SEM-E11): principal and middleware with tokens and scopes; people, OIDC and sessions; members, roles and invitations; audit; the MCP project binding; quotas (ADR-0011).
