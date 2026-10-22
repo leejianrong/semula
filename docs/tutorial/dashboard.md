@@ -42,6 +42,10 @@ The same page edits the entry. Change the text in **Edit answer** and press **Sa
 
 The **Review** screen lists near misses (the badge in the sidebar counts them). Select one to see the new prompt next to the recorded one, with the changed words marked, and the recorded answer underneath. **Approve** serves that prompt from the entry from now on; **Reject** keeps the pairing from ever coming back.
 
+## Playground
+
+The **Playground** asks what semula would do with a prompt in the project you are looking at, without sending it: the verdict of each tier, the answer it would serve, or the nearest recorded prompt when nothing matches. It also says whether the call would be parked (the project is recording) or fail with 424 (it is replaying). Nothing is logged and no hit is counted.
+
 ## Good to know
 
 The dashboard is built on the first visit to `/ui`, so the server starts as fast as ever. `SEMULA_UI=off` hides it.

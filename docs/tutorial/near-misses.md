@@ -38,6 +38,8 @@ tiers: exact no, normalised no, alias no, words candidate 0.91, meaning off
 
 `candidate` means: close enough to ask a human, not close enough to serve.
 
+The dashboard's **Playground** does the same with a box to type in: it shows each tier's verdict, the answer it would serve, or the nearest prompt on a miss.
+
 ## Decide in the review queue
 
 Send that prompt for real, with the project in record mode. The call parks as usual, and the pairing appears in the review queue:
