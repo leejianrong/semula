@@ -244,3 +244,19 @@ def test_upgrading_gives_every_existing_entry_a_first_revision(tmp_path: Path) -
         "selection": "cycle",
         "pinned": True,
     }
+
+
+def test_a_database_made_by_a_newer_semula_is_refused_with_a_clear_message(
+    tmp_path: Path,
+) -> None:
+    from semula.db import DatabaseTooNew
+
+    url = fresh_database_url(tmp_path)
+    db = Database(url)
+    db.migrate()
+    with db.engine.begin() as conn:
+        conn.execute(sa.text("UPDATE alembic_version SET version_num = '9999'"))
+    with pytest.raises(DatabaseTooNew) as refused:
+        Database(url).migrate()
+    text = str(refused.value)
+    assert "9999" in text and "newer" in text and "backup" in text.lower()

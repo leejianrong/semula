@@ -15,6 +15,14 @@ semula runs three ways. Pick the one that fits.
 
     Run the CLI inside the container: `docker exec semula semula pending`.
 
+    From a clone, [`compose.yaml`](https://github.com/leejianrong/semula/blob/main/compose.yaml) is the reference setup:
+
+    ```bash
+    docker compose up -d --wait semula                          # SQLite on a named volume
+    docker compose --profile postgres up -d --wait semula-pg    # the same app on Postgres
+    docker compose --profile embeddings up -d --wait semula-embed  # with meaning-based matching (440 MB)
+    ```
+
 === "CLI binary"
 
     A single file with no Python needed, for Linux and macOS (amd64 and arm64). Download the one for your machine from the [latest release](https://github.com/leejianrong/semula/releases/latest), check it against `SHA256SUMS`, and make it executable:
