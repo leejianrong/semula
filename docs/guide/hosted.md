@@ -25,6 +25,27 @@ This is the only time the token is shown.
 
 Only a hash of the token is stored, so a lost token cannot be recovered, only replaced. Every token starts with `smla_live_`, which secret scanners can find if one leaks, and semula redacts that pattern from any prompt it stores.
 
+## People signing in
+
+People sign in with a provider you set up, and semula keeps no passwords. Register an application with the provider, with the redirect URI `https://<your host>/auth/callback/<name>` exactly (a different one is refused), and give semula its client id and secret:
+
+Install the `hosted` extra (`pip install 'semula[hosted]'`, or build the image with `--build-arg UV_EXTRAS="--extra hosted"`), then:
+
+```bash
+SEMULA_PUBLIC_URL=https://semula.example.com
+SEMULA_SECRET=$(openssl rand -hex 32)
+SEMULA_AUTH_PROVIDERS=google,github
+SEMULA_AUTH_GOOGLE_CLIENT_ID=...   SEMULA_AUTH_GOOGLE_CLIENT_SECRET=...
+SEMULA_AUTH_GITHUB_CLIENT_ID=...   SEMULA_AUTH_GITHUB_CLIENT_SECRET=...
+```
+
+`/auth/login` lists the providers. Sign-in is the authorization-code flow with PKCE. semula checks `state`, the `nonce`, the issuer the response came from, the audience, the signature and the expiry of the ID token, and accepts only a **verified** email address. A person is the provider's `(issuer, subject)`, never an email: the same address at two providers is two people, and linking a second provider is something a signed-in person does. Google is OpenID Connect. GitHub does not issue ID tokens to apps, so semula reads the signed-in person's verified primary email from GitHub's API instead; any other OpenID Connect issuer works by naming it with `SEMULA_AUTH_<NAME>_ISSUER`.
+
+A sign-in is a server-side row and an opaque cookie (`HttpOnly`, `SameSite=Lax`, and `Secure` with the `__Host-` prefix on https). It ends after 12 idle hours or 7 days, whichever is first, a new one is made at each sign-in (the old one ends), and signing out needs the session's CSRF token. Behind plain `http://` the cookie is not `Secure` and has no prefix; that is for trying it out only.
+
+!!! note "Checked against a stand-in"
+    The sign-in flow is tested end to end against a provider written for the tests, which speaks the real protocol and is made to misbehave in ten ways (a wrong state, nonce, audience, issuer or signature, an expired or unsigned token, a reused code, an unverified email). It has not been run against Google's or GitHub's own servers, so check your first real sign-in, and the redirect URI in particular.
+
 ## Scopes
 
 A token has one of three scopes, each including the ones above it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist, and listings (projects, pending, the log) hold only its own. It cannot create projects.
@@ -140,5 +161,5 @@ Hosting wants Postgres. Every tenant table has a [row-level-security](../referen
 
 ## What is not there yet
 
-- **People.** No sign-in, roles or invitations; the dashboard is off.
+- **Who may do what.** Signing in makes a person, but nothing yet lets a person into a workspace: members, roles and invitations, and the dashboard behind sign-in, are next.
 - **A delete button.** A signed-in admin will delete a workspace from the dashboard; today it is the operator's command.

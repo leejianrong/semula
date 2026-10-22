@@ -164,7 +164,8 @@ S: dict[str, Callable[[World], None]] = {
 EXEMPT = {
     "for_scope", "owns", "create_workspace", "authenticate_token", "sync_index",
     "sync_embeddings", "prune_log", "log_call", "embeddings_status", "wait_for_answer",
-    "prune_audit", "purge_workspaces", "start_cluster", "stop_cluster",
+    "prune_audit", "purge_workspaces", "start_cluster", "stop_cluster", "sign_in_identity",
+    "create_session", "authenticate_session", "end_session", "end_sessions_of",
 }  # fmt: skip
 
 

@@ -290,3 +290,50 @@ workspace_usage = sa.Table(
     sa.Column("entries", sa.Integer, nullable=False, default=0),
     sa.Column("bytes", sa.BigInteger, nullable=False, default=0),
 )
+
+# People who sign in (ADR-0010). Global, not tenant data: one person can belong to many
+# workspaces, and reaching a workspace goes through ``membership`` (SEM-85). A person is found by
+# their provider identity, (issuer, subject), never by email.
+person = sa.Table(
+    "person",
+    metadata,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("email", sa.Text, nullable=False),
+    sa.Column("name", sa.Text, nullable=False, default=""),
+    _ts("created_at"),
+    sa.Column("last_login_at", sa.Text),
+)
+
+identity = sa.Table(
+    "identity",
+    metadata,
+    sa.Column("issuer", sa.Text, nullable=False),
+    sa.Column("subject", sa.Text, nullable=False),
+    sa.Column("person_id", sa.Text, nullable=False),
+    sa.Column("email", sa.Text, nullable=False),
+    _ts("created_at"),
+    sa.PrimaryKeyConstraint("issuer", "subject", name="pk_identity"),
+    sa.ForeignKeyConstraint(
+        ["person_id"], ["person.id"], ondelete="CASCADE", name="fk_identity_person"
+    ),
+    sa.Index("idx_identity_person", "person_id"),
+)
+
+# A sign-in. ``id`` is the SHA-256 of the cookie's secret, so a copy of this table cannot be used
+# to impersonate anyone. Server-side rows are revoked at once and are not tied to one replica.
+person_session = sa.Table(
+    "person_session",
+    metadata,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("person_id", sa.Text, nullable=False),
+    sa.Column("active_workspace", sa.Text),
+    sa.Column("csrf", sa.Text, nullable=False),
+    _ts("created_at"),
+    sa.Column("last_seen_at", sa.Text, nullable=False),
+    sa.Column("expires_at", sa.Text, nullable=False),  # absolute
+    sa.Column("client", sa.Text),
+    sa.ForeignKeyConstraint(
+        ["person_id"], ["person.id"], ondelete="CASCADE", name="fk_person_session_person"
+    ),
+    sa.Index("idx_person_session_person", "person_id"),
+)

@@ -18,6 +18,9 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_MIGRATE` | `on` | `off` stops a start from migrating the database and refuses to start if it is not up to date. For replicas: run `semula admin migrate` once before rollout. |
 | `SEMULA_UI` | `on` | `off` hides the dashboard at `/ui`. |
 | `SEMULA_API_KEY` | none | Require this key. See below. |
+| `SEMULA_PUBLIC_URL` | `http://127.0.0.1:8080` | The address people reach the server at, no trailing slash. Sign-in redirect URIs and cookie names come from it; use `https://...` when hosted. |
+| `SEMULA_SECRET` | none | At least 16 random bytes, to sign sign-in state. Needed once any sign-in provider is set up. |
+| `SEMULA_AUTH_PROVIDERS` | none | Comma-separated sign-in providers, such as `google,github`. For each name `N` set `SEMULA_AUTH_N_CLIENT_ID` and `SEMULA_AUTH_N_CLIENT_SECRET`; any name other than `google` and `github` is a generic OpenID Connect issuer and also needs `SEMULA_AUTH_N_ISSUER`. |
 | `SEMULA_HOSTED` | `off` | `on` makes every call need an [API token](../guide/hosted.md) that names its workspace, scope and project. The dashboard and MCP are off in this mode for now. |
 | `SEMULA_LOG_RETENTION_DAYS` | `30` | How long the call log is kept. |
 | `SEMULA_LOG_MAX_ROWS` | `50000` | The most call-log rows kept. |

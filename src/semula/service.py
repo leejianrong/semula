@@ -8,6 +8,7 @@ import copy
 import json
 import logging
 import re
+import secrets
 import statistics
 import threading
 import time
@@ -43,6 +44,7 @@ from .events import EventBus
 from .exchange import FORMAT
 from .ids import new_ulid
 from .lexical import make_index, similarity
+from .oidc import Identity
 from .project_settings import FINGERPRINT_FIELDS, ProjectSettings
 from .responses import parse_answer, validate_tool_calls
 from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE, iso, now_iso
@@ -53,7 +55,10 @@ from .schema import call_log as L
 from .schema import candidate as C
 from .schema import entry as E
 from .schema import entry_revision as R
+from .schema import identity as ID
 from .schema import pending as Q
+from .schema import person as PE
+from .schema import person_session as SE
 from .schema import project as P
 from .schema import workspace as WS
 from .schema import workspace_usage as U
@@ -116,6 +121,9 @@ class MatchResult:
     nearest: dict[str, Any] | None = None
 
 
+IDLE_SESSION_SECONDS = 12 * 3600  # a sign-in ends after twelve idle hours ...
+SESSION_SECONDS = 7 * 86400  # ... or seven days, however active
+SESSION_TOUCH_EVERY = 60.0  # last-seen is written at most this often
 WORKSPACE_GRACE_DAYS = 30  # a deleted workspace can be restored for this long, then it is purged
 AUDIT_RETENTION_DAYS = 365  # the audit log is kept this long, then pruned (never edited)
 TOKEN_CACHE_TTL = 30.0  # seconds a verified token is trusted without asking the database
@@ -616,6 +624,122 @@ class Service:
             )
             fresh._reserve(conn, projects=1)  # the default project
             fresh._audit("workspace.create", workspace_id, conn=conn)
+
+    # --- people and their sessions (ADR-0010 section 1) -------------------------------------
+    def _now(self) -> datetime:
+        """The clock for sessions (a seam, so a test can move it)."""
+        return datetime.now(UTC)
+
+    def sign_in_identity(self, who: Identity) -> dict[str, Any]:
+        """The person a provider identity is, made on first sight. Only a **verified** email
+        counts, and a person is (issuer, subject): two providers never merge by email."""
+        if not who.verified or not who.email:
+            raise SemulaError(
+                403,
+                "email_not_verified",
+                "The provider has not verified your email address, so you cannot sign in with it.",
+            )
+        db = self.db.for_workspace(None)
+        now = now_iso()
+        with db.begin() as conn:
+            found = db.one(
+                sa.select(ID.c.person_id).where(
+                    ID.c.issuer == who.issuer, ID.c.subject == who.subject
+                ),
+                conn,
+            )
+            created = found is None
+            if found is None:
+                person_id = new_ulid()
+                db.execute(
+                    sa.insert(PE).values(
+                        id=person_id, email=who.email, name=who.name, last_login_at=now
+                    ),
+                    conn,
+                )
+                db.execute(
+                    sa.insert(ID).values(
+                        issuer=who.issuer, subject=who.subject, person_id=person_id, email=who.email
+                    ),
+                    conn,
+                )
+            else:
+                person_id = found["person_id"]
+                db.execute(
+                    sa.update(ID)
+                    .where(ID.c.issuer == who.issuer, ID.c.subject == who.subject)
+                    .values(email=who.email),
+                    conn,
+                )
+                db.execute(
+                    sa.update(PE).where(PE.c.id == person_id).values(last_login_at=now), conn
+                )
+            person = db.one(sa.select(PE).where(PE.c.id == person_id), conn)
+        if person is None:  # pragma: no cover - the row was just written
+            raise RuntimeError("the person just written is gone")
+        return {
+            "id": person["id"],
+            "email": person["email"],
+            "name": person["name"],
+            "created": created,
+        }
+
+    def create_session(
+        self, person_id: str, *, client: str | None = None, replacing: str | None = None
+    ) -> tuple[str, dict[str, Any]]:
+        """A new sign-in for ``person_id``. The secret goes in the cookie; only its hash is kept.
+        A session being replaced is ended (a new id at every sign-in, so one cannot be fixed)."""
+        if replacing:
+            self.end_session(replacing)
+        secret = secrets.token_urlsafe(32)
+        now = self._now()
+        row = {
+            "id": tok.digest(secret),
+            "person_id": person_id,
+            "csrf": secrets.token_urlsafe(24),
+            "last_seen_at": iso(now),
+            "expires_at": iso(now + timedelta(seconds=SESSION_SECONDS)),
+            "client": tok.coarse_address(client),
+        }
+        self.db.for_workspace(None).execute(sa.insert(SE).values(**row))
+        return secret, {k: v for k, v in row.items() if k != "id"}
+
+    def authenticate_session(self, secret: str) -> dict[str, Any] | None:
+        """Who a session cookie is, or None if it is unknown, idle too long or past seven days
+        (an ended one is removed)."""
+        if not secret:
+            return None
+        db = self.db.for_workspace(None)
+        sid = tok.digest(secret)
+        row = db.one(
+            sa.select(SE, PE.c.email, PE.c.name)
+            .select_from(SE.join(PE, PE.c.id == SE.c.person_id))
+            .where(SE.c.id == sid)
+        )
+        if row is None:
+            return None
+        now = self._now()
+        seen = datetime.fromisoformat(row["last_seen_at"].replace("Z", "+00:00"))
+        if row["expires_at"] <= iso(now) or (now - seen).total_seconds() > IDLE_SESSION_SECONDS:
+            db.execute(sa.delete(SE).where(SE.c.id == sid))
+            return None
+        if (now - seen).total_seconds() >= SESSION_TOUCH_EVERY:
+            db.execute(sa.update(SE).where(SE.c.id == sid).values(last_seen_at=iso(now)))
+        return {
+            "person_id": row["person_id"],
+            "email": row["email"],
+            "name": row["name"],
+            "active_workspace": row["active_workspace"],
+            "csrf": row["csrf"],
+        }
+
+    def end_session(self, secret: str) -> None:
+        if secret:
+            self.db.for_workspace(None).execute(sa.delete(SE).where(SE.c.id == tok.digest(secret)))
+
+    def end_sessions_of(self, person_id: str) -> int:
+        """End every sign-in a person has, on every device."""
+        return self.db.for_workspace(None).execute(sa.delete(SE).where(SE.c.person_id == person_id))
 
     # --- replicas (ADR-0011 section 8) -----------------------------------------------------
     def start_cluster(self, url: str, channel: str = "semula_events") -> None:

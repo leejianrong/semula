@@ -7,6 +7,8 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Literal
 
+from .oidc import Provider, providers_from_env
+
 Mode = Literal["replay", "record"]
 
 
@@ -82,6 +84,11 @@ class Settings:
     hosted: bool = False
     # Replicas on one Postgres: migrate once, before rollout, instead of on every start.
     migrate: bool = True
+    # People signing in (hosted): where the server is reached from (cookies, redirect URIs), a
+    # secret of at least 16 bytes for signing sign-in state, and the providers that are set up.
+    public_url: str = "http://127.0.0.1:8080"
+    secret: str = field(default="", repr=False)
+    auth_providers: dict[str, Provider] = field(default_factory=dict)
     quotas: Quotas = field(default_factory=Quotas)
     database_url: str | None = field(default=None, repr=False)  # may hold a password
 
@@ -121,6 +128,9 @@ class Settings:
             api_key=os.environ.get("SEMULA_API_KEY") or None,
             hosted=_flag(os.environ.get("SEMULA_HOSTED", "off")),
             migrate=_flag(os.environ.get("SEMULA_MIGRATE", "on")),
+            public_url=os.environ.get("SEMULA_PUBLIC_URL", "http://127.0.0.1:8080").rstrip("/"),
+            secret=os.environ.get("SEMULA_SECRET", ""),
+            auth_providers=providers_from_env(dict(os.environ)),
             quotas=_quotas_from_env(_flag(os.environ.get("SEMULA_HOSTED", "off"))),
             database_url=os.environ.get("SEMULA_DATABASE_URL") or None,
             models=tuple(
