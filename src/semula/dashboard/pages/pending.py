@@ -121,7 +121,6 @@ def pending_page(tab: Tab) -> indah.Component:
             else "Select a parked call to read it."
         )
     )
-    error_text = indah.computed(lambda: f"**{error.value}**" if error.value else "")
 
     table = indah.Table(
         rows=shown,
@@ -147,7 +146,7 @@ def pending_page(tab: Tab) -> indah.Component:
                 label="Answer",
                 placeholder="What the real model would say",
             ),
-            indah.Text(error_text, markdown=True),
+            indah.Text(lambda: error.value, size="body"),  # plain: codes have underscores
             indah.Text(HINT, markdown=True),
             indah.Button("Send answer", on_click=send),
         ]

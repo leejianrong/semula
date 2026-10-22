@@ -312,3 +312,27 @@ def answers_from_editor(text: str, *, multiple: bool) -> list[Any]:
     if not isinstance(body, list) or not body:
         raise ValueError("This entry has several answers: write a JSON list with one per answer.")
     return body
+
+
+def new_entry_request(prompt: str, system: str, tools_text: str) -> dict[str, Any]:
+    """The chat request the New entry form describes: an optional system message, the prompt
+    as one user message, and optional tools given as a JSON list. Raises ``ValueError`` with a
+    sentence to show beside the field."""
+    if not prompt.strip():
+        raise ValueError("Write the prompt the app will send.")
+    messages = []
+    if system.strip():
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    request: dict[str, Any] = {"messages": messages}
+    if tools_text.strip():
+        try:
+            tools = json.loads(tools_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"The tools are not valid JSON: {exc.msg} (line {exc.lineno})."
+            ) from exc
+        if not isinstance(tools, list) or not all(isinstance(t, dict) for t in tools):
+            raise ValueError("The tools must be a JSON list of tool objects.")
+        request["tools"] = tools
+    return request

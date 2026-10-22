@@ -25,6 +25,8 @@ Select a call to read the whole request: the system prompt, the messages and any
 
 The **Entries** screen lists what a project has recorded: the prompt, how often it has been hit, how many answers it holds, and flags for pinned, tool-call and aliased entries. Search by text, filter (pinned, never hit, has tool calls, has aliases) and sort (most hits, changed lately). New recordings appear as they are made.
 
+**New entry** writes one before any call: the prompt, an optional system prompt and tools (a JSON list), and the answer. A pin keeps agents off it. If the answer is rejected, or an entry for that prompt exists, the reason is shown in the dialog and nothing is saved.
+
 Select a row to open the entry at its own address (`/ui/projects/<project>/entries/<id>`), so you can paste the link to a colleague. It shows the request, every answer and the history of changes.
 
 ### Fix a recording by hand

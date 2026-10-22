@@ -285,9 +285,7 @@ def entry_page(tab: Tab) -> indah.Component:
                         size="body",
                     ),
                     indah.Select(selection, options=["first", "sequence", "cycle"], label="Pick"),
-                    indah.Text(
-                        lambda: f"**{problem.value}**" if problem.value else "", markdown=True
-                    ),
+                    indah.Text(lambda: problem.value, size="body"),  # plain: codes have underscores
                     indah.Text(lambda: saved.value, markdown=True, size="body"),
                     indah.Row(
                         children=[

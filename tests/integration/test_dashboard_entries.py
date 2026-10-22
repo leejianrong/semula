@@ -1,5 +1,6 @@
 """The Entries browser and the entry page, driven like a browser tab (SEM-49)."""
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -119,5 +120,98 @@ def test_an_entry_that_does_not_exist_says_so(server: str) -> None:
     tab = Tab(server, "/projects/default/entries/01J0000000000000000000000")
     try:
         tab.wait_for(lambda m: "There is no such entry" in str(m), 4)
+    finally:
+        tab.close()
+
+
+def fill(tab: Tab, label: str, value: str) -> None:
+    tab.send(tab.find("codeeditor", label=label), "input", {"value": value})
+
+
+def test_a_new_entry_can_be_written_in_the_dashboard_and_then_replays(server: str) -> None:
+    tab = Tab(server, "/projects/default/entries")
+    try:
+        mark = tab.mark()
+        tab.send(tab.find("button", label="New entry"), "click")
+        fill(tab, "Prompt", "What is your refund window?")
+        fill(tab, "New answer", "Fourteen days.")
+        tab.send(tab.find("button", label="Create entry"), "click")
+        tab.wait_for(lambda m: "Fourteen days." in str(m), 5, mark)
+        listed = httpx.get(f"{server}/api/v1/projects/default/entries").json()["entries"]
+        assert [e["last_message"] for e in listed] == ["What is your refund window?"]
+        body = {
+            "model": "m",
+            "messages": [{"role": "user", "content": "What is your refund window?"}],
+        }
+        reply = httpx.post(server + "/v1/chat/completions", json=body).json()
+        assert reply["choices"][0]["message"]["content"] == "Fourteen days."
+    finally:
+        tab.close()
+
+
+def test_a_new_entry_can_be_pinned_and_carry_a_system_prompt_and_tools(server: str) -> None:
+    tools = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}]
+    tab = Tab(server, "/projects/default/entries")
+    try:
+        tab.send(tab.find("button", label="New entry"), "click")
+        fill(tab, "Prompt", "Call f")
+        tab.send(
+            tab.find("textinput", label="System prompt (optional)"), "input", {"value": "Be terse"}
+        )
+        fill(tab, "Tools (optional)", json.dumps(tools))
+        call = {"function": {"name": "f", "arguments": {}}}
+        fill(tab, "New answer", json.dumps({"message": {"content": None, "tool_calls": [call]}}))
+        tab.send(
+            tab.find("switch", label="Pin it, so agents cannot overwrite it"),
+            "change",
+            {"value": True},
+        )
+        mark = tab.mark()
+        tab.send(tab.find("button", label="Create entry"), "click")
+        tab.wait_for(lambda m: "pinned" in str(m), 5, mark)
+        made = httpx.get(f"{server}/api/v1/projects/default/entries").json()["entries"][0]
+        assert made["pinned"] is True and made["has_tools"] is True
+        full = httpx.get(f"{server}/api/v1/entries/{made['id']}").json()
+        assert [m["role"] for m in full["request"]["messages"]] == ["system", "user"]
+    finally:
+        tab.close()
+
+
+def test_a_bad_answer_is_explained_in_the_form_and_nothing_is_created(server: str) -> None:
+    tab = Tab(server, "/projects/default/entries")
+    try:
+        tab.send(tab.find("button", label="New entry"), "click")
+        fill(tab, "Prompt", "Bad answer please")
+        fill(
+            tab,
+            "New answer",
+            '{"message": {"content": null, "tool_calls": [{"function": {"name": "x"}}]}}',
+        )
+        mark = tab.mark()
+        tab.send(tab.find("button", label="Create entry"), "click")
+        tab.wait_for(lambda m: m["type"] == "patch" and "invalid_answer: " in str(m), 5, mark)
+        assert httpx.get(f"{server}/api/v1/projects/default/entries").json()["total"] == 0
+        fill(tab, "New answer", "")
+        mark = tab.mark()
+        tab.send(tab.find("button", label="Create entry"), "click")
+        tab.wait_for(lambda m: "Write an answer first" in str(m), 5, mark)
+    finally:
+        tab.close()
+
+
+def test_an_existing_prompt_is_not_overwritten_from_the_form(server: str) -> None:
+    add(server, "already recorded", answer="the old answer")
+    tab = Tab(server, "/projects/default/entries")
+    try:
+        tab.send(tab.find("button", label="New entry"), "click")
+        fill(tab, "Prompt", "already recorded")
+        fill(tab, "New answer", "a different answer")
+        mark = tab.mark()
+        tab.send(tab.find("button", label="Create entry"), "click")
+        tab.wait_for(lambda m: "already exists" in str(m), 5, mark)
+        listed = httpx.get(f"{server}/api/v1/projects/default/entries").json()["entries"]
+        assert len(listed) == 1
+        only = httpx.get(f"{server}/api/v1/entries/{listed[0]['id']}").json()
+        assert only["responses"][0]["message"]["content"] == "the old answer"
     finally:
         tab.close()

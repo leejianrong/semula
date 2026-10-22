@@ -112,7 +112,9 @@ def test_a_json_answer_with_a_bad_tool_call_shows_the_error_and_keeps_the_call_h
         mark = tab.mark()
         tab.send(field, "input", {"value": bad})
         tab.send(send, "click")
-        tab.wait_for(lambda m: "invalid_answer" in str(m) or "nope" in str(m), 3, mark)
+        tab.wait_for(
+            lambda m: "invalid_answer: Unknown tool" in str(m), 3, mark
+        )  # not mangled by markdown
         assert held["thread"].is_alive()
         assert httpx.get(server + "/api/v1/pending").json()["pending"][0]["id"] == key
 
