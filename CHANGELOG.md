@@ -10,6 +10,13 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Hosted mode and API tokens** (`SEMULA_HOSTED=on`, ADR-0010): every call needs an opaque,
+  hashed `smla_live_` token that names its workspace, one of three scopes (`replay`, `record`,
+  `admin`) and optionally one project. A replay token never parks a call; a record token cannot
+  delete, approve, force past a pin or change settings; the actor comes from the token, not a
+  header; failed attempts are rate limited; revoking is immediate in-process and within 30 s
+  elsewhere. `semula admin` creates workspaces and mints, lists, rotates and revokes tokens.
+  Tokens in prompts are redacted. The dashboard and MCP stay off in hosted mode for now.
 - **Postgres row-level security** (migration 0011): tenant tables carry a policy on
   `workspace_id`, and every transaction states which workspace it acts for, so a query that forgot
   its filter sees nothing of another workspace's. Owners and superusers bypass it; see the

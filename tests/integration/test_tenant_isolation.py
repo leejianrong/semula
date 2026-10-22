@@ -140,7 +140,7 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
         missing(lambda: w.a.queue_counts("shop"), "project_not_found"),
         _equal(w.a.queue_counts(), {"pending": 0, "review": 0}),
     ),
-    "list_projects": lambda w: _equal([p["id"] for p in w.a.list_projects()], ["mine"]),
+    "list_projects": lambda w: _equal([p["id"] for p in w.a.list_projects()], ["default", "mine"]),
     "list_calls": lambda w: (
         missing(lambda: w.a.list_calls(project="shop"), "project_not_found"),
         nothing_of_b(w.a.list_calls()),
@@ -171,11 +171,18 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
         _equal(w.a.list_entries("shop")["total"], 0),
         _equal(w.b.list_entries("shop")["total"], 1),
     ),
-    "import_project": lambda w: (_import_into_a(w),),
+    "import_project": lambda w: _import_into_a(w),
+    "create_token": lambda w: missing(
+        lambda: w.a.create_token("t", "record", project="shop"), "project_not_found"
+    ),
+    "list_tokens": lambda w: nothing_of_b(w.a.list_tokens()),
+    "revoke_token": lambda w: missing(lambda: w.a.revoke_token(_b_token(w)), "token_not_found"),
+    "rotate_token": lambda w: missing(lambda: w.a.rotate_token(_b_token(w)), "token_not_found"),
 }
 
 # Methods that do not take tenant data, or that are maintenance for the whole database.
 EXEMPT = {
+    "authenticate_token": "finds the workspace from the credential, so no tenant exists yet",
     "for_scope": "builds a scoped view",
     "owns": "says whether an event belongs to this workspace",
     "create_workspace": "creates the tenant itself",
@@ -185,6 +192,14 @@ EXEMPT = {
     "log_call": "internal: the caller has already resolved the project in its own scope",
 }
 del EXEMPT["set_mode_default"]
+
+
+def _b_token(w: World) -> str:
+    return str(w.b.create_token("b's token", "admin", project="shop")["id"])
+
+
+def _b_token(w: World) -> str:
+    return str(w.b.create_token("b's token", "admin", project="shop")["id"])
 
 
 def _equal(got: Any, want: Any) -> None:
@@ -227,7 +242,7 @@ def test_workspace_a_cannot_reach_workspace_b_through(world: World, method: str)
     # Whatever A tried, B's data is exactly as it was.
     assert world.b.get_entry(world.entry)["version"] == 1
     assert world.b.get_pending(world.pending)["status"] in ("pending", "answered")
-    assert [p["id"] for p in world.b.list_projects()] == ["shop"]
+    assert [p["id"] for p in world.b.list_projects()] == ["default", "shop"]
 
 
 def test_events_name_their_workspace_and_a_waiter_ignores_other_workspaces(world: World) -> None:
@@ -298,7 +313,8 @@ async def test_the_routes_serve_each_workspace_only_its_own_data(tmp_path: Path)
             "/api/v1/projects/shop/export",
         ):
             assert (await client.get(path, headers=as_a)).status_code == 404, path
-        assert (await client.get("/api/v1/projects", headers=as_a)).json()["projects"] == []
+        projects = (await client.get("/api/v1/projects", headers=as_a)).json()["projects"]
+        assert [p["id"] for p in projects] == ["default"]  # its own, nothing of B's
         assert (await client.get("/api/v1/log", headers=as_a)).json()["calls"] == []
         miss = await client.post("/v1/projects/shop/chat/completions", json=asked, headers=as_a)
         assert miss.status_code == 404, "A has no project 'shop', so nothing of B's is reachable"

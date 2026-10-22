@@ -16,6 +16,7 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_MODELS` | `semula` | Comma-separated model ids that `/v1/models` lists. |
 | `SEMULA_UI` | `on` | `off` hides the dashboard at `/ui`. |
 | `SEMULA_API_KEY` | none | Require this key. See below. |
+| `SEMULA_HOSTED` | `off` | `on` makes every call need an [API token](../guide/hosted.md) that names its workspace, scope and project. The dashboard and MCP are off in this mode for now. |
 | `SEMULA_LOG_RETENTION_DAYS` | `30` | How long the call log is kept. |
 | `SEMULA_LOG_MAX_ROWS` | `50000` | The most call-log rows kept. |
 | `SEMULA_EMBEDDINGS` | `off` | `on` turns on meaning-based matching. Needs the `embeddings` extra. |

@@ -44,6 +44,7 @@ BUILTIN_REDACTIONS = (
     r"\bxox[baprs]-[A-Za-z0-9-]{10,}",  # Slack tokens
     r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}",  # Authorization header values pasted into a prompt
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
+    r"\bsmla_[a-z]+_[A-Za-z0-9]{32}\b",  # a semula API token (ADR-0010)
 )
 
 

@@ -30,6 +30,9 @@ class Settings:
     models: tuple[str, ...] = ("semula",)
     ui: bool = True  # SEMULA_UI=off hides the dashboard at /ui
     api_key: str | None = field(default=None, repr=False)
+    # Hosted mode: every call needs an API token, which names the workspace (ADR-0010). Off
+    # locally, where whoever can reach the port is trusted (or the shared key above).
+    hosted: bool = False
     database_url: str | None = field(default=None, repr=False)  # may hold a password
 
     @property
@@ -66,6 +69,7 @@ class Settings:
             log_max_rows=int(os.environ.get("SEMULA_LOG_MAX_ROWS", "50000")),
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
+            hosted=_flag(os.environ.get("SEMULA_HOSTED", "off")),
             database_url=os.environ.get("SEMULA_DATABASE_URL") or None,
             models=tuple(
                 m.strip() for m in os.environ.get("SEMULA_MODELS", "semula").split(",") if m.strip()

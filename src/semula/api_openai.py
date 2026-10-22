@@ -61,12 +61,16 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
         return _respond(service, body, match.stored, model)
 
     await offload(service.record_candidates, req, project, found.candidates)  # still a miss
-    if await offload(service.mode_of, project) == "replay":
+    principal = getattr(request.state, "principal", None)
+    never_parks = principal is not None and principal.scope == "replay"
+    if never_parks or await offload(service.mode_of, project) == "replay":
         await offload(partial(service.log_call, "miss", started, project=project, req=req))
         raise SemulaError(
             424,
             "semula_no_match",
-            "No recorded answer matches this request, and semula is in replay mode.",
+            "No recorded answer matches this request, and semula is in replay mode."
+            if not never_parks
+            else "No recorded answer matches this request, and a replay token never parks a call.",
             err_type="semula_error",
             extra={"nearest": found.nearest},
         )

@@ -91,12 +91,15 @@ def test_a_write_cannot_name_another_workspace(tenants: Tenants) -> None:
             "INSERT INTO project (workspace_id, id, name, settings, created_at) "
             "VALUES ('b', 'sneaky', 's', '{}', '2026-10-22T00:00:00.000Z')"
         )
-    assert [p["id"] for p in tenants.owner.for_scope(Scope("b")).list_projects()] == ["shop"]
+    assert [p["id"] for p in tenants.owner.for_scope(Scope("b")).list_projects()] == [
+        "default",
+        "shop",
+    ]
 
 
 def test_the_service_works_as_the_bound_role(tenants: Tenants) -> None:
     a = tenants.app.for_scope(Scope("a"))
-    assert [p["id"] for p in a.list_projects()] == ["shop"]
+    assert [p["id"] for p in a.list_projects()] == ["default", "shop"]
     entry, created = a.upsert_entry(
         "shop", {"messages": [{"role": "user", "content": "a second prompt"}]}, {"content": "x"}
     )

@@ -53,9 +53,16 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula export` | `<project>` `--dir` | Write a project's entries to a directory of JSON files |
 | `semula import` | `<dir>` `--project` `--force` | Load an exported directory (safe to repeat) |
 | `semula mode` | `<mode>` `--project` | Show or switch the mode (replay or record) |
+| `semula admin workspace-create` | `<id>` `--name` | Create a workspace |
+| `semula admin token-create` | `--workspace` `--name` `--scope` `--project` `--expires` | Mint an API token for a workspace (the secret is shown once) |
+| `semula admin token-list` | `--workspace` | List a workspace's API tokens |
+| `semula admin token-revoke` | `<id>` `--workspace` | Revoke an API token |
+| `semula admin token-rotate` | `<id>` `--workspace` `--grace` | Mint a successor; the old token keeps working for a grace period |
 | `semula test-match` | `--project` `--prompt` `--file` `--stdin` | Which entry would fire for this prompt, and why |
 
 `pending --wait SECONDS` holds the request until a call is parked, for up to 60 seconds, and prints an empty list if none came. `entry add` exits `4` with the current version when an entry already matches; pass `--version` to replace it.
 
+`semula admin ...` works on the server's own database, not over HTTP, so it must run where the server's `SEMULA_DATABASE_URL` or `SEMULA_DATA_DIR` is set. It is for the operator of a [hosted](../guide/hosted.md) server: creating workspaces and minting tokens.
+
 !!! note "The standalone binary"
-    The [CLI binary](../guide/install.md) has every command above except `serve`, `mcp` and `embeddings fetch`.
+    The [CLI binary](../guide/install.md) has every command above except `serve`, `mcp`, `embeddings fetch` and `admin`.

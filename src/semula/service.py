@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from . import canonical
+from . import tokens as tok
 from .canonical import (
     CanonicalRequest,
     FingerprintConfig,
@@ -45,6 +46,7 @@ from .project_settings import FINGERPRINT_FIELDS, ProjectSettings
 from .responses import parse_answer, validate_tool_calls
 from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE, iso, now_iso
 from .schema import alias as A
+from .schema import api_token as T
 from .schema import call_log as L
 from .schema import candidate as C
 from .schema import entry as E
@@ -52,7 +54,7 @@ from .schema import entry_revision as R
 from .schema import pending as Q
 from .schema import project as P
 from .schema import workspace as WS
-from .scope import Scope
+from .scope import Principal, Scope
 
 log = logging.getLogger("semula.service")
 
@@ -111,6 +113,20 @@ class MatchResult:
     nearest: dict[str, Any] | None = None
 
 
+TOKEN_CACHE_TTL = 30.0  # seconds a verified token is trusted without asking the database
+TOKEN_TOUCH_EVERY = 60.0  # a token's last-used time is written at most this often
+
+
+class _TokenState:
+    """What every scoped copy of a service shares about tokens: verified ones (by hash) and
+    when each token's last use was last written."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.cache: dict[str, tuple[float, Principal, str | None]] = {}
+        self.touched: dict[str, float] = {}
+
+
 class Service:
     def __init__(self, db: Database, settings: Settings, embedder: Embedder | None = None) -> None:
         self.db = db.for_workspace(DEFAULT_WORKSPACE)
@@ -123,6 +139,7 @@ class Service:
         # SEMULA_MODE and PUT /api/v1/mode moves it, but a restart returns to the environment.
         self.workspace_id = DEFAULT_WORKSPACE  # ``for_scope`` binds a copy to another workspace
         self._process: dict[str, str] = {"mode": settings.mode}  # shared by every scoped copy
+        self._tokens = _TokenState()
         self.lexical = make_index(self.db)
         # Semantic matching is optional: with no embedder none of this loads (ADR-0003).
         if embedder is None and settings.embeddings:
@@ -169,11 +186,160 @@ class Service:
         """Revisions of one entry, within this workspace."""
         return (R.c.workspace_id == self.workspace_id, R.c.entry_id == entry_id)
 
+    # --- API tokens (ADR-0010) ---------------------------------------------------------
+    def create_token(
+        self,
+        name: str,
+        scope: str,
+        *,
+        project: str | None = None,
+        expires_at: str | None = None,
+        created_by: str | None = None,
+    ) -> dict[str, Any]:
+        """Mint a token for this workspace. The secret is in the result once and never again."""
+        label = name.strip()
+        if not label or len(label) > 80:
+            raise SemulaError(
+                422, "invalid_name", "A token needs a name of 1 to 80 characters.", param="name"
+            )
+        if scope not in tok.SCOPES:
+            raise SemulaError(
+                422, "invalid_scope", f"scope must be one of {list(tok.SCOPES)}.", param="scope"
+            )
+        if project is not None:
+            self.require_project(project)
+        secret = tok.generate()
+        token_id = new_ulid()
+        self.db.execute(
+            sa.insert(T).values(
+                workspace_id=self.workspace_id,
+                id=token_id,
+                project_id=project,
+                name=label,
+                scope=scope,
+                prefix=tok.display_prefix(secret),
+                token_hash=tok.digest(secret),
+                created_by=created_by,
+                expires_at=expires_at,
+            )
+        )
+        return {**self._token_view(self._token_row(token_id)), "token": secret}
+
+    def list_tokens(self) -> list[dict[str, Any]]:
+        rows = self.db.rows(
+            sa.select(T)
+            .where(T.c.workspace_id == self.workspace_id)
+            .order_by(T.c.created_at, T.c.id)
+        )
+        return [self._token_view(r) for r in rows]
+
+    def revoke_token(self, token_id: str) -> dict[str, Any]:
+        """Stop a token working. In this process the effect is immediate; another replica that
+        has the token cached notices within ``TOKEN_CACHE_TTL`` seconds."""
+        self._token_row(token_id)
+        self.db.execute(
+            sa.update(T)
+            .where(*self._pk(T, token_id), T.c.revoked_at.is_(None))
+            .values(revoked_at=now_iso())
+        )
+        self._forget_token(token_id)
+        return self._token_view(self._token_row(token_id))
+
+    def rotate_token(self, token_id: str, grace_seconds: float = 86400.0) -> dict[str, Any]:
+        """Mint a successor with the same name, scope and project, and let the old token keep
+        working for ``grace_seconds`` so deployed configuration can be swapped without an outage."""
+        old = self._token_row(token_id)
+        successor = self.create_token(
+            old["name"],
+            old["scope"],
+            project=old["project_id"],
+            expires_at=old["expires_at"],
+            created_by=old["created_by"],
+        )
+        ends = iso(datetime.now(UTC) + timedelta(seconds=max(0.0, grace_seconds)))
+        if old["expires_at"] is None or old["expires_at"] > ends:
+            self.db.execute(sa.update(T).where(*self._pk(T, token_id)).values(expires_at=ends))
+        self._forget_token(token_id)
+        return successor
+
+    def authenticate_token(self, secret: str, client: str | None = None) -> Principal | None:
+        """The principal a token stands for, or None. This is how a request finds its workspace,
+        so it is not scoped to one; a verified token is trusted for ``TOKEN_CACHE_TTL`` seconds."""
+        if not tok.looks_like_a_token(secret):
+            return None
+        digest = tok.digest(secret)
+        now = time.monotonic()
+        with self._tokens.lock:
+            cached = self._tokens.cache.get(digest)
+        if cached and cached[0] > now and (cached[2] is None or cached[2] > now_iso()):
+            return cached[1]
+        row = self.db.for_workspace(None).one(sa.select(T).where(T.c.token_hash == digest))
+        if (
+            row is None
+            or row["revoked_at"] is not None
+            or (row["expires_at"] is not None and row["expires_at"] <= now_iso())
+        ):
+            with self._tokens.lock:
+                self._tokens.cache.pop(digest, None)
+            return None
+        principal = Principal(
+            kind="token",
+            id=row["id"],
+            workspace_id=row["workspace_id"],
+            scope=row["scope"],
+            project=row["project_id"],
+            name=row["name"],
+        )
+        with self._tokens.lock:
+            self._tokens.cache[digest] = (now + TOKEN_CACHE_TTL, principal, row["expires_at"])
+            due = now - self._tokens.touched.get(row["id"], -TOKEN_TOUCH_EVERY) >= TOKEN_TOUCH_EVERY
+            if due:
+                self._tokens.touched[row["id"]] = now
+        if due:
+            self.db.for_workspace(None).execute(
+                sa.update(T)
+                .where(T.c.workspace_id == row["workspace_id"], T.c.id == row["id"])
+                .values(last_used_at=now_iso(), last_used_from=tok.coarse_address(client))
+            )
+        return principal
+
+    def _token_row(self, token_id: str) -> Any:
+        row = self.db.one(sa.select(T).where(*self._pk(T, token_id)))
+        if not row:
+            raise SemulaError(404, "token_not_found", f"No token {token_id}.")
+        return row
+
+    def _forget_token(self, token_id: str) -> None:
+        with self._tokens.lock:
+            for digest, (_, principal, _) in list(self._tokens.cache.items()):
+                if principal.id == token_id:
+                    del self._tokens.cache[digest]
+
+    @staticmethod
+    def _token_view(row: Any) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "scope": row["scope"],
+            "project": row["project_id"],
+            "prefix": row["prefix"],
+            "created_at": row["created_at"],
+            "expires_at": row["expires_at"],
+            "revoked_at": row["revoked_at"],
+            "last_used_at": row["last_used_at"],
+            "last_used_from": row["last_used_from"],
+        }
+
     def create_workspace(self, workspace_id: str, name: str | None = None) -> None:
         """Add a workspace (a tenant). Local use has only ``default``; this is for hosting."""
         if self.db.one(sa.select(WS.c.id).where(WS.c.id == workspace_id)):
             raise SemulaError(409, "workspace_exists", f"Workspace '{workspace_id}' exists.")
-        self.db.execute(sa.insert(WS).values(id=workspace_id, name=name or workspace_id))
+        with self.db.begin() as conn:  # a workspace starts with the project calls fall back to
+            self.db.execute(sa.insert(WS).values(id=workspace_id, name=name or workspace_id), conn)
+            self.db.for_workspace(workspace_id).execute(
+                sa.insert(P).values(workspace_id=workspace_id, id=DEFAULT_PROJECT, name="Default"),
+                conn,
+            )
 
     def mode_of(self, project: str) -> str:
         """What a call to ``project`` does when nothing answers it: the project's own mode,
