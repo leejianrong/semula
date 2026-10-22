@@ -36,6 +36,7 @@ nav = [
     { "Install" = "guide/install.md" },
     { "Run it as a service" = "guide/service.md" },
     { "Upgrade and back up" = "guide/upgrade-and-backup.md" },
+    { "Host for a team" = "guide/hosted.md" },
   ] },
   { "Reference" = [
     { "CLI" = "reference/cli.md" },

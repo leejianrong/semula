@@ -226,3 +226,35 @@ alias = sa.Table(
     # the entries list counts aliases per row and filters on them; deleting an entry cascades here
     sa.Index("idx_alias_entry", "workspace_id", "entry_id"),
 )
+
+# A credential for a program (ADR-0010): only its SHA-256 is kept. ``project_id`` null means every
+# project of the workspace. Looked up by hash before the workspace is known, so unlike the tenant
+# tables it has no row-level-security policy; the hash is 190 bits and it is read by that alone.
+api_token = sa.Table(
+    "api_token",
+    metadata,
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("id", sa.Text, nullable=False),
+    sa.Column("project_id", sa.Text),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("scope", sa.Text, nullable=False),  # replay | record | admin
+    sa.Column("prefix", sa.Text, nullable=False),  # shown in lists to tell tokens apart
+    sa.Column("token_hash", sa.Text, nullable=False),
+    sa.Column("created_by", sa.Text),
+    _ts("created_at"),
+    sa.Column("expires_at", sa.Text),
+    sa.Column("revoked_at", sa.Text),
+    sa.Column("last_used_at", sa.Text),
+    sa.Column("last_used_from", sa.Text),  # a network, not an address
+    sa.PrimaryKeyConstraint("workspace_id", "id", name="pk_api_token"),
+    sa.ForeignKeyConstraint(
+        ["workspace_id"], ["workspace.id"], ondelete="CASCADE", name="fk_api_token_workspace"
+    ),
+    sa.ForeignKeyConstraint(
+        ["workspace_id", "project_id"],
+        ["project.workspace_id", "project.id"],
+        ondelete="CASCADE",
+        name="fk_api_token_project",
+    ),
+    sa.Index("uq_api_token_hash", "token_hash", unique=True),
+)

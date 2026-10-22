@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool as offload
 
 from . import canonical
 from .errors import SemulaError
-from .scope import scope_of
+from .scope import Principal, scope_of
 from .service import Service
 
 router = APIRouter(prefix="/api/v1")
@@ -57,9 +57,31 @@ def delete_project(project_id: str, request: Request) -> None:
     _service(request).delete_project(project_id)
 
 
+def _principal(request: Request) -> Principal | None:
+    found = getattr(request.state, "principal", None)
+    return found if isinstance(found, Principal) else None
+
+
 def _actor(request: Request) -> str:
-    """Who is writing. Anything but an explicit 'human' is treated as an agent (ADR-0005)."""
+    """Who is writing. With credentials it comes from them: a token is an agent, a person is a
+    human, whatever a header says. Locally, anything but an explicit 'human' is an agent
+    (ADR-0005)."""
+    principal = _principal(request)
+    if principal and principal.actor:
+        return principal.actor
     return "human" if request.headers.get("x-semula-actor", "").lower() == "human" else "agent"
+
+
+def _may_force(request: Request, force: bool) -> bool:
+    """Passing a pin is for people and admin tokens: a recording agent must not do it, however it
+    asks (ADR-0010: a recorded prompt is untrusted text the agent reads)."""
+    principal = _principal(request)
+    if force and principal and principal.kind == "token" and principal.scope != "admin":
+        raise SemulaError(
+            403, "insufficient_scope", "Forcing past a pin needs an admin token.",
+            err_type="authentication_error",
+        )  # fmt: skip
+    return force
 
 
 @router.get("/projects/{project_id}/entries")
@@ -108,7 +130,7 @@ async def upsert_entry(project_id: str, request: Request, response: Response) ->
             body["response"],
             version=body.get("version"),
             actor=_actor(request),
-            force=bool(body.get("force", False)),
+            force=_may_force(request, bool(body.get("force", False))),
         )
     )
     response.status_code = 201 if created else 200
@@ -131,7 +153,7 @@ def entry_history(entry_id: str, request: Request, version: int | None = None) -
 async def update_entry(entry_id: str, request: Request) -> dict[str, Any]:
     body = await _json(request)
     version = body.pop("version", None)
-    force = bool(body.pop("force", False))
+    force = _may_force(request, bool(body.pop("force", False)))
     return await offload(
         partial(
             _service(request).update_entry,
@@ -148,7 +170,9 @@ async def update_entry(entry_id: str, request: Request) -> dict[str, Any]:
 def delete_entry(
     entry_id: str, request: Request, version: int | None = None, force: bool = False
 ) -> None:
-    _service(request).delete_entry(entry_id, version, actor=_actor(request), force=force)
+    _service(request).delete_entry(
+        entry_id, version, actor=_actor(request), force=_may_force(request, force)
+    )
 
 
 @router.post("/projects/{project_id}/test-match")
@@ -346,3 +370,46 @@ async def answer_pending(pending_id: str, request: Request) -> dict[str, Any]:
         _service(request).answer_pending, pending_id, payload, actor=_actor(request)
     )
     return {"entry_id": entry_id, "pending_id": pending_id, "status": "answered"}
+
+
+@router.get("/tokens")
+async def list_tokens(request: Request) -> dict[str, Any]:
+    """The workspace's API tokens, without their secrets. For people and local use: a token
+    cannot see tokens (the middleware refuses it)."""
+    return {"tokens": await offload(_service(request).list_tokens)}
+
+
+@router.post("/tokens", status_code=201)
+async def create_token(request: Request) -> dict[str, Any]:
+    """Body: ``{"name", "scope": replay|record|admin, "project"?, "expires_at"?}``. The secret
+    is in the answer once."""
+    body = await _json(request)
+    if not isinstance(body.get("name"), str) or not isinstance(body.get("scope"), str):
+        raise SemulaError(400, "invalid_request", "Send {'name': ..., 'scope': ...}.", param="name")
+    return await offload(
+        partial(
+            _service(request).create_token,
+            body["name"],
+            body["scope"],
+            project=body.get("project"),
+            expires_at=body.get("expires_at"),
+        )
+    )
+
+
+@router.post("/tokens/{token_id}/rotate", status_code=201)
+async def rotate_token(token_id: str, request: Request) -> dict[str, Any]:
+    """Mint a successor; the old token keeps working for ``grace_seconds`` (default a day)."""
+    body = await _json(request) if await request.body() else {}
+    grace = body.get("grace_seconds", 86400)
+    if not isinstance(grace, int | float) or isinstance(grace, bool) or grace < 0:
+        raise SemulaError(
+            400, "invalid_request", "'grace_seconds' must be a number of seconds.",
+            param="grace_seconds",
+        )  # fmt: skip
+    return await offload(_service(request).rotate_token, token_id, float(grace))
+
+
+@router.post("/tokens/{token_id}/revoke")
+async def revoke_token(token_id: str, request: Request) -> dict[str, Any]:
+    return await offload(_service(request).revoke_token, token_id)

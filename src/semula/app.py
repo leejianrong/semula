@@ -16,7 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
 from . import __version__, api_admin, api_openai
-from .auth import ApiKeyMiddleware
+from .auth import ApiKeyMiddleware, TokenAuthMiddleware
 from .config import Settings
 from .dashboard.mount import LazyDashboard, Locked
 from .db import Database
@@ -96,7 +96,13 @@ def create_app(settings: Settings | None = None, embedder: Embedder | None = Non
     service.sync_index()
     service.sync_embeddings()
     mcp = LazyMcp(service)
-    dashboard = LazyDashboard(service) if settings.ui and not settings.api_key else None
+    # The dashboard cannot send a header on a page load, so it is off behind any key or token
+    # until it has sign-in (ADR-0010); hosted mode never serves the open one.
+    dashboard = (
+        LazyDashboard(service)
+        if settings.ui and not settings.api_key and not settings.hosted
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(parent: FastAPI) -> AsyncIterator[None]:
@@ -156,6 +162,8 @@ def create_app(settings: Settings | None = None, embedder: Embedder | None = Non
         def root() -> RedirectResponse:
             return RedirectResponse("ui/")
 
-    if settings.api_key:
+    if settings.hosted:
+        app.add_middleware(TokenAuthMiddleware, service=service)
+    elif settings.api_key:
         app.add_middleware(ApiKeyMiddleware, key=settings.api_key)
     return app

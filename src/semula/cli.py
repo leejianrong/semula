@@ -608,6 +608,77 @@ def _tier_text(tier: dict[str, Any]) -> str:
     return f"{tier['tier']} {tier['verdict']}{score}"
 
 
+def _admin_service(args: argparse.Namespace, workspace: str | None) -> Any:
+    """The service on this machine's own database, for work only the operator does: creating
+    workspaces and minting the first tokens of a hosted server (ADR-0010). Not over HTTP, so
+    it needs the server library and the database settings of the server."""
+    from .config import Settings
+    from .db import Database
+    from .scope import Scope
+    from .service import Service
+
+    settings = Settings.from_env()
+    service = Service(Database(settings.resolved_database_url), settings)
+    return service.for_scope(Scope(workspace)) if workspace else service
+
+
+def _admin_workspace(args: argparse.Namespace) -> int:
+    try:
+        service = _admin_service(args, None)
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    from .errors import SemulaError
+
+    try:
+        service.create_workspace(args.id, args.name)
+    except SemulaError as exc:
+        print(f"error: {exc.code}: {exc.message}", file=sys.stderr)
+        return EXIT_REJECTED
+    return _ok(args, {"workspace": args.id}, f"created workspace {args.id}")
+
+
+def _admin_token(args: argparse.Namespace) -> int:
+    try:
+        service = _admin_service(args, args.workspace)
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    from .errors import SemulaError
+
+    try:
+        if args.verb == "create":
+            out = service.create_token(
+                args.name, args.scope, project=args.project, expires_at=args.expires
+            )
+        elif args.verb == "rotate":
+            out = service.rotate_token(args.id, args.grace)
+        elif args.verb == "revoke":
+            out = service.revoke_token(args.id)
+        else:
+            tokens = service.list_tokens()
+            lines = [
+                "\t".join(
+                    [
+                        t["id"],
+                        t["prefix"] + "…",
+                        t["scope"],
+                        t["project"] or "all projects",
+                        t["name"],
+                        "revoked" if t["revoked_at"] else t["last_used_at"] or "never used",
+                    ]
+                )
+                for t in tokens
+            ]
+            return _ok(args, tokens, "\n".join(lines) if lines else "no tokens")
+    except SemulaError as exc:
+        print(f"error: {exc.code}: {exc.message}", file=sys.stderr)
+        return EXIT_REJECTED
+    secret = out.get("token")
+    human = f"{args.verb}d token {out['id']} ({out['scope']}, {out['name']})"
+    if secret:
+        human += f"\n{secret}\nThis is the only time the token is shown."
+    return _ok(args, out, human)
+
+
 def _mcp(args: argparse.Namespace) -> int:
     try:
         from .mcp_server import run_stdio_proxy
@@ -794,6 +865,34 @@ def build_parser() -> argparse.ArgumentParser:
     mode = add(sub, "mode", _mode, "Show or switch the mode (replay or record)")
     mode.add_argument("mode", nargs="?", choices=["replay", "record"])
     mode.add_argument("--project", default=None, help="set this project's own mode (kept)")
+
+    admin = sub.add_parser("admin", help="Operator tasks on the server's own database (hosting)")
+    asub = admin.add_subparsers(dest="admin_command", required=True)
+    wscreate = add(asub, "workspace-create", _admin_workspace, "Create a workspace")
+    wscreate.add_argument("id", help="a slug: lowercase letters, digits, hyphens")
+    wscreate.add_argument("--name", default=None)
+    for verb, helptext in (
+        ("create", "Mint an API token for a workspace (the secret is shown once)"),
+        ("list", "List a workspace's API tokens"),
+        ("revoke", "Revoke an API token"),
+        ("rotate", "Mint a successor; the old token keeps working for a grace period"),
+    ):
+        tok = add(asub, f"token-{verb}", _admin_token, helptext)
+        tok.set_defaults(verb=verb)
+        tok.add_argument("--workspace", required=True)
+        if verb == "create":
+            tok.add_argument("--name", required=True)
+            tok.add_argument("--scope", required=True, choices=["replay", "record", "admin"])
+            tok.add_argument("--project", default=None, help="only this project (default: all)")
+            tok.add_argument(
+                "--expires", default=None, help="an ISO-8601 time, e.g. 2027-01-01T00:00:00.000Z"
+            )
+        if verb in ("revoke", "rotate"):
+            tok.add_argument("id")
+        if verb == "rotate":
+            tok.add_argument(
+                "--grace", type=float, default=86400.0, help="seconds the old token still works"
+            )
 
     tm = add(sub, "test-match", _test_match, "Which entry would fire for this prompt, and why")
     tm.add_argument("--project", default="default")

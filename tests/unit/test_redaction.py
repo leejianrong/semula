@@ -28,6 +28,7 @@ def req(text: str, **extra: object):  # type: ignore[no-untyped-def]
         "xo" + "xb-123456789012-abcdefghij",
         "Bear" + "er eyJhbGciOiJIUzI1NiJ9.payload.sig",
         "-----BEGIN RSA PRIVATE KEY-----\nMIIabc\ndef\n-----END RSA PRIVATE KEY-----",
+        "smla_" + "live_" + "A1b2C3d4" * 4,  # a semula API token pasted into a prompt
         "ACME-4411",
     ],
 )
