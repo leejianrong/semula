@@ -136,7 +136,7 @@ def test_a_new_entry_can_be_written_in_the_dashboard_and_then_replays(server: st
         fill(tab, "Prompt", "What is your refund window?")
         fill(tab, "New answer", "Fourteen days.")
         tab.send(tab.find("button", label="Create entry"), "click")
-        tab.wait_for(lambda m: "Fourteen days." in str(m), 5, mark)
+        tab.wait_for(lambda m: m["type"] == "navigate", 5, mark)  # created: the page moves on
         listed = httpx.get(f"{server}/api/v1/projects/default/entries").json()["entries"]
         assert [e["last_message"] for e in listed] == ["What is your refund window?"]
         body = {
@@ -168,7 +168,7 @@ def test_a_new_entry_can_be_pinned_and_carry_a_system_prompt_and_tools(server: s
         )
         mark = tab.mark()
         tab.send(tab.find("button", label="Create entry"), "click")
-        tab.wait_for(lambda m: "pinned" in str(m), 5, mark)
+        tab.wait_for(lambda m: m["type"] == "navigate", 5, mark)
         made = httpx.get(f"{server}/api/v1/projects/default/entries").json()["entries"][0]
         assert made["pinned"] is True and made["has_tools"] is True
         full = httpx.get(f"{server}/api/v1/entries/{made['id']}").json()
