@@ -138,6 +138,9 @@ class Service:
         # What a project follows until it chooses its own mode. Lives in memory: it starts from
         # SEMULA_MODE and PUT /api/v1/mode moves it, but a restart returns to the environment.
         self.workspace_id = DEFAULT_WORKSPACE  # ``for_scope`` binds a copy to another workspace
+        # A project-bound token reaches this project and no other (ADR-0010); None is all.
+        self.project_limit: str | None = None
+        self.acting_as_token = False
         self._process: dict[str, str] = {"mode": settings.mode}  # shared by every scoped copy
         self._tokens = _TokenState()
         self.lexical = make_index(self.db)
@@ -172,12 +175,40 @@ class Service:
             return self
         bound = copy.copy(self)
         bound.workspace_id = scope.workspace_id
+        principal = scope.principal
+        bound.acting_as_token = principal is not None and principal.kind == "token"
+        bound.project_limit = principal.project if bound.acting_as_token and principal else None
         bound.db = self.db.for_workspace(scope.workspace_id)
         bound.lexical = self.lexical.bound(bound.db)
         if scope.workspace_id != DEFAULT_WORKSPACE:
             bound.vectors = None
             bound.indexer = None
         return bound
+
+    def _allowed(self, project: str) -> str:
+        """404 for a project outside a bound token's own, exactly as if it did not exist."""
+        if self.project_limit is not None and project != self.project_limit:
+            raise SemulaError(404, "project_not_found", f"No project '{project}'.", param="project")
+        return project
+
+    def _narrow(self, project: str | None) -> str | None:
+        """The project a listing is about: the one asked for (which must be allowed), else a bound
+        token's own, else None for every project."""
+        if project:
+            return self._allowed(project)
+        return self.project_limit
+
+    def _own(self, project_id: str, code: str, what: str) -> None:
+        """A row found by id belongs to a project this caller may see, or it is a 404."""
+        if self.project_limit is not None and project_id != self.project_limit:
+            raise SemulaError(404, code, what)
+
+    def _not_a_token(self) -> None:
+        """Tokens, bound or not, never manage tokens or the operator's settings (ADR-0010)."""
+        if self.acting_as_token:
+            raise SemulaError(
+                403, "forbidden", "Tokens cannot manage tokens.", err_type="authentication_error"
+            )
 
     def _pk(self, table: sa.Table, slug: str) -> tuple[Any, Any]:
         return (table.c.workspace_id == self.workspace_id, table.c.id == slug)
@@ -197,6 +228,7 @@ class Service:
         created_by: str | None = None,
     ) -> dict[str, Any]:
         """Mint a token for this workspace. The secret is in the result once and never again."""
+        self._not_a_token()
         label = name.strip()
         if not label or len(label) > 80:
             raise SemulaError(
@@ -226,6 +258,7 @@ class Service:
         return {**self._token_view(self._token_row(token_id)), "token": secret}
 
     def list_tokens(self) -> list[dict[str, Any]]:
+        self._not_a_token()
         rows = self.db.rows(
             sa.select(T)
             .where(T.c.workspace_id == self.workspace_id)
@@ -236,6 +269,7 @@ class Service:
     def revoke_token(self, token_id: str) -> dict[str, Any]:
         """Stop a token working. In this process the effect is immediate; another replica that
         has the token cached notices within ``TOKEN_CACHE_TTL`` seconds."""
+        self._not_a_token()
         self._token_row(token_id)
         self.db.execute(
             sa.update(T)
@@ -248,6 +282,7 @@ class Service:
     def rotate_token(self, token_id: str, grace_seconds: float = 86400.0) -> dict[str, Any]:
         """Mint a successor with the same name, scope and project, and let the old token keep
         working for ``grace_seconds`` so deployed configuration can be swapped without an outage."""
+        self._not_a_token()
         old = self._token_row(token_id)
         successor = self.create_token(
             old["name"],
@@ -357,6 +392,13 @@ class Service:
             raise SemulaError(
                 422, "invalid_mode", "mode must be 'replay' or 'record'.", param="mode"
             )
+        if project is None and (self.project_limit is not None or self.settings.hosted):
+            raise SemulaError(
+                403,
+                "forbidden",
+                "The default mode belongs to the operator; set a project's own mode.",
+                err_type="authentication_error",
+            )
         if project is not None:
             self.update_project(project, settings={"mode": mode})  # announces the change
             return {"mode": self.mode_of(project), "persisted": True, "project": project}
@@ -366,6 +408,10 @@ class Service:
 
     # --- projects -----------------------------------------------------------------
     def create_project(self, slug: str, name: str | None = None) -> dict[str, Any]:
+        if self.project_limit is not None:
+            raise SemulaError(
+                403, "forbidden", "A token bound to a project cannot create projects."
+            )
         if not _SLUG.fullmatch(slug):
             raise SemulaError(
                 422,
@@ -407,7 +453,10 @@ class Service:
                 entries.label("entries"),
                 parked.label("pending"),
             )
-            .where(P.c.workspace_id == self.workspace_id)
+            .where(
+                P.c.workspace_id == self.workspace_id,
+                *([P.c.id == self.project_limit] if self.project_limit else []),
+            )
             .order_by(P.c.id)
         )
         return [{**r, "mode": self.mode_of(r["id"])} for r in map(dict, rows)]
@@ -426,6 +475,7 @@ class Service:
     def project_settings(self, slug: str) -> ProjectSettings:
         """A project's settings. Read on every call, so cached for ``SETTINGS_TTL`` seconds;
         a change made here is visible at once, one made by another replica within the TTL."""
+        self._allowed(slug)
         cached = self._settings_cache.get((self.workspace_id, slug))
         if cached and time.monotonic() - cached[0] < SETTINGS_TTL:
             return cached[1]
@@ -562,6 +612,7 @@ class Service:
     def queue_counts(self, project: str | None = None) -> dict[str, int]:
         """How many requests are parked and how many near-matches wait for review, for one
         project or all of them."""
+        project = self._narrow(project)
         mine_q = [Q.c.workspace_id == self.workspace_id, Q.c.status == "pending"]
         mine_c = [C.c.workspace_id == self.workspace_id, C.c.status == "open"]
         if project:
@@ -840,6 +891,8 @@ class Service:
     def embeddings_status(self) -> dict[str, Any]:
         if not self.vectors or not self.indexer:
             return {"enabled": False}
+        if self.project_limit is not None:  # counts span every project: not for a bound token
+            return {"enabled": True, "model": self.vectors.embedder.model_id}
         entries = self.db.one(
             sa.select(sa.func.count().label("n"))
             .select_from(E)
@@ -1017,6 +1070,7 @@ class Service:
         row = self.db.one(sa.select(E).where(*self._pk(E, entry_id)))
         if not row:
             raise SemulaError(404, "entry_not_found", f"No entry {entry_id}.")
+        self._own(row["project_id"], "entry_not_found", f"No entry {entry_id}.")
         return row
 
     def _guard_write(
@@ -1385,7 +1439,7 @@ class Service:
         skipped, so importing twice changes nothing. Nothing is ever deleted. A project that
         does not exist is created with the bundle's settings; an existing one keeps its own."""
         manifest, entries, aliases = _parse_bundle(bundle)
-        slug = project or str(manifest["project"]["id"])
+        slug = self._allowed(project or str(manifest["project"]["id"]))
         if not _SLUG.fullmatch(slug):
             raise SemulaError(
                 422, "invalid_project_id", f"'{slug}' is not a valid project id.", param="project"
@@ -1638,6 +1692,7 @@ class Service:
     def list_candidates(
         self, project: str | None = None, status: str | None = "open"
     ) -> list[dict[str, Any]]:
+        project = self._narrow(project)
         conditions = [C.c.workspace_id == self.workspace_id]
         if project:
             self.require_project(project)
@@ -1670,6 +1725,7 @@ class Service:
         )
         if not row:
             raise SemulaError(404, "candidate_not_found", f"No review candidate {candidate_id}.")
+        self._own(row["project_id"], "candidate_not_found", f"No review candidate {candidate_id}.")
         return row
 
     def approve_candidate(self, candidate_id: str) -> dict[str, Any]:
@@ -1816,6 +1872,7 @@ class Service:
     def list_pending(
         self, status: str | None = "pending", project: str | None = None
     ) -> list[dict[str, Any]]:
+        project = self._narrow(project)
         conditions = [Q.c.workspace_id == self.workspace_id]
         if status:
             conditions.append(Q.c.status == status)
@@ -1833,6 +1890,7 @@ class Service:
         Subscribes before the first look, so a call parked in between is not missed. Every
         database read runs in a worker thread and none is open while waiting.
         """
+        project = self._narrow(project)
         deadline = time.monotonic() + timeout
         with self.events.subscribe() as sub:
             while True:
@@ -1859,6 +1917,7 @@ class Service:
         )
         if not row:
             raise SemulaError(404, "pending_not_found", f"No pending request {pending_id}.")
+        self._own(row["project_id"], "pending_not_found", f"No pending request {pending_id}.")
         return _pending_view(row, full=True)
 
     def answer_pending(self, pending_id: str, payload: Any, *, actor: str = "agent") -> str:
@@ -1868,6 +1927,7 @@ class Service:
         )
         if not row:
             raise SemulaError(404, "pending_not_found", f"No pending request {pending_id}.")
+        self._own(row["project_id"], "pending_not_found", f"No pending request {pending_id}.")
         if row["status"] != "pending":
             raise SemulaError(409, "already_answered", f"{pending_id} was already answered.")
         stored = parse_answer(payload)
@@ -1958,6 +2018,7 @@ class Service:
         before_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """Recent calls, newest first. ``before_id`` pages backwards."""
+        project = self._narrow(project)
         conditions = [L.c.workspace_id == self.workspace_id]
         if project:
             self.require_project(project)
@@ -1983,6 +2044,7 @@ class Service:
         Postgres. ``hit_rate`` is hits over every call. ``median_latency_ms`` covers hits and
         misses only: a recorded or timed-out call waited for an agent, which is not replay speed.
         ``parked`` is the open pending requests now, whatever the window."""
+        project = self._narrow(project)
         match = _WINDOW.fullmatch(window)
         minutes = int(match[1]) * {"m": 1, "h": 60, "d": 1440}[match[2]] if match else 0
         if not 1 <= minutes <= MAX_WINDOW_MINUTES:

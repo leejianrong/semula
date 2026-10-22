@@ -16,7 +16,9 @@ open in the next; the database upgrades itself on start and cannot be downgraded
   delete, approve, force past a pin or change settings; the actor comes from the token, not a
   header; failed attempts are rate limited; revoking is immediate in-process and within 30 s
   elsewhere. `semula admin` creates workspaces and mints, lists, rotates and revokes tokens.
-  Tokens in prompts are redacted. The dashboard and MCP stay off in hosted mode for now.
+  Tokens in prompts are redacted. A project-bound token reaches its project and nothing else,
+  through REST and through MCP (each tool has a scope; browser `Origin`s are refused). The open
+  dashboard stays off in hosted mode.
 - **Postgres row-level security** (migration 0011): tenant tables carry a policy on
   `workspace_id`, and every transaction states which workspace it acts for, so a query that forgot
   its filter sees nothing of another workspace's. Owners and superusers bypass it; see the
