@@ -86,14 +86,14 @@ def test_the_fts5_index_replaces_and_deletes(tmp_path: Path) -> None:
     index = make_index(db)
     index.upsert("e1", "default", "default", ["alpha"])
     index.upsert("e1", "default", "default", ["beta"])  # an upsert replaces, never duplicates
-    assert index.indexed_ids() == {"e1"}
+    assert index.indexed_ids("default") == {"e1"}
     assert index.search("default", "default", ["alpha"], CONFIG, 5) == []
     assert [h.entry_id for h in index.search("default", "default", ["beta"], CONFIG, 5)] == ["e1"]
-    index.delete("e1")
-    assert index.indexed_ids() == set()
+    index.delete("e1", "default")
+    assert index.indexed_ids("default") == set()
     index.upsert("e2", "default", "p", ["gamma"])
     index.delete_project("default", "p")
-    assert index.indexed_ids() == set()
+    assert index.indexed_ids("default") == set()
 
 
 def test_the_fts5_query_treats_odd_words_as_words_not_syntax(tmp_path: Path) -> None:
@@ -107,5 +107,5 @@ def test_the_fts5_query_treats_odd_words_as_words_not_syntax(tmp_path: Path) -> 
 def test_the_scan_index_is_the_fallback_when_fts_is_absent(tmp_path: Path) -> None:
     db = Database(fresh_database_url(tmp_path))
     scan = ScanIndex(db)
-    assert scan.indexed_ids() is None  # nothing to repair
+    assert scan.indexed_ids("default") is None  # nothing to repair
     assert scan.search("default", "default", [], CONFIG, 5) == []

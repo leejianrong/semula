@@ -135,7 +135,10 @@ class VectorStore:
 
     def put(self, entry_id: str, workspace_id: str, project_id: str, vector: np.ndarray) -> None:
         with self.db.begin() as conn:
-            self.db.execute(sa.delete(V).where(V.c.entry_id == entry_id), conn)
+            self.db.execute(
+                sa.delete(V).where(V.c.workspace_id == workspace_id, V.c.entry_id == entry_id),
+                conn,
+            )
             self.db.execute(
                 sa.insert(V).values(
                     entry_id=entry_id,

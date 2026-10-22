@@ -154,6 +154,10 @@ class Service:
     def _pk(self, table: sa.Table, slug: str) -> tuple[Any, Any]:
         return (table.c.workspace_id == self.workspace_id, table.c.id == slug)
 
+    def _rk(self, entry_id: str) -> tuple[Any, Any]:
+        """Revisions of one entry, within this workspace."""
+        return (R.c.workspace_id == self.workspace_id, R.c.entry_id == entry_id)
+
     def create_workspace(self, workspace_id: str, name: str | None = None) -> None:
         """Add a workspace (a tenant). Local use has only ``default``; this is for hosting."""
         if self.db.one(sa.select(WS.c.id).where(WS.c.id == workspace_id)):
@@ -316,7 +320,7 @@ class Service:
                 if "exact_fingerprint" in table.c:  # a candidate has no exact fingerprint
                     values["exact_fingerprint"] = exact_fingerprint(req, config)
                 self.db.execute(
-                    sa.update(table).where(table.c.id == row["id"]).values(**values), conn
+                    sa.update(table).where(*self._pk(table, row["id"])).values(**values), conn
                 )
                 if table is E:  # scrubbers and tail_n shape the indexed words too
                     self._index(row["id"], slug, req, config, conn)
@@ -457,7 +461,7 @@ class Service:
                 trace[tier] = ("no", None, "")
         approved = self.db.one(
             _entry_for_serving()
-            .join(A, A.c.entry_id == E.c.id)
+            .join(A, sa.and_(A.c.workspace_id == E.c.workspace_id, A.c.entry_id == E.c.id))
             .where(
                 A.c.workspace_id == self.workspace_id,
                 A.c.project_id == project,
@@ -514,7 +518,9 @@ class Service:
         for score, entry_id in scored:
             if score < settings.bm25_serve_threshold:
                 break
-            row = self.db.one(_entry_for_serving(E.c.canonical_request).where(E.c.id == entry_id))
+            row = self.db.one(
+                _entry_for_serving(E.c.canonical_request).where(*self._pk(E, entry_id))
+            )
             if (
                 row
                 and shape(CanonicalRequest.from_json(row["canonical_request"]), config) == my_shape
@@ -523,7 +529,7 @@ class Service:
                     trace["words"] = ("match", round(score, 4), "same words")
                 return MatchResult(_match(row, "bm25", score), [])
         best_score, best_id = scored[0]
-        best = self.db.one(sa.select(E.c.canonical_request).where(E.c.id == best_id))
+        best = self.db.one(sa.select(E.c.canonical_request).where(*self._pk(E, best_id)))
         last = ""
         if best:
             messages = CanonicalRequest.from_json(best["canonical_request"]).messages
@@ -592,7 +598,7 @@ class Service:
                 if score < serve_at:
                     break
                 row = self.db.one(
-                    _entry_for_serving(E.c.canonical_request).where(E.c.id == entry_id)
+                    _entry_for_serving(E.c.canonical_request).where(*self._pk(E, entry_id))
                 )
                 other = CanonicalRequest.from_json(row["canonical_request"]) if row else None
                 if row and other and shape(other, config) == my_shape:
@@ -629,7 +635,7 @@ class Service:
     def _texts_to_embed(self, ids: list[str]) -> list[tuple[str, str, str, str]]:
         rows = self.db.rows(
             sa.select(E.c.id, E.c.workspace_id, E.c.project_id, E.c.canonical_request).where(
-                E.c.id.in_(ids)
+                E.c.workspace_id == self.workspace_id, E.c.id.in_(ids)
             )
         )
         configs: dict[str, FingerprintConfig] = {}
@@ -677,7 +683,9 @@ class Service:
         if not weak:
             return weak
         rows = self.db.rows(
-            sa.select(E.c.id, E.c.canonical_request).where(E.c.id.in_([i for _, i in weak]))
+            sa.select(E.c.id, E.c.canonical_request).where(
+                E.c.workspace_id == self.workspace_id, E.c.id.in_([i for _, i in weak])
+            )
         )
         mine = roles_of(req, config)
         same = {
@@ -724,7 +732,7 @@ class Service:
         if never_hit is not None:
             conditions.append(E.c.hit_count == 0 if never_hit else E.c.hit_count > 0)
         if has_alias is not None:
-            exists = sa.exists().where(A.c.entry_id == E.c.id)
+            exists = sa.exists().where(A.c.workspace_id == E.c.workspace_id, A.c.entry_id == E.c.id)
             conditions.append(exists if has_alias else ~exists)
         if tool_calls is not None:
             calls = E.c.responses.like(TOOL_CALLS_LIKE)
@@ -732,7 +740,7 @@ class Service:
         total = self.db.one(sa.select(sa.func.count().label("n")).select_from(E).where(*conditions))
         alias_count = (
             sa.select(sa.func.count())
-            .where(A.c.entry_id == E.c.id)
+            .where(A.c.workspace_id == E.c.workspace_id, A.c.entry_id == E.c.id)
             .correlate(E)
             .scalar_subquery()
             .label("alias_count")
@@ -829,9 +837,7 @@ class Service:
         return _entry_view(self._entry_row(entry_id), full=True)
 
     def _entry_row(self, entry_id: str) -> Any:
-        row = self.db.one(
-            sa.select(E).where(E.c.id == entry_id, E.c.workspace_id == self.workspace_id)
-        )
+        row = self.db.one(sa.select(E).where(*self._pk(E, entry_id)))
         if not row:
             raise SemulaError(404, "entry_not_found", f"No entry {entry_id}.")
         return row
@@ -930,7 +936,7 @@ class Service:
         with self.db.begin() as conn:
             changed = self.db.execute(
                 sa.update(E)
-                .where(E.c.id == entry_id, E.c.version == version)
+                .where(*self._pk(E, entry_id), E.c.version == version)
                 .values(
                     responses=json.dumps(responses),
                     selection=selection,
@@ -990,7 +996,7 @@ class Service:
         )
         edge = self.db.one(
             sa.select(R.c.version)
-            .where(R.c.entry_id == entry_id)
+            .where(*self._rk(entry_id))
             .order_by(R.c.version.desc())
             .offset(MAX_REVISIONS - 1)
             .limit(1),
@@ -998,7 +1004,7 @@ class Service:
         )
         if edge:
             self.db.execute(
-                sa.delete(R).where(R.c.entry_id == entry_id, R.c.version < edge["version"]), conn
+                sa.delete(R).where(*self._rk(entry_id), R.c.version < edge["version"]), conn
             )
 
     def entry_history(self, entry_id: str, version: int | None = None) -> dict[str, Any]:
@@ -1007,7 +1013,7 @@ class Service:
         entry = self._entry_row(entry_id)
         base = {"entry_id": entry_id, "version": entry["version"]}
         if version is not None:
-            row = self.db.one(sa.select(R).where(R.c.entry_id == entry_id, R.c.version == version))
+            row = self.db.one(sa.select(R).where(*self._rk(entry_id), R.c.version == version))
             if not row:
                 raise SemulaError(
                     404,
@@ -1020,9 +1026,7 @@ class Service:
                 **base,
                 "revision": {**_revision_view(row), "snapshot": json.loads(row["snapshot"])},
             }
-        rows = self.db.rows(
-            sa.select(R).where(R.c.entry_id == entry_id).order_by(R.c.version.desc())
-        )
+        rows = self.db.rows(sa.select(R).where(*self._rk(entry_id)).order_by(R.c.version.desc()))
         return {**base, "revisions": [_revision_view(r) for r in rows]}
 
     def delete_entry(
@@ -1032,11 +1036,11 @@ class Service:
         forced = self._guard_write(row, version, actor, force, "deleting")
         with self.db.begin() as conn:
             deleted = self.db.execute(
-                sa.delete(E).where(E.c.id == entry_id, E.c.version == version), conn
+                sa.delete(E).where(*self._pk(E, entry_id), E.c.version == version), conn
             )
             if deleted != 1:
                 raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
-            self.lexical.delete(entry_id, conn)  # candidates and aliases cascade
+            self.lexical.delete(entry_id, self.workspace_id, conn)  # candidates, aliases cascade
             if forced:
                 self._log_forced(row, "forced_delete", conn)
         self._queues_changed(row["project_id"])  # candidates of the entry went with it
@@ -1116,9 +1120,14 @@ class Service:
             self.indexer.schedule(entry_id)  # vectors are made off the write path
 
     def sync_index(self) -> None:
-        """Make the lexical index match the entries: add the missing, drop the stale. Cheap
-        when nothing is out of step. Run at startup, which also fills a freshly migrated index."""
-        indexed = self.lexical.indexed_ids()
+        """Make the lexical index match the entries of every workspace: add the missing, drop the
+        stale. Cheap when nothing is out of step. Run at startup, which also fills a freshly
+        migrated index."""
+        for row in self.db.rows(sa.select(WS.c.id)):
+            self.for_scope(Scope(row["id"]))._sync_workspace_index()
+
+    def _sync_workspace_index(self) -> None:
+        indexed = self.lexical.indexed_ids(self.workspace_id)
         if indexed is None:
             return
         rows = self.db.rows(
@@ -1138,7 +1147,7 @@ class Service:
                 req = CanonicalRequest.from_json(row["canonical_request"])
                 self._index(row["id"], project, req, configs[project], conn)
             for stale in indexed - known:
-                self.lexical.delete(stale, conn)
+                self.lexical.delete(stale, self.workspace_id, conn)
 
     # --- export and import ----------------------------------------------------
     def export_project(self, slug: str) -> dict[str, Any]:
@@ -1297,7 +1306,7 @@ class Service:
             "selection": selection,
             "pinned": bool(item.get("pinned", False)),
         }
-        row = self.db.one(sa.select(E).where(E.c.id == item["id"]), conn)
+        row = self.db.one(sa.select(E).where(*self._pk(E, item["id"])), conn)
         if row and (row["workspace_id"], row["project_id"]) != (self.workspace_id, slug):
             raise SemulaError(
                 409,
@@ -1339,7 +1348,7 @@ class Service:
         else:
             self.db.execute(
                 sa.update(E)
-                .where(E.c.id == item["id"])
+                .where(*self._pk(E, item["id"]))
                 .values(**values, version=E.c.version + 1, updated_at=now_iso()),
                 conn,
             )
@@ -1380,7 +1389,7 @@ class Service:
             "exact_fingerprint": exact_fingerprint(req, config),
             "canonical_request": redact_request(req, config).to_json(),
         }
-        row = self.db.one(sa.select(A).where(A.c.id == item["id"]), conn)
+        row = self.db.one(sa.select(A).where(*self._pk(A, item["id"])), conn)
         if row and (row["workspace_id"], row["project_id"]) != (self.workspace_id, slug):
             raise SemulaError(
                 409,
@@ -1404,7 +1413,7 @@ class Service:
         elif all(row[k] == v for k, v in values.items()):
             tally["unchanged"] += 1
         else:
-            self.db.execute(sa.update(A).where(A.c.id == item["id"]).values(**values), conn)
+            self.db.execute(sa.update(A).where(*self._pk(A, item["id"])).values(**values), conn)
             tally["updated"] += 1
         self._supersede(conn, slug, values["fingerprint"])
 
@@ -1460,7 +1469,9 @@ class Service:
             conditions.append(C.c.status == status)
         rows = self.db.rows(
             sa.select(C, E.c.canonical_request.label("entry_request"))
-            .select_from(C.join(E, E.c.id == C.c.entry_id))
+            .select_from(
+                C.join(E, sa.and_(E.c.workspace_id == C.c.workspace_id, E.c.id == C.c.entry_id))
+            )
             .where(*conditions)
             .order_by(C.c.score.desc(), C.c.id)
         )
@@ -1475,8 +1486,10 @@ class Service:
     def _candidate_row(self, candidate_id: str) -> Any:
         row = self.db.one(
             sa.select(C, E.c.canonical_request.label("entry_request"))
-            .select_from(C.join(E, E.c.id == C.c.entry_id))
-            .where(C.c.id == candidate_id, C.c.workspace_id == self.workspace_id)
+            .select_from(
+                C.join(E, sa.and_(E.c.workspace_id == C.c.workspace_id, E.c.id == C.c.entry_id))
+            )
+            .where(*self._pk(C, candidate_id))
         )
         if not row:
             raise SemulaError(404, "candidate_not_found", f"No review candidate {candidate_id}.")
@@ -1516,12 +1529,12 @@ class Service:
     def _decide(self, candidate_id: str, status: str, conn: Connection) -> None:
         changed = self.db.execute(
             sa.update(C)
-            .where(C.c.id == candidate_id, C.c.status == "open")
+            .where(*self._pk(C, candidate_id), C.c.status == "open")
             .values(status=status, decided_at=now_iso()),
             conn,
         )
         if changed != 1:
-            current = self.db.one(sa.select(C.c.status).where(C.c.id == candidate_id), conn)
+            current = self.db.one(sa.select(C.c.status).where(*self._pk(C, candidate_id)), conn)
             raise SemulaError(
                 409,
                 "candidate_decided",
@@ -1686,7 +1699,7 @@ class Service:
         with self.db.begin() as conn:  # the entry and the pending row change together or not at all
             claimed = self.db.execute(
                 sa.update(Q)
-                .where(Q.c.id == pending_id, Q.c.status == "pending")
+                .where(*self._pk(Q, pending_id), Q.c.status == "pending")
                 .values(status="answered", entry_id=entry_id, answered_at=now_iso()),
                 conn,
             )
@@ -1751,7 +1764,8 @@ class Service:
         with self.db.begin() as conn:
             if count_hit and entry_id:
                 self.db.execute(
-                    sa.update(E).where(E.c.id == entry_id).values(hit_count=E.c.hit_count + 1), conn
+                    sa.update(E).where(*self._pk(E, entry_id)).values(hit_count=E.c.hit_count + 1),
+                    conn,
                 )
             key = conn.execute(sa.insert(L).values(**values)).inserted_primary_key
         self._publish({"type": "call", "id": key[0] if key else None, **_log_view(values)})

@@ -71,11 +71,21 @@ def _project_fk(table: str) -> sa.ForeignKeyConstraint:
     )
 
 
+def _entry_fk(table: str) -> sa.ForeignKeyConstraint:
+    """A child row names its entry within its own workspace: it cannot point at another's."""
+    return sa.ForeignKeyConstraint(
+        ["workspace_id", "entry_id"],
+        ["entry.workspace_id", "entry.id"],
+        ondelete="CASCADE",
+        name=f"fk_{table}_entry",
+    )
+
+
 entry = sa.Table(
     "entry",
     metadata,
-    sa.Column("id", sa.Text, primary_key=True),
     sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("id", sa.Text, nullable=False),
     sa.Column("project_id", sa.Text, nullable=False),
     sa.Column("fingerprint", sa.Text, nullable=False),
     sa.Column("exact_fingerprint", sa.Text, nullable=False),
@@ -87,6 +97,7 @@ entry = sa.Table(
     _ts("created_at"),
     _ts("updated_at"),
     sa.Column("selection", sa.Text, nullable=False, default="first"),
+    sa.PrimaryKeyConstraint("workspace_id", "id", name="pk_entry"),
     _project_fk("entry"),
     sa.Index("idx_entry_fingerprint", "workspace_id", "project_id", "fingerprint"),
     sa.Index("idx_entry_exact", "workspace_id", "project_id", "exact_fingerprint"),
@@ -97,22 +108,23 @@ entry = sa.Table(
 entry_revision = sa.Table(
     "entry_revision",
     metadata,
-    sa.Column("entry_id", sa.Text, sa.ForeignKey("entry.id", ondelete="CASCADE"), nullable=False),
     sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("entry_id", sa.Text, nullable=False),
     sa.Column("version", sa.Integer, nullable=False),
     _ts("ts"),
     sa.Column("actor", sa.Text, nullable=False),  # agent | human
     sa.Column("summary", sa.Text, nullable=False),
     sa.Column("forced", sa.Boolean, nullable=False, default=False),  # an agent overrode a pin
     sa.Column("snapshot", sa.Text, nullable=False),  # {"responses": [...], "selection", "pinned"}
-    sa.PrimaryKeyConstraint("entry_id", "version", name="pk_entry_revision"),
+    sa.PrimaryKeyConstraint("workspace_id", "entry_id", "version", name="pk_entry_revision"),
+    _entry_fk("entry_revision"),
 )
 
 pending = sa.Table(
     "pending",
     metadata,
-    sa.Column("id", sa.Text, primary_key=True),
     sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("id", sa.Text, nullable=False),
     sa.Column("project_id", sa.Text, nullable=False),
     sa.Column("fingerprint", sa.Text, nullable=False),
     sa.Column("exact_fingerprint", sa.Text, nullable=False),
@@ -121,6 +133,7 @@ pending = sa.Table(
     sa.Column("entry_id", sa.Text),
     _ts("created_at"),
     sa.Column("answered_at", sa.Text),
+    sa.PrimaryKeyConstraint("workspace_id", "id", name="pk_pending"),
     _project_fk("pending"),
     sa.Index("idx_pending_status", "workspace_id", "project_id", "status"),
     # At most one open request per fingerprint, enforced by the database so concurrent
@@ -159,10 +172,10 @@ call_log = sa.Table(
 candidate = sa.Table(
     "candidate",
     metadata,
-    sa.Column("id", sa.Text, primary_key=True),
     sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("id", sa.Text, nullable=False),
     sa.Column("project_id", sa.Text, nullable=False),
-    sa.Column("entry_id", sa.Text, sa.ForeignKey("entry.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("entry_id", sa.Text, nullable=False),
     sa.Column("fingerprint", sa.Text, nullable=False),
     sa.Column("canonical_request", sa.Text, nullable=False),
     sa.Column("score", sa.Float, nullable=False),
@@ -171,7 +184,9 @@ candidate = sa.Table(
     sa.Column("status", sa.Text, nullable=False, default="open"),
     _ts("created_at"),
     sa.Column("decided_at", sa.Text),
+    sa.PrimaryKeyConstraint("workspace_id", "id", name="pk_candidate"),
     _project_fk("candidate"),
+    _entry_fk("candidate"),
     sa.Index("idx_candidate_status", "workspace_id", "project_id", "status"),
     sa.Index("idx_candidate_pair", "workspace_id", "project_id", "fingerprint", "entry_id"),
 )
@@ -181,12 +196,14 @@ candidate = sa.Table(
 entry_vector = sa.Table(
     "entry_vector",
     metadata,
-    sa.Column("entry_id", sa.Text, sa.ForeignKey("entry.id", ondelete="CASCADE"), primary_key=True),
     sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("entry_id", sa.Text, nullable=False),
     sa.Column("project_id", sa.Text, nullable=False),
     sa.Column("model", sa.Text, nullable=False),
     sa.Column("vector", sa.LargeBinary, nullable=False),
     _ts("created_at"),
+    sa.PrimaryKeyConstraint("workspace_id", "entry_id", name="pk_entry_vector"),
+    _entry_fk("entry_vector"),
     sa.Index("idx_entry_vector_project", "workspace_id", "project_id", "model"),
 )
 
@@ -194,16 +211,18 @@ entry_vector = sa.Table(
 alias = sa.Table(
     "alias",
     metadata,
-    sa.Column("id", sa.Text, primary_key=True),
     sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("id", sa.Text, nullable=False),
     sa.Column("project_id", sa.Text, nullable=False),
-    sa.Column("entry_id", sa.Text, sa.ForeignKey("entry.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("entry_id", sa.Text, nullable=False),
     sa.Column("fingerprint", sa.Text, nullable=False),
     sa.Column("exact_fingerprint", sa.Text, nullable=False),
     sa.Column("canonical_request", sa.Text, nullable=False),
     _ts("created_at"),
+    sa.PrimaryKeyConstraint("workspace_id", "id", name="pk_alias"),
     _project_fk("alias"),
+    _entry_fk("alias"),
     sa.Index("idx_alias_fingerprint", "workspace_id", "project_id", "fingerprint"),
     # the entries list counts aliases per row and filters on them; deleting an entry cascades here
-    sa.Index("idx_alias_entry", "entry_id"),
+    sa.Index("idx_alias_entry", "workspace_id", "entry_id"),
 )

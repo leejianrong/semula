@@ -10,6 +10,11 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Composite keys** (migration 0010): an entry, pending request, review candidate or alias is
+  keyed by its workspace and id, and its children point at their entry inside the same workspace.
+  The same id can now live in two workspaces, so importing one bundle into two workspaces works
+  and a row cannot name another workspace's entry. The migration keeps every row; SQLite rebuilds
+  six tables, so back up first, as with any upgrade.
 - **Workspace isolation in the service** (groundwork for hosting, ADR-0011): the service is bound
   to one workspace per request, every query is filtered by it, events and the log stream carry
   their workspace, and a test calls every method as another workspace to prove nothing leaks.

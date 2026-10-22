@@ -94,8 +94,30 @@ class Database:
         return self.engine.dialect.name
 
     # --- migrations -----------------------------------------------------------------
+    def _sqlite_foreign_keys(self, on: bool) -> None:
+        """Switch SQLite foreign-key enforcement on this pool's connection. It cannot change
+        inside a transaction, so migrations that rebuild tables switch it off before they begin
+        (``DROP TABLE`` on a parent would otherwise cascade into its children)."""
+        raw = self.engine.raw_connection()
+        try:
+            cursor = raw.cursor()
+            cursor.execute(f"PRAGMA foreign_keys={'ON' if on else 'OFF'}")
+            cursor.close()
+        finally:
+            raw.close()
+
     def migrate(self) -> None:
         """Bring the database to the latest revision, adopting pre-Alembic SQLite files."""
+        if self.dialect != "sqlite":
+            self._migrate()
+            return
+        self._sqlite_foreign_keys(False)
+        try:
+            self._migrate()
+        finally:
+            self._sqlite_foreign_keys(True)
+
+    def _migrate(self) -> None:
         with self.engine.begin() as conn:
             self._adopt_legacy(conn)
             config = Config()

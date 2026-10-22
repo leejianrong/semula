@@ -18,7 +18,7 @@ from tests.support.db import fresh_database_url
 
 pytestmark = pytest.mark.unit
 
-HEAD = "0009"  # bump with every new migration
+HEAD = "0010"  # bump with every new migration
 
 # What the pre-Alembic hand-rolled runner produced at its version 2.
 LEGACY_DDL = """
@@ -215,28 +215,27 @@ def test_upgrading_collapses_duplicate_open_requests_to_the_earliest(tmp_path: P
 
 def test_upgrading_gives_every_existing_entry_a_first_revision(tmp_path: Path) -> None:
     """History arrived after entries existed: the migration snapshots each one as it stands."""
-    db = new_db(tmp_path)
-    db.run("DROP TABLE entry_revision")
-    db.run("UPDATE alembic_version SET version_num = '0008'")
-    for n, (pinned, selection) in enumerate([(False, "first"), (True, "cycle")]):
-        db.run(
-            "INSERT INTO entry (id, workspace_id, project_id, fingerprint, exact_fingerprint, "
-            "canonical_request, responses, version, pinned, selection, updated_at, created_at) "
-            "VALUES (:id, :w, :p, 'f', 'e', '{}', :r, 3, :pin, :sel, "
-            "'2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')",
-            {
-                "id": f"e{n}", "w": DEFAULT_WORKSPACE, "p": DEFAULT_PROJECT, "pin": pinned,
-                "r": '[{"message": {"role": "assistant", "content": "old"}}]', "sel": selection,
-            },
-        )  # fmt: skip
-    db.migrate()
+    url = _database_at(tmp_path, "0008")  # as a release before history left it
+    engine = sa.create_engine(dbmod_url(url))
+    stamp = "2026-10-01T00:00:00.000Z"
+    with engine.begin() as conn:
+        for n, (pinned, selection) in enumerate([(False, "first"), (True, "cycle")]):
+            _insert(
+                conn, "entry", id=f"e{n}", workspace_id=DEFAULT_WORKSPACE,
+                project_id=DEFAULT_PROJECT, fingerprint="f", exact_fingerprint="e",
+                canonical_request="{}", version=3, pinned=pinned, hit_count=0,
+                responses='[{"message": {"role": "assistant", "content": "old"}}]',
+                selection=selection, updated_at=stamp, created_at=stamp,
+            )  # fmt: skip
+    engine.dispose()
+    db = Database(url)
     assert db.revision() == HEAD
     rows = db.query("SELECT * FROM entry_revision ORDER BY entry_id")
     assert [(r["entry_id"], r["version"], r["actor"], r["summary"]) for r in rows] == [
         ("e0", 3, "agent", "before history"),
         ("e1", 3, "agent", "before history"),
     ]
-    assert rows[0]["ts"] == "2026-10-01T00:00:00.000Z" and not rows[0]["forced"]
+    assert rows[0]["ts"] == stamp and not rows[0]["forced"]
     import json
 
     assert json.loads(rows[1]["snapshot"]) == {
@@ -260,3 +259,101 @@ def test_a_database_made_by_a_newer_semula_is_refused_with_a_clear_message(
         Database(url).migrate()
     text = str(refused.value)
     assert "9999" in text and "newer" in text and "backup" in text.lower()
+
+
+def _database_at(tmp_path: Path, revision: str) -> str:
+    """A database migrated only as far as ``revision``, as an older release left it."""
+    from alembic import command
+    from alembic.config import Config
+
+    import semula.db as dbmod
+
+    url = fresh_database_url(tmp_path)
+    engine = dbmod.make_engine(url)
+    config = Config()
+    config.set_main_option("script_location", str(Path(dbmod.__file__).parent / "migrations"))
+    with engine.begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, revision)
+    engine.dispose()
+    return url
+
+
+def _insert(conn: sa.Connection, table: str, **values: object) -> None:
+    columns = ", ".join(values)
+    binds = ", ".join(f":{c}" for c in values)
+    conn.execute(sa.text(f"INSERT INTO {table} ({columns}) VALUES ({binds})"), values)  # noqa: S608
+
+
+def _count(db: Database, table: str, where: str = "1 = 1") -> int:
+    row = db.query_one(f"SELECT COUNT(*) AS n FROM {table} WHERE {where}")  # noqa: S608
+    assert row is not None
+    return int(row["n"])
+
+
+def test_composite_keys_keep_every_row_and_let_two_workspaces_share_an_id(tmp_path: Path) -> None:
+    """0010 changes the primary and foreign keys of six tables: nothing may be lost, children
+    must still cascade, and the same id must now fit in a second workspace."""
+    url = _database_at(tmp_path, "0009")
+    engine = sa.create_engine(dbmod_url(url))
+    t = "2026-10-01T00:00:00.000Z"
+    where = {"workspace_id": "default", "project_id": "default"}
+    request = {"canonical_request": "{}", "created_at": t}
+    with engine.begin() as conn:
+        _insert(conn, "entry", id="E1", **where, fingerprint="f", exact_fingerprint="x",
+                canonical_request="{}", responses="[]", version=4, pinned=True, hit_count=7,
+                created_at=t, updated_at=t, selection="cycle")  # fmt: skip
+        _insert(conn, "entry_revision", entry_id="E1", workspace_id="default", version=4, ts=t,
+                actor="agent", summary="x", forced=False, snapshot="{}")  # fmt: skip
+        _insert(conn, "pending", id="P1", **where, fingerprint="g", exact_fingerprint="y",
+                status="answered", entry_id="E1", **request)  # fmt: skip
+        _insert(conn, "pending", id="P2", **where, fingerprint="h", exact_fingerprint="y",
+                status="pending", **request)  # fmt: skip
+        _insert(conn, "candidate", id="C1", **where, entry_id="E1", fingerprint="k", score=0.8,
+                tier="bm25", status="open", **request)  # fmt: skip
+        _insert(conn, "alias", id="A1", **where, entry_id="E1", fingerprint="m",
+                exact_fingerprint="n", **request)  # fmt: skip
+        _insert(conn, "entry_vector", entry_id="E1", **where, model="m", vector=b"\x00\x01",
+                created_at=t)  # fmt: skip
+    engine.dispose()
+
+    db = Database(url)  # migrates 0009 to head
+    assert db.revision() == HEAD
+    tables = ("entry", "entry_revision", "pending", "candidate", "alias", "entry_vector")
+    assert [_count(db, name) for name in tables] == [1, 1, 2, 1, 1, 1]
+    kept = db.query_one("SELECT version, pinned, hit_count, selection FROM entry")
+    assert kept is not None
+    assert (kept["version"], bool(kept["pinned"]), kept["hit_count"], kept["selection"]) == (
+        4, True, 7, "cycle",
+    )  # fmt: skip
+    assert _count(db, "pending", "id = 'P2' AND status = 'pending'") == 1
+
+    # the same ids now fit in a second workspace
+    other = {"workspace_id": "b", "project_id": "default"}
+    with db.engine.begin() as conn:
+        _insert(conn, "workspace", id="b", name="b", created_at=t)
+        _insert(conn, "project", workspace_id="b", id="default", name="b", settings="{}",
+                created_at=t)  # fmt: skip
+        _insert(conn, "entry", id="E1", **other, fingerprint="f", exact_fingerprint="x",
+                canonical_request="{}", responses="[]", version=1, pinned=False, hit_count=0,
+                created_at=t, updated_at=t, selection="first")  # fmt: skip
+        _insert(conn, "candidate", id="C1", **other, entry_id="E1", fingerprint="k", score=0.8,
+                tier="bm25", status="open", **request)  # fmt: skip
+
+    # a child cannot name an entry that its own workspace does not have
+    with pytest.raises(sa.exc.IntegrityError), db.engine.begin() as conn:
+        _insert(conn, "alias", id="A9", **other, entry_id="NOPE", fingerprint="m",
+                exact_fingerprint="n", **request)  # fmt: skip
+
+    # deleting default's entry cascades to default's children and leaves b's alone
+    db.run("DELETE FROM entry WHERE workspace_id = 'default' AND id = 'E1'")
+    for child in ("entry_revision", "candidate", "alias", "entry_vector"):
+        assert _count(db, child, "workspace_id = 'default'") == 0, child
+    assert _count(db, "candidate", "workspace_id = 'b'") == 1
+    assert _count(db, "entry", "workspace_id = 'b'") == 1
+
+
+def dbmod_url(url: str) -> str:
+    from semula.db import normalise_url
+
+    return normalise_url(url)
