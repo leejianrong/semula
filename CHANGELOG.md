@@ -10,6 +10,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Audit log** (migration 0013, ADR-0010): an append-only record of tokens, projects (create,
+  rename, delete, settings, mode, import), entry deletes, forced writes and deletes, and review
+  decisions, with the principal, request id and address. It stores ids and counts, never content;
+  a trigger refuses edits and early deletes. `semula audit` and `GET /api/v1/audit` read it.
 - **Hosted mode and API tokens** (`SEMULA_HOSTED=on`, ADR-0010): every call needs an opaque,
   hashed `smla_live_` token that names its workspace, one of three scopes (`replay`, `record`,
   `admin`) and optionally one project. A replay token never parks a call; a record token cannot

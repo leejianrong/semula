@@ -258,3 +258,22 @@ api_token = sa.Table(
     ),
     sa.Index("uq_api_token_hash", "token_hash", unique=True),
 )
+
+# Who did what, kept for a year and never edited (ADR-0010 section 4). It holds no prompt, answer
+# or secret: an action, a target id and a few counts. No foreign key: the rows outlive the
+# projects and tokens they name, and a workspace's purge leaves them (with no content) behind.
+audit_log = sa.Table(
+    "audit_log",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    _ts("ts"),
+    sa.Column("principal_kind", sa.Text, nullable=False),  # local | token | person
+    sa.Column("principal_id", sa.Text, nullable=False),
+    sa.Column("action", sa.Text, nullable=False),
+    sa.Column("target", sa.Text),
+    sa.Column("detail", sa.Text),  # small JSON: counts and key names, never content
+    sa.Column("request_id", sa.Text),
+    sa.Column("client", sa.Text),
+    sa.Index("idx_audit_log_workspace", "workspace_id", "id"),
+)

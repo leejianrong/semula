@@ -148,6 +148,7 @@ S: dict[str, Callable[[World], None]] = {
     "create_project": lambda w: forbidden(lambda: w.bound.create_project("brand-new")),
     "create_token": lambda w: forbidden(lambda: w.bound.create_token("t", "record")),
     "list_tokens": lambda w: forbidden(lambda: w.bound.list_tokens()),
+    "list_audit": lambda w: forbidden(lambda: w.bound.list_audit()),
     "revoke_token": lambda w: forbidden(lambda: w.bound.revoke_token("x")),
     "rotate_token": lambda w: forbidden(lambda: w.bound.rotate_token("x")),
     "set_mode": lambda w: (
@@ -158,6 +159,7 @@ S: dict[str, Callable[[World], None]] = {
 EXEMPT = {
     "for_scope", "owns", "create_workspace", "authenticate_token", "sync_index",
     "sync_embeddings", "prune_log", "log_call", "embeddings_status", "wait_for_answer",
+    "prune_audit",
 }  # fmt: skip
 
 

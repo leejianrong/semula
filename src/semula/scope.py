@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 class Scope:
     workspace_id: str = DEFAULT_WORKSPACE
     principal: Principal | None = None
+    request_id: str | None = None  # for the audit log
+    client: str | None = None  # the address the request came from, for the audit log
 
 
 LOCAL = Scope()

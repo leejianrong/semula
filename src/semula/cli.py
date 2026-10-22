@@ -622,6 +622,24 @@ def _admin_service(args: argparse.Namespace, workspace: str | None) -> Any:
     return service.for_scope(Scope(workspace)) if workspace else service
 
 
+def _audit(args: argparse.Namespace) -> int:
+    params: dict[str, Any] = {"limit": args.limit}
+    if args.action:
+        params["action"] = args.action
+    if args.before:
+        params["before_id"] = args.before
+    resp = _call(args, "GET", "/api/v1/audit", params=params)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    events = resp.json()["events"]
+    lines = [
+        f"{e['id']}\t{e['ts'][:19]}\t{e['principal_kind']}:{e['principal_id']}\t{e['action']}\t"
+        f"{e['target'] or '-'}\t{json.dumps(e['detail']) if e['detail'] else ''}"
+        for e in events
+    ]
+    return _ok(args, events, "\n".join(lines) if lines else "no audit events")
+
+
 def _admin_workspace(args: argparse.Namespace) -> int:
     try:
         service = _admin_service(args, None)
@@ -865,6 +883,11 @@ def build_parser() -> argparse.ArgumentParser:
     mode = add(sub, "mode", _mode, "Show or switch the mode (replay or record)")
     mode.add_argument("mode", nargs="?", choices=["replay", "record"])
     mode.add_argument("--project", default=None, help="set this project's own mode (kept)")
+
+    audit = add(sub, "audit", _audit, "Show the audit log, newest first (people and the operator)")
+    audit.add_argument("--limit", type=int, default=50)
+    audit.add_argument("--action", default=None, help="only this action, like project.delete")
+    audit.add_argument("--before", type=int, default=None, help="events before this id")
 
     admin = sub.add_parser("admin", help="Operator tasks on the server's own database (hosting)")
     asub = admin.add_subparsers(dest="admin_command", required=True)

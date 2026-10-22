@@ -86,6 +86,16 @@ Rotating mints a successor with the same name, scope and project, and the old to
 
 Failed attempts are rate limited per client address (20 a minute), and a blocked address waits even with a good token.
 
+## The audit log
+
+Every change that matters is written to an append-only log: who did it (the operator, a token or, later, a person), what, to which target, from which address, with which request id. It covers tokens (create, rotate, revoke), projects (create, rename, delete, settings, mode, import), deleting an entry, every forced write and forced delete, approving or rejecting a review candidate and creating a workspace.
+
+```bash
+semula audit --action project.delete
+```
+
+The log keeps ids, key names and counts, never a prompt, an answer or a secret: a settings change records *which* settings changed, not their values. A database trigger refuses every `UPDATE` and every `DELETE` of a row younger than a year, so nothing can rewrite history, and a row older than that is pruned. Reading it needs the operator (or a signed-in admin, later), not a token.
+
 ## Postgres and roles
 
 Hosting wants Postgres. Every tenant table has a [row-level-security](../reference/configuration.md) policy on `workspace_id`, so a query that forgot its filter sees nothing of another workspace's. The role that owns the tables, and any superuser, bypasses it. Migrate as the owner, then run semula as a role that is neither.
@@ -93,4 +103,4 @@ Hosting wants Postgres. Every tenant table has a [row-level-security](../referen
 ## What is not there yet
 
 - **People.** No sign-in, roles or invitations; the dashboard is off.
-- **Quotas and an audit log**, and deleting a whole workspace.
+- **Quotas**, and deleting a whole workspace.

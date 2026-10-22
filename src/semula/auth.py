@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
 import threading
 import time
 from collections import deque
@@ -20,6 +21,7 @@ from starlette.types import ASGIApp, Receive, Send
 from starlette.types import Scope as ASGIScope
 
 from .errors import SemulaError
+from .ids import new_ulid
 from .permissions import PEOPLE_ONLY, PROJECT_IN_PATH, allows, required_scope
 from .scope import Principal, Scope
 
@@ -70,6 +72,13 @@ class ApiKeyMiddleware:
         if auth[:7].lower() == b"bearer ":
             supplied = supplied or auth[7:]
         return hmac.compare_digest(supplied.strip(), self._key)
+
+
+def _request_id(headers: dict[bytes, bytes]) -> str:
+    """The caller's ``X-Request-Id`` if it is a short plain token, else a fresh one: it is stored
+    in the audit log, so it must not carry anything surprising."""
+    given = headers.get(b"x-request-id", b"").decode("ascii", "ignore").strip()
+    return given if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", given) else new_ulid()
 
 
 class AttemptLimiter:
@@ -160,7 +169,12 @@ class TokenAuthMiddleware:
             return
         state = scope.setdefault("state", {})
         state["principal"] = principal
-        state["scope"] = Scope(principal.workspace_id, principal)
+        state["scope"] = Scope(
+            principal.workspace_id,
+            principal,
+            request_id=_request_id(headers),
+            client=client if client != "unknown" else None,
+        )
         if principal.project and not self._named_project(scope):
             scope["headers"] = [
                 *scope["headers"],
