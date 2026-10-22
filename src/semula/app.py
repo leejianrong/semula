@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
-from . import __version__, api_admin, api_openai
+from . import __version__, api_admin, api_auth, api_openai, oidc
 from .auth import ApiKeyMiddleware, TokenAuthMiddleware
 from .config import Settings
 from .dashboard.mount import LazyDashboard, Locked
@@ -89,7 +89,13 @@ class LazyMcp:
         await self._app(scope, receive, send)
 
 
-def create_app(settings: Settings | None = None, embedder: Embedder | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    embedder: Embedder | None = None,
+    *,
+    http_transport: Any = None,
+) -> FastAPI:
+    """``http_transport`` is a test seam: the httpx transport sign-in uses to reach providers."""
     settings = settings or Settings.from_env()
     db = Database(settings.resolved_database_url, migrate=settings.migrate)
     service = Service(db, settings, embedder)
@@ -122,6 +128,20 @@ def create_app(settings: Settings | None = None, embedder: Embedder | None = Non
     app.state.settings = settings
     app.state.db = db
     app.state.service = service
+    if settings.auth_providers:
+        if len(settings.secret.encode()) < 16:
+            raise ValueError("SEMULA_SECRET (at least 16 bytes) is needed to sign people in")
+        try:
+            import jwt  # noqa: F401 - verifying ID tokens needs it
+        except ImportError as exc:
+            raise ValueError(
+                "Signing people in needs PyJWT: install the 'hosted' extra "
+                "(pip install 'semula[hosted]', or build the image with "
+                '--build-arg UV_EXTRAS="--extra hosted").'
+            ) from exc
+        app.state.oidc = oidc.Client(http_transport)
+        app.state.cookies = api_auth.Cookies(settings.public_url)
+        app.include_router(api_auth.router)
 
     @app.exception_handler(SemulaError)
     async def _semula_error(_: Request, exc: SemulaError) -> JSONResponse:

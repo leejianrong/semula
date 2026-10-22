@@ -10,6 +10,11 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **People can sign in** (migration 0016, ADR-0010): OpenID Connect (Google, or any issuer) and
+  GitHub, with PKCE, `state`, `nonce`, issuer and audience checks, signature and expiry
+  verification and verified-email-only; a person is (issuer, subject), never an email. Opaque
+  server-side sessions (12 h idle, 7 days), a new one at each sign-in, sign-out with a CSRF token.
+  Install the `hosted` extra for PyJWT.
 - **Replicas** (ADR-0011): on Postgres, replicas share live events and wake held calls over
   `LISTEN/NOTIFY`; publishing never waits for the network and the waits look again each second.
   `SEMULA_MIGRATE=off` with `semula admin migrate` migrates once before rollout; starts that do

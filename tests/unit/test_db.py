@@ -19,7 +19,7 @@ from tests.support.db import fresh_database_url
 
 pytestmark = pytest.mark.unit
 
-HEAD = "0015"  # bump with every new migration
+HEAD = "0016"  # bump with every new migration
 
 # What the pre-Alembic hand-rolled runner produced at its version 2.
 LEGACY_DDL = """
@@ -81,7 +81,9 @@ def test_migrate_is_idempotent_and_keeps_data(tmp_path: Path) -> None:
 def test_every_table_carries_workspace_id(tmp_path: Path) -> None:
     db = new_db(tmp_path)
     inspector = sa.inspect(db.engine)
-    skip = {"alembic_version", "workspace"}
+    # Not tenant data (ADR-0011 section 3): the tenant itself, and the people who sign in, who
+    # can belong to many workspaces and are reached only through a membership.
+    skip = {"alembic_version", "workspace", "person", "identity", "person_session"}
     missing = [
         t
         for t in inspector.get_table_names()

@@ -45,6 +45,8 @@ Issues = "https://github.com/leejianrong/semula/issues"
 [project.optional-dependencies]
 # Hosted database (ADR-0009). SQLite needs nothing extra.
 postgres = ["psycopg[binary]>=3.1"]
+# People signing in to a hosted server with OpenID Connect (ADR-0010): verifies ID tokens.
+hosted = ["pyjwt[crypto]>=2.9"]
 # Semantic matching (ADR-0003): adds ~180 MB plus a 65 MB model fetched once. Off by default.
 embeddings = ["fastembed>=0.4"]
 dev = [
@@ -55,6 +57,7 @@ dev = [
     "pip-audit>=2.7",
     "types-jsonschema",
     "psycopg[binary]>=3.1",
+    "pyjwt[crypto]>=2.9",
     "numpy>=1.26",  # the vector maths; fastembed itself is only in the `embeddings` extra
 ]
 # Heavy client libraries for the e2e/conformance layer (kept out of the fast loop).

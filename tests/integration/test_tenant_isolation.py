@@ -203,6 +203,11 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
 EXEMPT = {
     "authenticate_token": "finds the workspace from the credential, so no tenant exists yet",
     "purge_workspaces": "the operator's schedule: purges deleted workspaces past their grace",
+    "sign_in_identity": "people are global, not tenant data (ADR-0011 section 3)",
+    "create_session": "a person's sign-in: global",
+    "authenticate_session": "finds the person from a cookie: global",
+    "end_session": "a person's sign-in: global",
+    "end_sessions_of": "a person's sign-ins: global",
     "for_scope": "builds a scoped view",
     "start_cluster": "process-level: joins the other replicas' event channel",
     "stop_cluster": "process-level: leaves it",
