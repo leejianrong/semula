@@ -44,6 +44,7 @@ Two APIs share the port. `/v1` is the OpenAI-compatible surface your app calls. 
 | `GET /api/v1/log/stream` | The same feed as server-sent events. |
 | `GET /api/v1/projects/{project_id}/export` | A `semula/1` bundle of a project. |
 | `POST /api/v1/import` | Load a bundle: `{"bundle": {...}, "project"?: id, "force"?: bool}`. Idempotent. |
+| `GET /api/v1/usage` | What the workspace holds against its limits: projects, entries, stored bytes, parked calls, active tokens. Limits are null locally. |
 | `GET /api/v1/audit` | The audit log, newest first: `?limit=`, `?before_id=`, `?action=`. People and local use only; a token cannot read it. |
 | `GET /api/v1/tokens` | The workspace's API tokens, without secrets. People and local use only; a token cannot call it. |
 | `POST /api/v1/tokens` | Mint a token: `{"name", "scope": "replay"\|"record"\|"admin", "project"?, "expires_at"?}`. The secret is in the answer once. |

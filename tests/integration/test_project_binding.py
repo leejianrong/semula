@@ -149,6 +149,8 @@ S: dict[str, Callable[[World], None]] = {
     "create_token": lambda w: forbidden(lambda: w.bound.create_token("t", "record")),
     "list_tokens": lambda w: forbidden(lambda: w.bound.list_tokens()),
     "list_audit": lambda w: forbidden(lambda: w.bound.list_audit()),
+    "usage": lambda w: forbidden(lambda: w.bound.usage()),
+    "recount_usage": lambda w: forbidden(lambda: w.bound.recount_usage()),
     "revoke_token": lambda w: forbidden(lambda: w.bound.revoke_token("x")),
     "rotate_token": lambda w: forbidden(lambda: w.bound.rotate_token("x")),
     "set_mode": lambda w: (

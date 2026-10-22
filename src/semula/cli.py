@@ -622,6 +622,26 @@ def _admin_service(args: argparse.Namespace, workspace: str | None) -> Any:
     return service.for_scope(Scope(workspace)) if workspace else service
 
 
+def _usage(args: argparse.Namespace) -> int:
+    resp = _call(args, "GET", "/api/v1/usage")
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    out = resp.json()
+    used, limits = out["used"], out["limits"]
+    names = [
+        ("projects", "projects"),
+        ("entries", "entries"),
+        ("bytes", "stored bytes"),
+        ("parked", "parked calls"),
+        ("tokens", "active tokens"),
+    ]
+    lines = []
+    for key, label in names:
+        cap = limits.get(key) if key != "parked" else limits.get("parked_per_workspace")
+        lines.append(f"{label:<14}{used[key]:>12} of {cap if cap is not None else 'no limit'}")
+    return _ok(args, out, "\n".join(lines))
+
+
 def _audit(args: argparse.Namespace) -> int:
     params: dict[str, Any] = {"limit": args.limit}
     if args.action:
@@ -653,6 +673,15 @@ def _admin_workspace(args: argparse.Namespace) -> int:
         print(f"error: {exc.code}: {exc.message}", file=sys.stderr)
         return EXIT_REJECTED
     return _ok(args, {"workspace": args.id}, f"created workspace {args.id}")
+
+
+def _admin_recount(args: argparse.Namespace) -> int:
+    try:
+        service = _admin_service(args, args.workspace)
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    used = service.recount_usage()
+    return _ok(args, used, ", ".join(f"{k} {v}" for k, v in used.items()))
 
 
 def _admin_token(args: argparse.Namespace) -> int:
@@ -884,6 +913,8 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("mode", nargs="?", choices=["replay", "record"])
     mode.add_argument("--project", default=None, help="set this project's own mode (kept)")
 
+    add(sub, "usage", _usage, "What the workspace holds against its limits")
+
     audit = add(sub, "audit", _audit, "Show the audit log, newest first (people and the operator)")
     audit.add_argument("--limit", type=int, default=50)
     audit.add_argument("--action", default=None, help="only this action, like project.delete")
@@ -894,6 +925,10 @@ def build_parser() -> argparse.ArgumentParser:
     wscreate = add(asub, "workspace-create", _admin_workspace, "Create a workspace")
     wscreate.add_argument("id", help="a slug: lowercase letters, digits, hyphens")
     wscreate.add_argument("--name", default=None)
+    recount = add(
+        asub, "recount", _admin_recount, "Rebuild a workspace's quota counters from what is stored"
+    )
+    recount.add_argument("--workspace", required=True)
     for verb, helptext in (
         ("create", "Mint an API token for a workspace (the secret is shown once)"),
         ("list", "List a workspace's API tokens"),

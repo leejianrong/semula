@@ -41,6 +41,7 @@ RULES: tuple[tuple[str, str, str], ...] = (
     ("GET", r"/api/v1/candidates/[^/]+", "record"),
     ("GET", r"/api/v1/mode", "record"),
     ("GET", r"/api/v1/embeddings", "record"),
+    ("GET", r"/api/v1/usage", "record"),
     # What a human decides: destroying, approving into serving, settings, mode, moving data.
     ("POST", r"/api/v1/projects", "admin"),
     ("PATCH", r"/api/v1/projects/[^/]+", "admin"),

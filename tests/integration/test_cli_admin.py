@@ -103,3 +103,10 @@ def test_rotate_and_revoke_and_the_errors(env: str, capsys: pytest.CaptureFixtur
     )
     assert "project_not_found" in capsys.readouterr().err
     assert Scope("acme")  # the scope type is importable where the CLI uses it
+
+
+def test_usage_and_recount(env: str, capsys: pytest.CaptureFixture[str]) -> None:
+    main(["admin", "workspace-create", "acme"])
+    assert main(["--json", "admin", "recount", "--workspace", "acme"]) == 0
+    used = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert used["projects"] == 1 and used["entries"] == 0  # the default project

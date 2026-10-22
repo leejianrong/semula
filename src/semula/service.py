@@ -55,6 +55,7 @@ from .schema import entry_revision as R
 from .schema import pending as Q
 from .schema import project as P
 from .schema import workspace as WS
+from .schema import workspace_usage as U
 from .scope import Principal, Scope
 
 log = logging.getLogger("semula.service")
@@ -249,6 +250,11 @@ class Service:
             )
         if project is not None:
             self.require_project(project)
+        cap = self.settings.quotas.tokens
+        if cap is not None:
+            active = self.usage()["used"]["tokens"]
+            if active >= cap:
+                raise self._over("tokens", cap, active)
         secret = tok.generate()
         token_id = new_ulid()
         with self.db.begin() as conn:
@@ -386,6 +392,147 @@ class Service:
             "last_used_from": row["last_used_from"],
         }
 
+    # --- quotas (ADR-0011 section 6) -------------------------------------------------------
+    def _ensure_usage(self, conn: Connection) -> None:
+        values = {"workspace_id": self.workspace_id, "projects": 0, "entries": 0, "bytes": 0}
+        if self.db.dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            stmt: Any = pg_insert(U).values(**values).on_conflict_do_nothing()
+        else:
+            from sqlalchemy.dialects.sqlite import insert as lite_insert
+
+            stmt = lite_insert(U).values(**values).on_conflict_do_nothing()
+        self.db.execute(stmt, conn)
+
+    def _reserve(
+        self, conn: Connection, *, projects: int = 0, entries: int = 0, size: int = 0
+    ) -> None:
+        """Add to this workspace's counters inside the write's own transaction, refusing the
+        write (and so rolling it back) if a limit would be crossed. One guarded UPDATE, so
+        concurrent writers cannot both slip past a limit; it never runs on a replay hit."""
+        limits = self.settings.quotas
+        deltas = {"projects": projects, "entries": entries, "bytes": size}
+        caps = {"projects": limits.projects, "entries": limits.entries, "bytes": limits.bytes}
+        values: dict[str, Any] = {}
+        guards: list[Any] = []
+        for name, delta in deltas.items():
+            if not delta:
+                continue
+            grown = U.c[name] + delta
+            values[name] = sa.case((grown < 0, 0), else_=grown)
+            if delta > 0 and caps[name] is not None:
+                guards.append(grown <= caps[name])
+        if not values:
+            return
+        self._ensure_usage(conn)
+        done = self.db.execute(
+            sa.update(U).where(U.c.workspace_id == self.workspace_id, *guards).values(**values),
+            conn,
+        )
+        if done:
+            return
+        row = self.db.one(sa.select(U).where(U.c.workspace_id == self.workspace_id), conn)
+        for name, delta in deltas.items():
+            cap = caps[name]
+            if delta > 0 and cap is not None and row and row[name] + delta > cap:
+                raise self._over("projects" if name == "projects" else name, cap, int(row[name]))
+        raise RuntimeError("a quota update matched no row")  # pragma: no cover
+
+    @staticmethod
+    def _over(name: str, limit: int, used: int, status: int = 403) -> SemulaError:
+        what = {"bytes": "stored bytes"}.get(name, name.replace("_", " "))
+        code = "quota_exceeded" if status == 403 else "too_many_parked"
+        return SemulaError(
+            status,
+            code,
+            f"This workspace has reached its limit of {limit} {what}.",
+            extra={"quota": {"name": name, "limit": limit, "used": used}},
+        )
+
+    @staticmethod
+    def _entry_size(canonical_request: str, responses: str) -> int:
+        return len(canonical_request) + len(responses)
+
+    def usage(self) -> dict[str, Any]:
+        """What this workspace holds against what it may: counters kept as writes happen, plus
+        the live number of parked calls and active tokens. Whole-workspace figures, so not for a
+        token bound to one project."""
+        if self.project_limit is not None:
+            raise SemulaError(
+                403,
+                "forbidden",
+                "A token bound to a project cannot see the workspace's usage.",
+                err_type="authentication_error",
+            )
+        row = self.db.one(sa.select(U).where(U.c.workspace_id == self.workspace_id))
+        parked = self.db.one(
+            sa.select(sa.func.count().label("n")).where(
+                Q.c.workspace_id == self.workspace_id, Q.c.status == "pending"
+            )
+        )
+        now = now_iso()
+        live = self.db.one(
+            sa.select(sa.func.count().label("n")).where(
+                T.c.workspace_id == self.workspace_id,
+                T.c.revoked_at.is_(None),
+                sa.or_(T.c.expires_at.is_(None), T.c.expires_at > now),
+            )
+        )
+        q = self.settings.quotas
+        return {
+            "used": {
+                "projects": int(row["projects"]) if row else 0,
+                "entries": int(row["entries"]) if row else 0,
+                "bytes": int(row["bytes"]) if row else 0,
+                "parked": int(parked["n"]) if parked else 0,
+                "tokens": int(live["n"]) if live else 0,
+            },
+            "limits": {
+                "projects": q.projects,
+                "entries": q.entries,
+                "bytes": q.bytes,
+                "parked_per_project": q.parked_per_project,
+                "parked_per_workspace": q.parked_per_workspace,
+                "tokens": q.tokens,
+                "members": q.members,
+            },
+        }
+
+    def recount_usage(self) -> dict[str, int]:
+        """Rebuild the counters from what is stored (if they ever drift) and return them."""
+        self._not_a_token()
+        with self.db.begin() as conn:
+            self._ensure_usage(conn)
+            projects = self.db.one(
+                sa.select(sa.func.count().label("n")).where(P.c.workspace_id == self.workspace_id),
+                conn,
+            )
+            entries = self.db.one(
+                sa.select(
+                    sa.func.count().label("n"),
+                    sa.func.coalesce(
+                        sa.func.sum(
+                            sa.func.length(E.c.canonical_request) + sa.func.length(E.c.responses)
+                        ),
+                        0,
+                    ).label("size"),
+                ).where(E.c.workspace_id == self.workspace_id),
+                conn,
+            )
+            self.db.execute(
+                sa.update(U)
+                .where(U.c.workspace_id == self.workspace_id)
+                .values(
+                    projects=projects["n"] if projects else 0,
+                    entries=entries["n"] if entries else 0,
+                    bytes=int(entries["size"]) if entries else 0,
+                ),
+                conn,
+            )
+        used: dict[str, int] = self.usage()["used"]
+        return used
+
     # --- audit log (ADR-0010 section 4) ---------------------------------------------------
     def _audit(
         self,
@@ -456,9 +603,11 @@ class Service:
                 sa.insert(P).values(workspace_id=workspace_id, id=DEFAULT_PROJECT, name="Default"),
                 conn,
             )
-            self.for_scope(
+            fresh = self.for_scope(
                 Scope(workspace_id, self.principal, self.request_id, self.client)
-            )._audit("workspace.create", workspace_id, conn=conn)
+            )
+            fresh._reserve(conn, projects=1)  # the default project
+            fresh._audit("workspace.create", workspace_id, conn=conn)
 
     def mode_of(self, project: str) -> str:
         """What a call to ``project`` does when nothing answers it: the project's own mode,
@@ -511,6 +660,7 @@ class Service:
                 sa.insert(P).values(workspace_id=self.workspace_id, id=slug, name=name or slug),
                 conn,
             )
+            self._reserve(conn, projects=1)
             self._audit("project.create", slug, conn=conn)
         self._publish({"type": "projects"})
         return self.get_project(slug)
@@ -602,6 +752,14 @@ class Service:
                     str(first["msg"]).removeprefix("Value error, "),
                     param=where,
                 ) from exc
+            longest = self.settings.quotas.record_timeout_max
+            if longest is not None and after.record_timeout and after.record_timeout > longest:
+                raise SemulaError(
+                    422,
+                    "invalid_settings",
+                    f"record_timeout can be at most {longest:g} seconds on this server.",
+                    param="settings.record_timeout",
+                )
             with self.db.begin() as conn:
                 self.db.execute(
                     sa.update(P)
@@ -677,6 +835,20 @@ class Service:
             sa.select(Q.c.id).where(Q.c.workspace_id == self.workspace_id, Q.c.project_id == slug)
         )
         with self.db.begin() as conn:
+            gone = self.db.one(
+                sa.select(
+                    sa.func.count().label("n"),
+                    sa.func.coalesce(
+                        sa.func.sum(
+                            sa.func.length(E.c.canonical_request) + sa.func.length(E.c.responses)
+                        ),
+                        0,
+                    ).label("size"),
+                ).where(E.c.workspace_id == self.workspace_id, E.c.project_id == slug),
+                conn,
+            )
+            if gone:
+                self._reserve(conn, projects=-1, entries=-int(gone["n"]), size=-int(gone["size"]))
             # entries, pending rows, candidates and aliases go with the project (ON DELETE CASCADE);
             # call_log has no FK
             self.db.execute(
@@ -1141,7 +1313,11 @@ class Service:
         stored = parse_answer(response)
         validate_tool_calls(stored, req.tools)
         entry_id = new_ulid()
+        stored_request = redact_request(req, config).to_json()
         with self.db.begin() as conn:
+            self._reserve(
+                conn, entries=1, size=self._entry_size(stored_request, json.dumps([stored]))
+            )
             self.db.execute(
                 sa.insert(E).values(
                     id=entry_id,
@@ -1149,7 +1325,7 @@ class Service:
                     project_id=project,
                     fingerprint=fp,
                     exact_fingerprint=exact_fingerprint(req, config),
-                    canonical_request=redact_request(req, config).to_json(),
+                    canonical_request=stored_request,
                     responses=json.dumps([stored]),
                 ),
                 conn,
@@ -1264,6 +1440,7 @@ class Service:
                 )
             pinned = changes["pinned"]
         with self.db.begin() as conn:
+            self._reserve(conn, size=len(json.dumps(responses)) - len(row["responses"]))
             changed = self.db.execute(
                 sa.update(E)
                 .where(*self._pk(E, entry_id), E.c.version == version)
@@ -1371,6 +1548,11 @@ class Service:
             )
             if deleted != 1:
                 raise SemulaError(409, "version_conflict", "The entry changed; re-read it.")
+            self._reserve(
+                conn,
+                entries=-1,
+                size=-self._entry_size(row["canonical_request"], row["responses"]),
+            )
             self.lexical.delete(entry_id, self.workspace_id, conn)  # candidates, aliases cascade
             if forced:
                 self._log_forced(row, "forced_delete", conn)
@@ -1656,6 +1838,11 @@ class Service:
             )
         if row is None:
             extra = {k: item[k] for k in ("version", "created_at", "updated_at") if k in item}
+            self._reserve(
+                conn,
+                entries=1,
+                size=self._entry_size(values["canonical_request"], values["responses"]),
+            )
             self.db.execute(
                 sa.insert(E).values(
                     id=item["id"],
@@ -1686,6 +1873,11 @@ class Service:
             tally["skipped_pinned"].append(item["id"])
             return
         else:
+            self._reserve(
+                conn,
+                size=self._entry_size(values["canonical_request"], values["responses"])
+                - self._entry_size(row["canonical_request"], row["responses"]),
+            )
             self.db.execute(
                 sa.update(E)
                 .where(*self._pk(E, item["id"]))
@@ -1900,6 +2092,23 @@ class Service:
         )
 
     # --- pending queue ----------------------------------------------------------
+    def _check_parked(self, project: str) -> None:
+        """Refuse to park one more call past the limits (this runs on a miss, never a hit)."""
+        q = self.settings.quotas
+        if q.parked_per_project is None and q.parked_per_workspace is None:
+            return
+        counts = self.db.rows(
+            sa.select(Q.c.project_id, sa.func.count().label("n"))
+            .where(Q.c.workspace_id == self.workspace_id, Q.c.status == "pending")
+            .group_by(Q.c.project_id)
+        )
+        here = sum(int(r["n"]) for r in counts if r["project_id"] == project)
+        total = sum(int(r["n"]) for r in counts)
+        if q.parked_per_project is not None and here >= q.parked_per_project:
+            raise self._over("parked_per_project", q.parked_per_project, here, 429)
+        if q.parked_per_workspace is not None and total >= q.parked_per_workspace:
+            raise self._over("parked_per_workspace", q.parked_per_workspace, total, 429)
+
     def open_pending(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> str:
         """Park a miss. A second identical miss joins the first instead of duplicating."""
         config = self.project_settings(project).fingerprint_config()
@@ -1913,6 +2122,7 @@ class Service:
         row = self.db.one(open_request)
         if row:
             return str(row["id"])
+        self._check_parked(project)
         pid = new_ulid()
         try:
             self.db.execute(
@@ -2053,6 +2263,11 @@ class Service:
             )
             if claimed != 1:  # someone answered between our read and this write
                 raise SemulaError(409, "already_answered", f"{pending_id} was already answered.")
+            self._reserve(
+                conn,
+                entries=1,
+                size=self._entry_size(row["canonical_request"], json.dumps([stored])),
+            )
             self.db.execute(
                 sa.insert(E).values(
                     id=entry_id,

@@ -53,8 +53,10 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula export` | `<project>` `--dir` | Write a project's entries to a directory of JSON files |
 | `semula import` | `<dir>` `--project` `--force` | Load an exported directory (safe to repeat) |
 | `semula mode` | `<mode>` `--project` | Show or switch the mode (replay or record) |
+| `semula usage` |  | What the workspace holds against its limits |
 | `semula audit` | `--limit` `--action` `--before` | Show the audit log, newest first (people and the operator) |
 | `semula admin workspace-create` | `<id>` `--name` | Create a workspace |
+| `semula admin recount` | `--workspace` | Rebuild a workspace's quota counters from what is stored |
 | `semula admin token-create` | `--workspace` `--name` `--scope` `--project` `--expires` | Mint an API token for a workspace (the secret is shown once) |
 | `semula admin token-list` | `--workspace` | List a workspace's API tokens |
 | `semula admin token-revoke` | `<id>` `--workspace` | Revoke an API token |

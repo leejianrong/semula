@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Literal
 
@@ -12,6 +12,53 @@ Mode = Literal["replay", "record"]
 
 def _flag(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+@dataclass(frozen=True)
+class Quotas:
+    """What one workspace may hold or do (ADR-0011 section 6). None means no limit, which is
+    what a local server has; a hosted one starts from ``HOSTED_QUOTAS``."""
+
+    projects: int | None = None
+    entries: int | None = None
+    bytes: int | None = None  # of stored requests and answers
+    parked_per_project: int | None = None
+    parked_per_workspace: int | None = None
+    tokens: int | None = None
+    members: int | None = None
+    body_bytes: int | None = None  # one request body, at the edge
+    record_timeout_max: float | None = None  # seconds a project may hold a call for an agent
+    rate: float | None = None  # requests per second per token, steady
+    burst: int | None = None  # and the most a token may spend at once
+
+
+HOSTED_QUOTAS = Quotas(
+    projects=20,
+    entries=50_000,
+    bytes=250_000_000,
+    parked_per_project=50,
+    parked_per_workspace=200,
+    tokens=50,
+    members=25,
+    body_bytes=1_000_000,
+    record_timeout_max=900.0,
+    rate=20.0,
+    burst=100,
+)
+
+
+def _quotas_from_env(hosted: bool) -> Quotas:
+    """Hosted defaults, each changeable with ``SEMULA_QUOTA_<NAME>`` (``none`` removes a limit)."""
+    base = HOSTED_QUOTAS if hosted else Quotas()
+    changed: dict[str, int | float | None] = {}
+    for item in fields(Quotas):
+        raw = os.environ.get(f"SEMULA_QUOTA_{item.name.upper()}")
+        if raw is None:
+            continue
+        changed[item.name] = (
+            None if raw.strip().lower() == "none" else (float(raw) if "." in raw else int(raw))
+        )
+    return replace(base, **changed)  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
@@ -33,6 +80,7 @@ class Settings:
     # Hosted mode: every call needs an API token, which names the workspace (ADR-0010). Off
     # locally, where whoever can reach the port is trusted (or the shared key above).
     hosted: bool = False
+    quotas: Quotas = field(default_factory=Quotas)
     database_url: str | None = field(default=None, repr=False)  # may hold a password
 
     @property
@@ -70,6 +118,7 @@ class Settings:
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
             hosted=_flag(os.environ.get("SEMULA_HOSTED", "off")),
+            quotas=_quotas_from_env(_flag(os.environ.get("SEMULA_HOSTED", "off"))),
             database_url=os.environ.get("SEMULA_DATABASE_URL") or None,
             models=tuple(
                 m.strip() for m in os.environ.get("SEMULA_MODELS", "semula").split(",") if m.strip()

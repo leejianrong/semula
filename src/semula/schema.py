@@ -277,3 +277,15 @@ audit_log = sa.Table(
     sa.Column("client", sa.Text),
     sa.Index("idx_audit_log_workspace", "workspace_id", "id"),
 )
+
+# What a workspace holds, counted as it changes inside the write's own transaction, so a replay
+# hit never runs a count query and the hit path keeps its latency budget (ADR-0011 section 6).
+# ``Service.recount_usage`` rebuilds it from the tables if it ever drifts.
+workspace_usage = sa.Table(
+    "workspace_usage",
+    metadata,
+    sa.Column("workspace_id", sa.Text, primary_key=True),
+    sa.Column("projects", sa.Integer, nullable=False, default=0),
+    sa.Column("entries", sa.Integer, nullable=False, default=0),
+    sa.Column("bytes", sa.BigInteger, nullable=False, default=0),
+)
