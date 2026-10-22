@@ -161,6 +161,7 @@ def build_mcp(base: Service) -> FastMCP:
             "mode": service.default_mode,
             "projects": service.list_projects(),
             "embeddings": service.embeddings_status(),
+            "usage": None if service.project_limit else service.usage(),
         }
 
     @tool

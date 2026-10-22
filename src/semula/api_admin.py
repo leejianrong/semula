@@ -372,6 +372,13 @@ async def answer_pending(pending_id: str, request: Request) -> dict[str, Any]:
     return {"entry_id": entry_id, "pending_id": pending_id, "status": "answered"}
 
 
+@router.get("/usage")
+async def usage(request: Request) -> dict[str, Any]:
+    """What the workspace holds against its limits (projects, entries, stored bytes, parked
+    calls, tokens). Limits are null on a local server."""
+    return await offload(_service(request).usage)
+
+
 @router.get("/audit")
 async def list_audit(
     request: Request, limit: int = 50, before_id: int | None = None, action: str | None = None

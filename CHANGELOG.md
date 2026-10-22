@@ -10,6 +10,11 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Quotas and limits** for a hosted workspace (migration 0014, ADR-0011): projects, entries,
+  stored bytes, parked calls, tokens, request body size, `record_timeout`, and a per-token rate
+  limit, each with a clear error naming the limit. Counters are kept in the write's own
+  transaction, so replay hits never pay for them. `semula usage`, `GET /api/v1/usage` and
+  `semula admin recount`. A local server has no limits.
 - **Audit log** (migration 0013, ADR-0010): an append-only record of tokens, projects (create,
   rename, delete, settings, mode, import), entry deletes, forced writes and deletes, and review
   decisions, with the principal, request id and address. It stores ids and counts, never content;

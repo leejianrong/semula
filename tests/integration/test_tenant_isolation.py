@@ -177,6 +177,17 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
     ),
     "list_tokens": lambda w: nothing_of_b(w.a.list_tokens()),
     "list_audit": lambda w: nothing_of_b(w.a.list_audit(limit=500)),
+    "usage": lambda w: _equal(w.a.usage()["used"]["entries"], 1),  # its own one, not B's
+    "recount_usage": lambda w: (
+        w.a.recount_usage(),
+        _equal(w.b.usage()["used"]["entries"], 1),
+        _equal(
+            w.service.db.query("SELECT entries FROM workspace_usage WHERE workspace_id='b'")[0][
+                "entries"
+            ],
+            1,
+        ),
+    ),
     "prune_audit": lambda w: (w.a.prune_audit(), _equal(len(w.b.list_audit()) > 0, True)),
     "revoke_token": lambda w: missing(lambda: w.a.revoke_token(_b_token(w)), "token_not_found"),
     "rotate_token": lambda w: missing(lambda: w.a.rotate_token(_b_token(w)), "token_not_found"),

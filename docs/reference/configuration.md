@@ -14,6 +14,7 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_RECORD_TIMEOUT` | `300` | Seconds a parked call waits for an answer. A project can override it. |
 | `SEMULA_CHUNK_SIZE` | `24` | Characters per chunk when a plain-text answer is replayed as a stream. |
 | `SEMULA_MODELS` | `semula` | Comma-separated model ids that `/v1/models` lists. |
+| `SEMULA_QUOTA_<NAME>` | hosted defaults | Override a [hosted limit](../guide/hosted.md#limits), for example `SEMULA_QUOTA_PROJECTS=50`; `none` removes it. Names: `PROJECTS`, `ENTRIES`, `BYTES`, `PARKED_PER_PROJECT`, `PARKED_PER_WORKSPACE`, `TOKENS`, `MEMBERS`, `BODY_BYTES`, `RECORD_TIMEOUT_MAX`, `RATE`, `BURST`. A local server has none. |
 | `SEMULA_UI` | `on` | `off` hides the dashboard at `/ui`. |
 | `SEMULA_API_KEY` | none | Require this key. See below. |
 | `SEMULA_HOSTED` | `off` | `on` makes every call need an [API token](../guide/hosted.md) that names its workspace, scope and project. The dashboard and MCP are off in this mode for now. |

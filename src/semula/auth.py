@@ -14,7 +14,7 @@ import re
 import threading
 import time
 from collections import deque
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Send
@@ -109,6 +109,29 @@ class AttemptLimiter:
             self._failures.setdefault(client, deque()).append(time.monotonic())
 
 
+class TokenBuckets:
+    """Requests per second per token: ``burst`` at once, refilled at ``rate`` a second
+    (ADR-0011 section 6). One small dict entry per active token."""
+
+    def __init__(self, rate: float, burst: int) -> None:
+        self.rate = rate
+        self.burst = burst
+        self._state: dict[str, tuple[float, float]] = {}
+        self._lock = threading.Lock()
+
+    def take(self, token_id: str) -> float:
+        """0 if a request may go ahead, else the seconds until one may."""
+        now = time.monotonic()
+        with self._lock:
+            level, stamp = self._state.get(token_id, (float(self.burst), now))
+            level = min(float(self.burst), level + (now - stamp) * self.rate)
+            if level >= 1.0:
+                self._state[token_id] = (level - 1.0, now)
+                return 0.0
+            self._state[token_id] = (level, now)
+            return (1.0 - level) / self.rate
+
+
 class TokenAuthMiddleware:
     """Hosted mode: every ``/v1``, ``/api`` and ``/mcp`` call carries an API token (ADR-0010).
 
@@ -126,6 +149,13 @@ class TokenAuthMiddleware:
         self.app = app
         self.service = service
         self.limiter = limiter or AttemptLimiter()
+        quotas = service.settings.quotas
+        self.buckets = (
+            TokenBuckets(quotas.rate, quotas.burst or int(quotas.rate))
+            if quotas.rate is not None
+            else None
+        )
+        self.body_limit = quotas.body_bytes
 
     async def __call__(self, scope: ASGIScope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or not scope["path"].startswith(PROTECTED_PREFIXES):
@@ -167,6 +197,22 @@ class TokenAuthMiddleware:
         if error:
             await self._refuse(send, error)
             return
+        if self.buckets is not None and (wait := self.buckets.take(principal.id)):
+            await self._refuse(
+                send,
+                SemulaError(
+                    429, "rate_limited", "This token is sending requests too fast.",
+                    err_type="rate_limit_error",
+                ),
+                [(b"retry-after", f"{wait:.2f}".encode())],
+            )  # fmt: skip
+            return
+        if self.body_limit is not None:
+            length = headers.get(b"content-length", b"")
+            if length.isdigit() and int(length) > self.body_limit:
+                await self._refuse(send, self._too_large())
+                return
+            receive = self._counting(receive, self.body_limit)
         state = scope.setdefault("state", {})
         state["principal"] = principal
         state["scope"] = Scope(
@@ -209,6 +255,29 @@ class TokenAuthMiddleware:
                     404, "project_not_found", f"No project '{named}'.", param="project"
                 )
         return None
+
+    def _too_large(self) -> SemulaError:
+        return SemulaError(
+            413,
+            "request_too_large",
+            f"The request body is over the limit of {self.body_limit} bytes.",
+            err_type="invalid_request_error",
+        )
+
+    def _counting(self, receive: Receive, limit: int) -> Receive:
+        """Count a body that arrives without a Content-Length and stop it at the limit."""
+        seen = 0
+
+        async def counted() -> Any:
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > limit:
+                    raise self._too_large()
+            return message
+
+        return counted
 
     @staticmethod
     def _named_project(scope: ASGIScope) -> str | None:

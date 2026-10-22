@@ -86,6 +86,23 @@ Rotating mints a successor with the same name, scope and project, and the old to
 
 Failed attempts are rate limited per client address (20 a minute), and a blocked address waits even with a good token.
 
+## Limits
+
+A hosted workspace has limits so that one tenant cannot use up the server. Defaults, each changeable with `SEMULA_QUOTA_<NAME>` (see [Configuration](../reference/configuration.md)):
+
+| Limit | Default | What happens |
+|---|---|---|
+| Projects | 20 | `403 quota_exceeded` when creating one more |
+| Entries | 50,000 | `403 quota_exceeded` when recording, answering or importing one more |
+| Stored bytes (requests and answers) | 250 MB | `403 quota_exceeded` |
+| Parked calls | 50 per project, 200 per workspace | `429 too_many_parked` for a call that would park |
+| Active tokens | 50 | `403 quota_exceeded` when minting |
+| Request body | 1 MB | `413 request_too_large` |
+| A project's `record_timeout` | 15 minutes | `422` when setting a longer one |
+| Request rate per token | 20 a second, bursts of 100 | `429 rate_limited` with `Retry-After` |
+
+The error body names the limit: `{"quota": {"name": "entries", "limit": 50000, "used": 50000}}`. Counters are kept as writes happen, in the same transaction, so a replay hit never counts anything and stays fast; `semula usage` shows them, and `semula admin recount` rebuilds them if they ever drift. A local server has no limits.
+
 ## The audit log
 
 Every change that matters is written to an append-only log: who did it (the operator, a token or, later, a person), what, to which target, from which address, with which request id. It covers tokens (create, rotate, revoke), projects (create, rename, delete, settings, mode, import), deleting an entry, every forced write and forced delete, approving or rejecting a review candidate and creating a workspace.
