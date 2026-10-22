@@ -254,6 +254,58 @@ def _entry_show(args: argparse.Namespace) -> int:
     return _ok(args, resp.json(), json.dumps(resp.json(), indent=2))
 
 
+def _entry_add(args: argparse.Namespace) -> int:
+    try:
+        if args.request_file:
+            with open(args.request_file, encoding="utf-8") as fh:
+                request = json.load(fh)
+        else:
+            messages = [{"role": "user", "content": args.prompt}]
+            if args.system:
+                messages.insert(0, {"role": "system", "content": args.system})
+            request = {"messages": messages}
+        if args.model:
+            request["model"] = args.model
+        if args.response_file:
+            with open(args.response_file, encoding="utf-8") as fh:
+                answer: Any = json.load(fh)
+        else:
+            answer = _payload(args)
+    except ValueError as exc:
+        return _bad_json(exc)
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    body: dict[str, Any] = {"request": request, "response": answer}
+    if args.version is not None:
+        body["version"] = args.version
+    resp = _call(args, "POST", f"/api/v1/projects/{args.project}/entries", json=body)
+    if resp.status_code not in (200, 201):
+        code = _fail(args, resp)
+        if not args.json and resp.status_code == 409:
+            current = resp.json().get("current") or {}
+            if "version" in current:
+                print(
+                    f"entry {current['id']} is at version {current['version']}: "
+                    f"pass --version {current['version']} to replace its answer",
+                    file=sys.stderr,
+                )
+        return code
+    entry = resp.json()
+    created = resp.status_code == 201
+    if args.pin:  # the upsert has no pin of its own: set it on the version just written
+        pinned = _call(
+            args, "PUT", f"/api/v1/entries/{entry['id']}",
+            json={"version": entry["version"], "pinned": True},
+        )  # fmt: skip
+        if pinned.status_code != 200:
+            return _fail(args, pinned)
+        entry = pinned.json()
+    verb = "created" if created else "replaced the answer of"
+    human = f"{verb} entry {entry['id']} (version {entry['version']})"
+    return _ok(args, {"created": created, "entry": entry}, human)
+
+
 def _entry_set(args: argparse.Namespace) -> int:
     changes: dict[str, Any] = {"version": args.version}
     if args.text is not None or args.file or args.stdin:
@@ -636,6 +688,22 @@ def build_parser() -> argparse.ArgumentParser:
     ehist = add(esub, "history", _entry_history, "An entry's change history (newest first)")
     ehist.add_argument("id")
     ehist.add_argument("--version", type=int, default=None, help="show that revision in full")
+    eadd = add(esub, "add", _entry_add, "Author an entry (a request and its answer) up front")
+    eadd.add_argument("project")
+    req_src = eadd.add_mutually_exclusive_group(required=True)
+    req_src.add_argument("--prompt", help="the request: one user message with this text")
+    req_src.add_argument(
+        "--request-file", help="the request as a chat completion body (messages, tools ...)"
+    )
+    eadd.add_argument("--system", default=None, help="with --prompt: a system message")
+    eadd.add_argument("--model", default=None, help="the model name to record the request with")
+    ans_src = eadd.add_mutually_exclusive_group(required=True)
+    ans_src.add_argument("--text", help="the answer: plain text")
+    ans_src.add_argument("--response-file", help="the answer as JSON from a file")
+    ans_src.add_argument("--stdin", action="store_true", help="the answer as JSON from stdin")
+    eadd.add_argument("--version", type=int, default=None, help="replace the entry at this version")
+    eadd.add_argument("--pin", action="store_true", help="pin it so agents leave it alone")
+    eadd.add_argument("--as-human", action="store_true", help="write as a human, not an agent")
     eset = add(esub, "set", _entry_set, "Edit an entry (needs its current --version)")
     eset.add_argument("id")
     eset.add_argument("--version", type=int, required=True)

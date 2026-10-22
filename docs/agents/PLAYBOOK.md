@@ -34,7 +34,7 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Auth
 | `list_pending`, `wait_for_pending`, `get_pending` | `semula pending`, `semula pending --wait 60`, `semula show <id>` |
 | `answer_pending` | `semula answer <id> --text "..."` or `--file answer.json` or `--stdin` |
 | `list_entries`, `get_entry` | `semula entry list <project>`, `semula entry show <id>` (its `version` is in the output) |
-| `upsert_entry` | `POST /api/v1/projects/<id>/entries` (no CLI command yet) |
+| `upsert_entry` | `semula entry add <project> --prompt "..." --text "..."`; `--request-file req.json` for tools, `--response-file` or `--stdin` for a JSON answer; `--version N` replaces, `--pin` pins. Exits `4` with the current version if the entry exists. |
 | `update_entry`, `delete_entry` | `semula entry set <id> --version N ...`, `semula entry delete <id> --version N` |
 | `test_match` | `semula test-match --prompt "..."` or `--file request.json` |
 | `list_calls` | `semula log [--project P] [--outcome miss]`; `semula tail` follows live (`--json` for one object per line) |

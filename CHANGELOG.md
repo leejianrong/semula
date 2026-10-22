@@ -28,6 +28,8 @@ prompt replays that answer for free.
 - **Waiting for work.** The MCP tool `wait_for_pending`, `semula pending --wait SECONDS` and
   `GET /api/v1/pending?wait=` return the moment a call is parked (or at once if some wait), and
   empty at the timeout (at most 60 s). No database connection is held while waiting.
+- **`semula entry add`** authors a request and its answer up front (text, files, stdin, tool
+  calls), the same upsert as MCP; `--version` replaces, `--pin` pins, exit 4 if one exists.
 - **Mode per project**, kept across restarts (`semula mode record --project <id>`).
 - **Redaction** of secrets in everything stored, export and import of a project as JSON files.
 - **Observability.** A call log with a live tail, per-minute stats and a prompt preview;
