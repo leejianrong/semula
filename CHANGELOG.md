@@ -30,6 +30,10 @@ prompt replays that answer for free.
   empty at the timeout (at most 60 s). No database connection is held while waiting.
 - **`semula entry add`** authors a request and its answer up front (text, files, stdin, tool
   calls), the same upsert as MCP; `--version` replaces, `--pin` pins, exit 4 if one exists.
+- **Pending screen** in the dashboard (`/ui`): parked calls appear live with a count in the nav;
+  select one to read it, answer it in a text box (plain text, or JSON for tool calls and
+  streams) and the held call is released. A rejected answer shows the server's error beside the
+  field and the call stays held.
 - **Mode per project**, kept across restarts (`semula mode record --project <id>`).
 - **Redaction** of secrets in everything stored, export and import of a project as JSON files.
 - **Observability.** A call log with a live tail, per-minute stats and a prompt preview;

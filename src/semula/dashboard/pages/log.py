@@ -170,6 +170,7 @@ def log_page(tab: Tab) -> indah.Component:
         key="id",
         selected=picked,
         height="26rem",
+        label="Calls",
         follow=True,
         density="compact",
         columns=[
