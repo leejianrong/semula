@@ -660,6 +660,16 @@ def _audit(args: argparse.Namespace) -> int:
     return _ok(args, events, "\n".join(lines) if lines else "no audit events")
 
 
+def _admin_migrate(args: argparse.Namespace) -> int:
+    try:
+        from .config import Settings
+        from .db import Database, head_revision
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    db = Database(Settings.from_env().resolved_database_url)
+    return _ok(args, {"revision": db.revision()}, f"the database is at revision {head_revision()}")
+
+
 def _admin_workspace(args: argparse.Namespace) -> int:
     try:
         service = _admin_service(args, None)
@@ -951,6 +961,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     admin = sub.add_parser("admin", help="Operator tasks on the server's own database (hosting)")
     asub = admin.add_subparsers(dest="admin_command", required=True)
+    add(asub, "migrate", _admin_migrate, "Bring the database up to date (run once before replicas)")
     wscreate = add(asub, "workspace-create", _admin_workspace, "Create a workspace")
     wscreate.add_argument("id", help="a slug: lowercase letters, digits, hyphens")
     wscreate.add_argument("--name", default=None)

@@ -86,6 +86,19 @@ Rotating mints a successor with the same name, scope and project, and the old to
 
 Failed attempts are rate limited per client address (20 a minute), and a blocked address waits even with a good token.
 
+## Several replicas
+
+Run as many replicas as you like against one Postgres. They share live events (the call log, the pending count) and wake a call held on one replica when another replica answers it, over Postgres `LISTEN/NOTIFY`. Publishing never waits for the network, and a held call and a `wait_for_pending` also look again every second, so a notification that gets lost costs a second, not a hang. Put sticky sessions in front of the dashboard when it has sign-in.
+
+Migrate once before a rollout, not on every start:
+
+```bash
+semula admin migrate                 # as the table owner
+SEMULA_MIGRATE=off semula serve      # each replica: refuses to start if the database is behind
+```
+
+Replicas that do start together with migrating on take turns (an advisory lock), so a rollout without the extra step is safe too. Tokens, tenants and rate limits are per process: a revoked token can be honoured by another replica for up to 30 seconds, and the per-token rate limit is per replica.
+
 ## Limits
 
 A hosted workspace has limits so that one tenant cannot use up the server. Defaults, each changeable with `SEMULA_QUOTA_<NAME>` (see [Configuration](../reference/configuration.md)):

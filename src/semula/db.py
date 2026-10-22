@@ -79,12 +79,26 @@ def make_engine(url: str) -> Engine:
     return engine
 
 
+class DatabaseNeedsMigration(RuntimeError):
+    """Migrations are switched off (``SEMULA_MIGRATE=off``) and this database is not up to date."""
+
+
+def head_revision() -> str:
+    """The newest migration this release knows."""
+    from alembic.script import ScriptDirectory
+
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    return str(head)
+
+
 class DatabaseTooNew(RuntimeError):
     """The database was migrated by a newer semula than this one. There is no downgrade."""
 
 
 class Database:
-    def __init__(self, url: str | Path) -> None:
+    def __init__(self, url: str | Path, *, migrate: bool = True) -> None:
         raw = str(url)
         self.url = raw if "://" in raw else f"sqlite:///{raw}"
         self.engine = make_engine(self.url)
@@ -92,7 +106,14 @@ class Database:
         # every transaction, which the row-level-security policies compare with ``workspace_id``
         # (ADR-0011): a query that forgot its filter still sees only this workspace's rows.
         self.workspace_id: str | None = None
-        self.migrate()
+        if migrate:
+            self.migrate()
+        elif self.revision() != head_revision():
+            raise DatabaseNeedsMigration(
+                f"This database is at revision {self.revision()}, not {head_revision()}, and "
+                "SEMULA_MIGRATE is off. Run `semula admin migrate` once before starting the "
+                "replicas."
+            )
 
     def for_workspace(self, workspace_id: str | None) -> Database:
         """A handle on the same database acting for ``workspace_id`` (shares the engine)."""
@@ -139,6 +160,9 @@ class Database:
 
     def _migrate(self) -> None:
         with self.engine.begin() as conn:
+            if conn.dialect.name == "postgresql":
+                # Replicas that start together take turns: the second finds it already done.
+                conn.execute(sa.text("SELECT pg_advisory_xact_lock(727274)"))
             self._adopt_legacy(conn)
             config = Config()
             config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))

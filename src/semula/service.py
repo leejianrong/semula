@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import json
 import logging
@@ -151,6 +152,7 @@ class Service:
         self.client: str | None = None
         self._process: dict[str, str] = {"mode": settings.mode}  # shared by every scoped copy
         self._tokens = _TokenState()
+        self._bridge: Any = None
         self.lexical = make_index(self.db)
         # Semantic matching is optional: with no embedder none of this loads (ADR-0003).
         if embedder is None and settings.embeddings:
@@ -614,6 +616,28 @@ class Service:
             )
             fresh._reserve(conn, projects=1)  # the default project
             fresh._audit("workspace.create", workspace_id, conn=conn)
+
+    # --- replicas (ADR-0011 section 8) -----------------------------------------------------
+    def start_cluster(self, url: str, channel: str = "semula_events") -> None:
+        """Share events and held-call wake-ups with the other replicas on this Postgres."""
+        from .cluster import PgBridge
+
+        bridge = PgBridge(url, self.events, channel)
+        self.events.on_remote.append(self._remote_event)
+        self._bridge = bridge
+        bridge.start()
+        self.events.forward = bridge.forward
+
+    def stop_cluster(self) -> None:
+        bridge = self._bridge
+        self.events.forward = None
+        if bridge is not None:
+            bridge.stop()
+
+    def _remote_event(self, event: dict[str, Any]) -> None:
+        """Another replica answered a call that may be held here: wake it."""
+        if event.get("type") == "answered" and event.get("pending"):
+            self._release(str(event["pending"]))
 
     # --- deleting a workspace (ADR-0011 section 5) ------------------------------------------
     def workspace_status(self) -> dict[str, Any]:
@@ -2242,11 +2266,16 @@ class Service:
         try:
             # Answered before we registered? Then nobody will wake us, so look first.
             stored = await run_in_threadpool(self._answer_for, pending_id)
-            if stored is None:
-                try:
-                    await asyncio.wait_for(event.wait(), timeout)
-                except TimeoutError:
+            deadline = time.monotonic() + timeout
+            while stored is None:
+                left = deadline - time.monotonic()
+                if left <= 0:
                     return None
+                # Replicas tell each other by notification; looking again each second is what
+                # makes a lost one harmless. On one process nothing else can answer.
+                slice_ = min(left, 1.0) if self.events.networked else left
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(event.wait(), slice_)
                 stored = await run_in_threadpool(self._answer_for, pending_id)
             return stored
         finally:
@@ -2308,7 +2337,9 @@ class Service:
                 if found or remaining <= 0:
                     return found
                 try:
-                    async with asyncio.timeout(remaining):
+                    async with asyncio.timeout(
+                        min(remaining, 1.0) if self.events.networked else remaining
+                    ):
                         while True:  # sleep until the queue of this project moves
                             event = await sub.get()
                             if (
@@ -2318,6 +2349,8 @@ class Service:
                             ):
                                 break
                 except TimeoutError:
+                    if deadline - time.monotonic() > 0.01:
+                        continue  # a one-second look-again between replicas, not the end
                     return await run_in_threadpool(self.list_pending, "pending", project)
 
     def get_pending(self, pending_id: str) -> dict[str, Any]:
@@ -2374,6 +2407,7 @@ class Service:
             self._supersede(conn, row["project_id"], row["fingerprint"])
             self._revise(conn, entry_id, 1, actor, "recorded", [stored], "first", False)
         self._release(pending_id)
+        self._publish({"type": "answered", "pending": pending_id, "project": row["project_id"]})
         self._queues_changed(row["project_id"])
         self._entries_changed(row["project_id"])
         return entry_id

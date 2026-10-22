@@ -204,6 +204,8 @@ EXEMPT = {
     "authenticate_token": "finds the workspace from the credential, so no tenant exists yet",
     "purge_workspaces": "the operator's schedule: purges deleted workspaces past their grace",
     "for_scope": "builds a scoped view",
+    "start_cluster": "process-level: joins the other replicas' event channel",
+    "stop_cluster": "process-level: leaves it",
     "owns": "says whether an event belongs to this workspace",
     "create_workspace": "creates the tenant itself",
     "set_mode_default": "",  # placeholder removed below

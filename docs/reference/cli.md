@@ -55,6 +55,7 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula mode` | `<mode>` `--project` | Show or switch the mode (replay or record) |
 | `semula usage` |  | What the workspace holds against its limits |
 | `semula audit` | `--limit` `--action` `--before` | Show the audit log, newest first (people and the operator) |
+| `semula admin migrate` |  | Bring the database up to date (run once before replicas) |
 | `semula admin workspace-create` | `<id>` `--name` | Create a workspace |
 | `semula admin workspace-delete` | `<workspace>` `--confirm` | Delete a workspace: tokens stop at once, purged after 30 days |
 | `semula admin workspace-restore` | `<workspace>` | Bring a deleted workspace back during its 30 days |
