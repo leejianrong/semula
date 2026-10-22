@@ -125,11 +125,12 @@ def _serve(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     port = args.port if args.port is not None else settings.port
+    from .db import DatabaseTooNew
     from .embeddings import EmbeddingsUnavailable
 
     try:
         app = create_app(settings)
-    except EmbeddingsUnavailable as exc:  # SEMULA_EMBEDDINGS=on but it cannot run: say why
+    except (EmbeddingsUnavailable, DatabaseTooNew) as exc:  # cannot run: say why, not a traceback
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
     uvicorn.run(app, host=host, port=port, log_level="info")

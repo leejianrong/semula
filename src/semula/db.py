@@ -7,6 +7,7 @@ raw-SQL helpers (``query``, ``query_one``) exist for tests and diagnostics only.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,12 +16,20 @@ from typing import Any
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from alembic.util.exc import CommandError
 from sqlalchemy.engine import Connection, Engine, RowMapping
 from sqlalchemy.pool import StaticPool
 
 from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE
 
-__all__ = ["DEFAULT_PROJECT", "DEFAULT_WORKSPACE", "Database", "make_engine", "normalise_url"]
+__all__ = [
+    "DEFAULT_PROJECT",
+    "DEFAULT_WORKSPACE",
+    "Database",
+    "DatabaseTooNew",
+    "make_engine",
+    "normalise_url",
+]
 
 BASELINE_REVISION = "0001"
 LEGACY_SCHEMA_VERSION = 2  # the last version the pre-Alembic runner wrote
@@ -69,6 +78,10 @@ def make_engine(url: str) -> Engine:
     return engine
 
 
+class DatabaseTooNew(RuntimeError):
+    """The database was migrated by a newer semula than this one. There is no downgrade."""
+
+
 class Database:
     def __init__(self, url: str | Path) -> None:
         raw = str(url)
@@ -88,7 +101,17 @@ class Database:
             config = Config()
             config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
             config.attributes["connection"] = conn
-            command.upgrade(config, "head")
+            try:
+                command.upgrade(config, "head")
+            except CommandError as exc:
+                unknown = re.search(r"identified by '([^']+)'", str(exc))
+                if not unknown:
+                    raise
+                raise DatabaseTooNew(
+                    f"This database was made by a newer semula (revision {unknown.group(1)}) "
+                    "and cannot be downgraded. Run a release at least as new as the one that "
+                    "wrote it, or restore a backup taken before the upgrade."
+                ) from exc
 
     def _adopt_legacy(self, conn: Connection) -> None:
         """A file made by the old hand-rolled runner has ``schema_version`` and no

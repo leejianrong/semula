@@ -40,6 +40,8 @@ prompt replays that answer for free.
 - **Documentation site** (Zensical, on GitHub Pages): a tutorial of nine short pages, an install
   and operations guide, and reference tables for the CLI, MCP tools, REST API, settings and
   errors that tests keep equal to the code. `make docs` builds it, `make docs-serve` previews it.
+- **A clear refusal to downgrade.** Starting semula on a database that a newer release migrated
+  now says so and exits, instead of printing an Alembic traceback.
 - **Mode per project**, kept across restarts (`semula mode record --project <id>`).
 - **Redaction** of secrets in everything stored, export and import of a project as JSON files.
 - **Observability.** A call log with a live tail, per-minute stats and a prompt preview;
