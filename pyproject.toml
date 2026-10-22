@@ -31,7 +31,7 @@ dependencies = [
     "fastmcp>=2.10",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
-    "indah>=0.3,<0.4",
+    "indah>=0.4,<0.5",
 ]
 
 [project.scripts]
@@ -99,4 +99,4 @@ ignore_missing_imports = true  # optional extra, not installed in the fast layer
 
 [[tool.mypy.overrides]]
 module = ["indah", "indah.*"]
-ignore_missing_imports = true  # indah 0.3 ships no py.typed marker
+ignore_missing_imports = true  # indah 0.4: check whether it ships py.typed

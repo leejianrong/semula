@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 from typing import Any
 
 import indah
 
 from .pages.log import log_page
 from .pages.pending import pending_page
-from .state import Dash, blocking, every
+from .state import Dash, blocking, cancel, every
 
 EMPTY_STATS: dict[str, Any] = {"hit_rate": None, "median_latency_ms": None, "parked": 0}
 
@@ -78,7 +79,7 @@ class Tab:
         task = asyncio.get_running_loop().create_task(
             blocking(self.service.set_mode, want, project)
         )
-        self.ctx.on_close(task.cancel)
+        self.ctx.on_close(partial(cancel, task))
 
     async def _refresh(self) -> None:
         """Count again, at most once a second however many events arrived."""

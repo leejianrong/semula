@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from functools import partial
 from typing import Any, TypeVar
 
 import indah
@@ -44,6 +45,11 @@ class Dash:
         return [p["id"] for p in self.service.list_projects()]
 
 
+def cancel(task: asyncio.Task[Any]) -> None:
+    """For ``ctx.on_close``, which wants a callable that returns nothing."""
+    task.cancel()
+
+
 async def blocking(fn: Callable[..., T], *args: Any) -> T:
     """Run a service call off the event loop: indah runs handlers on it, and a database call
     there would stall every open tab."""
@@ -64,4 +70,4 @@ def every(ctx: indah.Context, seconds: float, fn: Callable[[], Awaitable[None]])
             await asyncio.sleep(seconds)
 
     task = asyncio.get_running_loop().create_task(loop())
-    ctx.on_close(task.cancel)
+    ctx.on_close(partial(cancel, task))

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import indah
 
 from ...errors import SemulaError
 from ..rows import FILTERS, OUTCOME_TONES, keeps, rail_for
-from ..state import blocking
+from ..state import blocking, cancel
 
 if TYPE_CHECKING:
     from ..shell import Tab
@@ -120,7 +121,7 @@ def log_page(tab: Tab) -> indah.Component:
         import asyncio
 
         task = asyncio.get_running_loop().create_task(coro)
-        ctx.on_close(task.cancel)
+        ctx.on_close(partial(cancel, task))
 
     indah.effect(on_pick)
 

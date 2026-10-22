@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import indah
 
 from ...errors import SemulaError
 from ..rows import answer_from_text, pending_row
-from ..state import blocking
+from ..state import blocking, cancel
 from .log import MESSAGE
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ def pending_page(tab: Tab) -> indah.Component:
 
     def spawn(coro: Any) -> None:
         task = asyncio.get_running_loop().create_task(coro)
-        ctx.on_close(task.cancel)
+        ctx.on_close(partial(cancel, task))
 
     async def reload(project: str) -> None:
         nonlocal loads
@@ -138,8 +139,13 @@ def pending_page(tab: Tab) -> indah.Component:
         children=[
             indah.Text(heading, markdown=True),
             indah.List(indah.computed(messages), key="id", item=MESSAGE, empty=""),
-            indah.TextArea(
-                answer, label="Answer", rows=6, placeholder="What the real model would say"
+            indah.CodeEditor(
+                answer,
+                language="text",
+                lint=False,
+                height="10rem",
+                label="Answer",
+                placeholder="What the real model would say",
             ),
             indah.Text(error_text, markdown=True),
             indah.Text(HINT, markdown=True),
