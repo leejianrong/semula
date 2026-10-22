@@ -1,0 +1,30 @@
+# semula as a long-running service on your laptop, for every project on the machine to share.
+#
+#   docker compose up -d --wait             pull ghcr.io/leejianrong/semula and start it
+#   docker compose pull && docker compose up -d --wait      upgrade
+#   docker compose down                      stop it; recordings stay in the volume
+#
+# This file works on its own. To also get http://semula.localhost/ and a name other containers
+# can reach, add the Traefik layer (README.md):
+#   docker compose -f compose.yaml -f compose.traefik.yaml up -d --wait
+name: semula
+
+services:
+  semula:
+    image: ${SEMULA_IMAGE:-ghcr.io/leejianrong/semula:latest}
+    container_name: semula
+    restart: unless-stopped # with Docker's own start-on-boot this is the whole "always on"
+    ports:
+      # Loopback only, on a fixed port so scripts, test runners and agents on this machine always
+      # find it. Not 8080: that one is for whatever you are developing.
+      - "127.0.0.1:${SEMULA_PORT:-8787}:8080"
+    volumes:
+      - semula-data:/data # recordings, projects, settings: `docker compose down` keeps them
+    environment:
+      # What a project follows until it picks its own mode. Replay is the safe default for
+      # shared use: nothing is parked and no test hangs. Switch one project to record with
+      #   docker exec semula semula mode record --project my-app      (kept across restarts)
+      SEMULA_MODE: ${SEMULA_MODE:-replay}
+
+volumes:
+  semula-data:

@@ -1,0 +1,20 @@
+# Adds semula to the machine-wide Traefik (the `proxy` network from the traefik-dev-proxy setup):
+#   http://semula.localhost/ui/        the dashboard, in a browser
+#   http://semula:8080/v1              from another container on the `proxy` network
+# Use it together with compose.yaml, which keeps the direct loopback port as well:
+#   docker compose -f compose.yaml -f compose.traefik.yaml up -d --wait
+services:
+  semula:
+    networks:
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.semula.rule=Host(`semula.localhost`)
+      - traefik.http.services.semula.loadbalancer.server.port=8080
+      # No Host rewrite needed: the dashboard streams over Server-Sent Events (plain HTTP), not
+      # a websocket with a strict Host check.
+
+networks:
+  proxy:
+    external: true

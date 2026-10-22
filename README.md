@@ -45,6 +45,10 @@ uv run semula answer <id> --text "hi from the agent"
 
 The held call returns. Ask the same thing again, even with a different model name or a new timestamp in the prompt, and the stored answer comes back at once. Restart with `SEMULA_MODE=replay` and it works offline; unknown prompts return an error instead of a made-up answer.
 
+### As a service on your laptop
+
+[`deploy/laptop/`](deploy/laptop/README.md) runs the published image as an always-on semula that every project on the machine can share, on a fixed loopback port and, if you use Traefik, at `http://semula.localhost/ui/`.
+
 ### Record or replay, per project
 
 Each project is either recording (a prompt with no stored answer is held for an agent) or replaying (it fails fast), and **a project's choice is kept across restarts**:
