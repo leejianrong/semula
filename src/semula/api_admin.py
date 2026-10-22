@@ -190,11 +190,28 @@ async def put_mode(request: Request) -> dict[str, Any]:
     return await offload(partial(_service(request).set_mode, str(body.get("mode", "")), project))
 
 
+MAX_WAIT = 60.0
+
+
 @router.get("/pending")
-def list_pending(
-    request: Request, status: str | None = "pending", project: str | None = None
+async def list_pending(
+    request: Request,
+    status: str | None = "pending",
+    project: str | None = None,
+    wait: float | None = None,
 ) -> dict[str, Any]:
-    return {"pending": _service(request).list_pending(None if status == "all" else status, project)}
+    """``wait`` (seconds, up to 60) holds the request until a call is parked or time runs out."""
+    service = _service(request)
+    if wait is not None:
+        if not 0 <= wait <= MAX_WAIT:
+            raise SemulaError(
+                400, "invalid_request", f"'wait' must be 0 to {MAX_WAIT:g} seconds.", param="wait"
+            )
+        if project:
+            await offload(service.require_project, project)
+        return {"pending": await service.wait_for_pending(project, wait)}
+    rows = await offload(service.list_pending, None if status == "all" else status, project)
+    return {"pending": rows}
 
 
 @router.get("/pending/{pending_id}")

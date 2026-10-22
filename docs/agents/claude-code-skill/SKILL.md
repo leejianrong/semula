@@ -12,14 +12,14 @@ Install: copy this folder to `.claude/skills/semula-record/` and connect the MCP
 ## Loop
 
 1. `get_status`. If the project's mode is `replay`, nothing is parked; ask before switching it to `record` with `set_mode` (pass `project` so the choice is kept).
-2. `list_pending`, then `get_pending <id>` for the full request. Read the system prompt for the output format, and the tool definitions if any.
+2. `wait_for_pending` (returns as soon as a call is parked, empty after the timeout: call it again), then `get_pending <id>` for the full request. Read the system prompt for the output format, and the tool definitions if any.
 3. `answer_pending <id> <answer>`:
    - text: `{"content": "..."}`
    - tool call: `{"message": {"content": null, "tool_calls": [{"function": {"name": "...", "arguments": {...}}}]}}`, only tools the request offered, arguments valid for that tool's schema
    - stream boundaries: `{"chunks": ["Hel", "lo"]}`
 4. `test_match` on the same prompt should say `would: serve`. For a tool-call answer pass the full request (with `tools`), not just a prompt. Repeat until nothing is pending.
 
-CLI equivalents: `semula mode`, `semula pending`, `semula show <id>`, `semula answer <id> --file answer.json`, `semula test-match --file request.json`. All take `--json`.
+CLI equivalents: `semula mode`, `semula pending --wait 60`, `semula show <id>`, `semula answer <id> --file answer.json`, `semula test-match --file request.json`. All take `--json`.
 
 ## Rules
 

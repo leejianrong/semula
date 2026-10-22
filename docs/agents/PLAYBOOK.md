@@ -31,7 +31,7 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Auth
 | `get_status`, `set_mode` | `semula mode` (the default and each project's mode), `semula mode record --project <id>` / `semula mode replay --project <id>`. A project must be in `record` for its calls to be parked. A project's mode is kept across restarts; without `--project` you only move the server default, which is forgotten on restart. |
 | `list_projects`, `create_project` | `semula project list`, `semula project create <id>` |
 | `get_project_settings`, `update_project_settings` | `semula project settings <id>`, `semula project settings <id> --set '{"tail_n": 2}'` |
-| `list_pending`, `get_pending` | `semula pending`, `semula show <id>` |
+| `list_pending`, `wait_for_pending`, `get_pending` | `semula pending`, `semula pending --wait 60`, `semula show <id>` |
 | `answer_pending` | `semula answer <id> --text "..."` or `--file answer.json` or `--stdin` |
 | `list_entries`, `get_entry` | `semula entry list <project>`, `semula entry show <id>` (its `version` is in the output) |
 | `upsert_entry` | `POST /api/v1/projects/<id>/entries` (no CLI command yet) |
@@ -47,12 +47,11 @@ claude mcp add --transport http semula http://127.0.0.1:8080/mcp/ --header "Auth
 
 ## 2. The loop
 
-1. **See what is waiting.** `get_status` (CLI: `semula mode`, then `semula pending`) shows the mode and what is parked. Recording needs mode `record`; in `replay` nothing is parked.
-2. **List.** `list_pending` (CLI: `semula pending`). Oldest first. Held calls time out after 300 s by default, but a late answer is still saved.
-3. **Read the whole request.** `get_pending <id>` (CLI: `semula show <id>`). Read the system prompt: it says what format the app expects. If `tools` are listed, those are the only tools you may call.
-4. **Answer.** `answer_pending <id> <answer>` (CLI: `semula answer <id> --text "..."` or `--file f.json` / `--stdin`).
-5. **Verify.** `test_match` with the same request should now report `would: serve`. `--prompt` sends one user message and **no tools**, so to check a tool-call answer pass the full request body, including `tools`, with `--file request.json` (a chat completion body: `{"messages": [...], "tools": [...]}`).
-6. **Repeat** until `list_pending` is empty.
+1. **Wait.** `wait_for_pending` (CLI: `semula pending --wait 60`; REST: `GET /api/v1/pending?wait=60`) returns the moment a call is parked, at once if some already wait, and an empty list after `timeout_seconds` (at most 60). Do not poll `list_pending` in a loop. If it returns empty, call it again. Recording needs mode `record` (`get_status`, CLI `semula mode`); in `replay` nothing is parked.
+2. **Read the whole request.** The list is oldest first and holds the id and last message of each call. `get_pending <id>` (CLI: `semula show <id>`) gives the full request. Read the system prompt: it says what format the app expects. If `tools` are listed, those are the only tools you may call. Held calls time out after 300 s by default, but a late answer is still saved.
+3. **Answer.** `answer_pending <id> <answer>` (CLI: `semula answer <id> --text "..."` or `--file f.json` / `--stdin`).
+4. **Verify.** `test_match` with the same request should now report `would: serve`. `--prompt` sends one user message and **no tools**, so to check a tool-call answer pass the full request body, including `tools`, with `--file request.json` (a chat completion body: `{"messages": [...], "tools": [...]}`).
+5. **Repeat** from step 1. Answer everything the list returned before waiting again.
 
 If your answer is rejected, the call **stays held**. The error names a `code` and a `param`; fix that field and send it again. On the CLI a rejection exits with `4` and prints `error: invalid_answer: <message> (at <param>)` to stderr; with `--json` stderr is `{"error": {"code": ..., "message": ..., "param": ..., "status": 422}}`.
 

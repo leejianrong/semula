@@ -11,6 +11,7 @@ answers that replay cleanly. Keep them in step with docs/agents/PLAYBOOK.md.
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 from collections.abc import Callable
 from typing import Any, TypeVar
@@ -30,7 +31,7 @@ semula is a record-replay fake LLM server. An app's LLM call that has no recorde
 is parked as a *pending request*. You answer it; semula validates and saves the answer, the
 app's held call completes, and every later identical call replays your answer for free.
 
-Typical loop: list_pending -> get_pending -> answer_pending, then repeat. Answer promptly:
+Typical loop: wait_for_pending -> get_pending -> answer_pending, then repeat. Answer promptly:
 held calls time out (default 300 s), though a late answer is still saved.
 
 Write answers the way the real model would, in the format the app's prompt asks for. Replace
@@ -42,6 +43,17 @@ Errors come back as JSON with a 'code' and 'param'; fix what they name and resub
 
 def _guard(fn: Callable[..., T]) -> Callable[..., T]:
     """Turn a SemulaError into a ToolError whose text is the JSON the agent should act on."""
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return await fn(*args, **kwargs)
+            except SemulaError as exc:
+                raise ToolError(json.dumps(exc.body())) from exc
+
+        return async_wrapper  # type: ignore[return-value]
 
     @functools.wraps(fn)  # keeps the signature visible, so FastMCP builds the tool schema
     def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -116,6 +128,28 @@ def build_mcp(service: Service) -> FastMCP:
         """List parked requests waiting for an answer, oldest first. Each has an id, project and
         the last message. Call get_pending for the full request before answering."""
         return service.list_pending(None if include_answered else "pending", project)
+
+    @tool
+    async def wait_for_pending(
+        project: str | None = None, timeout_seconds: float = 30
+    ) -> list[dict[str, Any]]:
+        """Wait for the next parked request. Returns the pending list (as list_pending does) as
+        soon as one is parked, at once if some already wait, or an empty list after
+        timeout_seconds (at most 60). This is the loop's resting state: call it, answer what it
+        returns, call it again. An empty list means nothing came; just call it again."""
+        if not 0 <= timeout_seconds <= 60:
+            raise ToolError(
+                json.dumps(
+                    {
+                        "error": {
+                            "code": "invalid_request",
+                            "param": "timeout_seconds",
+                            "message": "timeout_seconds must be 0 to 60.",
+                        }
+                    }
+                )
+            )
+        return await service.wait_for_pending(project, timeout_seconds)
 
     @tool
     def get_pending(id: str) -> dict[str, Any]:
