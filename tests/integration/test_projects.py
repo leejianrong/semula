@@ -59,7 +59,9 @@ async def test_project_counts_reflect_entries_and_pending(record: httpx.AsyncCli
     await asyncio.sleep(0.05)
     row = (await record.get("/api/v1/projects/counted")).json()
     assert row["entries"] == 1 and row["pending"] == 1
-    pid = (await record.get("/api/v1/pending", params={"project": "counted"})).json()["pending"][0]
+    pid = (await record.get("/api/v1/pending", params={"project": "counted", "wait": 10})).json()[
+        "pending"
+    ][0]
     await record.post(f"/api/v1/pending/{pid['id']}/answer", json={"content": "2"})
     await call
 

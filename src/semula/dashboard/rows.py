@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 
@@ -167,3 +168,32 @@ DOT_STYLES = {
     "skipped": _DOT + "border:2px dashed var(--outline-soft)",
     "off": _DOT + "border:2px dotted var(--outline-soft)",
 }
+
+
+def pending_row(item: dict[str, Any], tz: tzinfo | None = None) -> dict[str, Any]:
+    """One parked call as the Pending table shows it, from a ``list_pending`` item."""
+    moment = parse_ts(item["created_at"])
+    prompt = (item.get("last_message") or "").replace("\n", " ")
+    return {
+        "id": item["id"],
+        "project": item["project"],
+        "since": clock(moment, tz),
+        "prompt": short(prompt),
+    }
+
+
+def answer_from_text(text: str) -> Any:
+    """What the viewer typed, as the answer to send. Text that starts like JSON (``{`` or ``[``)
+    must be valid JSON and goes as given (a tool call, a chunk list); anything else is a plain
+    reply. Raises ``ValueError`` with a sentence to show beside the field."""
+    body = text.strip()
+    if not body:
+        raise ValueError("Write an answer first.")
+    if body[0] in "{[":
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"That looks like JSON but is not valid: {exc.msg} (line {exc.lineno})."
+            ) from exc
+    return {"content": text}

@@ -68,7 +68,7 @@ async def test_answering_twice_or_unknown_ids_are_clear_errors(record: httpx.Asy
     assert missing.status_code == 404
     call = asyncio.create_task(record.post("/v1/chat/completions", json=chat("twice")))
     await asyncio.sleep(0.05)
-    pid = (await record.get("/api/v1/pending")).json()["pending"][0]["id"]
+    pid = (await record.get("/api/v1/pending", params={"wait": 10})).json()["pending"][0]["id"]
     await record.post(f"/api/v1/pending/{pid}/answer", json={"content": "one"})
     await call
     again = await record.post(f"/api/v1/pending/{pid}/answer", json={"content": "two"})
@@ -80,7 +80,7 @@ async def test_an_invalid_answer_is_rejected_and_the_call_stays_held(
 ) -> None:
     call = asyncio.create_task(record.post("/v1/chat/completions", json=chat("validate me")))
     await asyncio.sleep(0.05)
-    pid = (await record.get("/api/v1/pending")).json()["pending"][0]["id"]
+    pid = (await record.get("/api/v1/pending", params={"wait": 10})).json()["pending"][0]["id"]
 
     bad = await record.post(f"/api/v1/pending/{pid}/answer", json={"content": 5})
     assert bad.status_code == 422
@@ -112,7 +112,7 @@ async def test_tool_call_answers_are_checked_against_the_request_tools(
         record.post("/v1/chat/completions", json=chat("weather?", tools=[tool]))
     )
     await asyncio.sleep(0.05)
-    pid = (await record.get("/api/v1/pending")).json()["pending"][0]["id"]
+    pid = (await record.get("/api/v1/pending", params={"wait": 10})).json()["pending"][0]["id"]
 
     def answer(name: str, args: str) -> dict[str, object]:
         return {

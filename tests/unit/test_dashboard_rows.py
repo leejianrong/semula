@@ -132,3 +132,24 @@ def test_a_long_prompt_is_cut_for_the_table_but_kept_whole_for_the_detail() -> N
     assert row["preview"] == long.strip()
     assert short("short") == "short" and short("x" * 64) == "x" * 64
     assert short("x" * 65) == "x" * 63 + "…"
+
+
+def test_a_parked_call_becomes_a_pending_row() -> None:
+    from semula.dashboard.rows import pending_row
+
+    item = {"id": "P1", "project": "triage", "created_at": "2026-10-21T09:14:22.318Z",
+            "last_message": "Line one\nLine two"}  # fmt: skip
+    row = pending_row(item, UTC)
+    assert row == {"id": "P1", "project": "triage", "since": "09:14:22.318",
+                   "prompt": "Line one Line two"}  # fmt: skip
+
+
+def test_typed_answers_are_text_unless_they_start_like_json() -> None:
+    from semula.dashboard.rows import answer_from_text
+
+    assert answer_from_text("hello there") == {"content": "hello there"}
+    assert answer_from_text(' {"content": "x"} ') == {"content": "x"}
+    assert answer_from_text('{"chunks": ["a", "b"]}') == {"chunks": ["a", "b"]}
+    for bad in ("", "   ", '{"content": '):
+        with pytest.raises(ValueError):
+            answer_from_text(bad)

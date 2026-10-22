@@ -8,6 +8,7 @@ from typing import Any
 import indah
 
 from .pages.log import log_page
+from .pages.pending import pending_page
 from .state import Dash, blocking, every
 
 EMPTY_STATS: dict[str, Any] = {"hit_rate": None, "median_latency_ms": None, "parked": 0}
@@ -23,6 +24,8 @@ class Tab:
         self.project = indah.computed(lambda: ctx.params.value.get("project") or "default")
         self.projects: list[str] = dash.project_ids()
         self.counts: indah.Signal[dict[str, int]] = indah.Signal({"pending": 0, "review": 0})
+        # Bumped when this project's pending or review queue moves, for screens that list it.
+        self.queues_moved: indah.Signal[int] = indah.Signal(0)
         self.stats: indah.Signal[dict[str, Any]] = indah.Signal(EMPTY_STATS)
         # Whether *this project* records. ``_applied`` is what the service last said, so the
         # switch handler can tell a viewer's click from an update that came from the service.
@@ -34,16 +37,23 @@ class Tab:
         every(ctx, 1.0, self._refresh)
 
     def _follow_events(self, ctx: indah.Context) -> None:
-        latest = ctx.latest(self.dash.events, initial=None)
+        # A ring, not ``ctx.latest``: a signal ignores a value equal to the one it holds, and
+        # the service announces "queues moved" with the same event every time.
+        ring = ctx.tail(self.dash.events, limit=50)
         calls = ctx.latest(self.dash.calls, initial=None)
 
-        def on_event() -> None:
-            event = latest.value
-            if event and event.get("type") == "mode" and event["project"] == self.project.peek():
-                self._applied = event["mode"]
-                self.recording.set(event["mode"] == "record")
-            if event:
+        def on_events(kind: str, rows: list[dict[str, Any]]) -> None:
+            if kind == "replace":
+                return
+            for event in rows:
+                if event.get("type") == "mode" and event["project"] == self.project.peek():
+                    self._applied = event["mode"]
+                    self.recording.set(event["mode"] == "record")
+                if event.get("type") == "queues" and event["project"] == self.project.peek():
+                    self.queues_moved.set(self.queues_moved.peek() + 1)
                 self._stale.set()  # a default that moved changes every project that follows it
+
+        ring.listen(on_events)
 
         def on_call() -> None:
             if calls.value is not None:
@@ -53,7 +63,6 @@ class Tab:
             self.project.value  # noqa: B018 (reading it is the point: re-count and re-read the mode)
             self._stale.set()
 
-        indah.effect(on_event)
         indah.effect(on_call)
         indah.effect(on_project)
         indah.effect(self._push_mode)
@@ -92,6 +101,15 @@ def nav(tab: Tab) -> indah.Component:
         children=[
             indah.Select(_chosen(tab), options=tab.projects, label="Project"),
             indah.Link(tab.ctx, "Live log", to=to("log"), match="prefix"),
+            indah.Row(
+                children=[
+                    indah.Link(tab.ctx, "Pending", to=to("pending"), match="prefix"),
+                    indah.Badge(
+                        indah.computed(lambda: str(tab.counts.value["pending"])), tone="warn"
+                    ),
+                ],
+                align="center",
+            ),
             indah.Switch(tab.recording, label="Record"),
         ]
     )
@@ -122,7 +140,10 @@ def build_session(ctx: indah.Context, dash: Dash) -> indah.Session:
     tab = Tab(ctx, dash)
     pages = indah.Router(
         ctx,
-        routes={"/projects/{project}/log": log_page(tab)},
+        routes={
+            "/projects/{project}/log": log_page(tab),
+            "/projects/{project}/pending": pending_page(tab),
+        },
         not_found=indah.Text("### There is nothing at this address.", markdown=True),
     )
     return indah.Session(indah.Sidebar(children=[nav(tab), pages]))

@@ -48,7 +48,7 @@ def tab(server: str) -> Iterator[Tab]:
 
 
 def table_rows(tab: Tab) -> list[dict[str, Any]]:
-    return tab.find("table")["props"]["rows"]  # type: ignore[no-any-return]
+    return tab.find("table", label="Calls")["props"]["rows"]  # type: ignore[no-any-return]
 
 
 def appended(text: str) -> Any:
@@ -120,7 +120,7 @@ def test_the_stats_follow_the_calls(server: str, tab: Tab) -> None:
 def test_selecting_a_hit_shows_its_request_and_answer_and_the_rail(server: str, tab: Tab) -> None:
     row = next(r for r in table_rows(tab) if r["prompt"] == "seeded hit" and r["outcome"] == "hit")
     mark = tab.mark()
-    tab.send(tab.find("table"), "select", {"key": row["id"]})
+    tab.send(tab.find("table", label="Calls"), "select", {"key": row["id"]})
     tab.wait_for(lambda m: "the answer to seeded hit" in str(m), 3, mark)
     tab.wait_for(lambda m: "Skipped" in str(m), 3, mark)  # the rail is a separate patch
     shown = tab.since(mark)
@@ -138,7 +138,7 @@ def test_selecting_a_miss_says_only_the_preview_was_kept(server: str, tab: Tab) 
         if "append" in c and c["append"]["rows"][0]["prompt"] == "a miss to open"
     )
     mark = tab.mark()
-    tab.send(tab.find("table"), "select", {"key": key})
+    tab.send(tab.find("table", label="Calls"), "select", {"key": key})
     tab.wait_for(lambda m: "Only the preview was kept" in str(m), 3, mark)
     tab.wait_for(lambda m: "a miss to open" in str(m), 3, mark)  # the message list, another patch
 
@@ -147,7 +147,7 @@ def test_the_show_menu_filters_the_table(server: str, tab: Tab) -> None:
     httpx.post(server + "/v1/chat/completions", json=ask("seeded hit"))
     httpx.post(server + "/v1/chat/completions", json=ask("will miss for the filter"))
     tab.wait_for(appended("will miss for the filter"), 3)
-    table = tab.find("table")
+    table = tab.find("table", label="Calls")
     mark = tab.mark()
     tab.send(tab.find("select", label="Show"), "change", {"value": "Hits"})
     message, _ = tab.wait_for(
