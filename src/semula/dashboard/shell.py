@@ -12,6 +12,7 @@ from .pages.entries import entries_page
 from .pages.entry import entry_page
 from .pages.log import log_page
 from .pages.pending import pending_page
+from .pages.review import review_page
 from .state import Dash, blocking, cancel, every
 
 EMPTY_STATS: dict[str, Any] = {"hit_rate": None, "median_latency_ms": None, "parked": 0}
@@ -110,6 +111,15 @@ def nav(tab: Tab) -> indah.Component:
             indah.Link(tab.ctx, "Entries", to=to("entries"), match="prefix"),
             indah.Row(
                 children=[
+                    indah.Link(tab.ctx, "Review", to=to("review"), match="prefix"),
+                    indah.Badge(
+                        indah.computed(lambda: str(tab.counts.value["review"])), tone="warn"
+                    ),
+                ],
+                align="center",
+            ),
+            indah.Row(
+                children=[
                     indah.Link(tab.ctx, "Pending", to=to("pending"), match="prefix"),
                     indah.Badge(
                         indah.computed(lambda: str(tab.counts.value["pending"])), tone="warn"
@@ -150,6 +160,7 @@ def build_session(ctx: indah.Context, dash: Dash) -> indah.Session:
         routes={
             "/projects/{project}/log": log_page(tab),
             "/projects/{project}/pending": pending_page(tab),
+            "/projects/{project}/review": review_page(tab),
             "/projects/{project}/entries": entries_page(tab),
             "/projects/{project}/entries/{entry}": entry_page(tab),
         },

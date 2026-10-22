@@ -38,6 +38,10 @@ The same page edits the entry. Change the text in **Edit answer** and press **Sa
 - If someone else changed the entry while you were typing, saving says so, keeps your text, and **Reload** shows their version. Your edit never overwrites theirs.
 - **Delete entry** asks first.
 
+## Review
+
+The **Review** screen lists near misses (the badge in the sidebar counts them). Select one to see the new prompt next to the recorded one, with the changed words marked, and the recorded answer underneath. **Approve** serves that prompt from the entry from now on; **Reject** keeps the pairing from ever coming back.
+
 ## Good to know
 
 The dashboard is built on the first visit to `/ui`, so the server starts as fast as ever. `SEMULA_UI=off` hides it.

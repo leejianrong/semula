@@ -73,6 +73,19 @@ class Tab:
         with self._lock:
             return json.dumps(self.messages[mark:])
 
+    def changes_to(self, node: dict[str, Any], mark: int = 0) -> str:
+        """Only the patch changes aimed at ``node`` since ``mark``: every screen of the dashboard
+        is live in every tab, so a bare text search also finds other screens' updates."""
+        with self._lock:
+            hits = [
+                c
+                for m in self.messages[mark:]
+                if m["type"] == "patch"
+                for c in m["changes"]
+                if c.get("target") == node["id"]
+            ]
+        return json.dumps(hits)
+
     def nodes(self) -> Iterator[dict[str, Any]]:
         stack = [self.init["root"]]
         while stack:

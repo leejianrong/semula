@@ -222,3 +222,19 @@ def test_the_new_entry_form_becomes_a_chat_request() -> None:
     for prompt, tools in (("  ", ""), ("Hi", "{"), ("Hi", '{"a": 1}'), ("Hi", "[1]")):
         with pytest.raises(ValueError):
             new_entry_request(prompt, "", tools)
+
+
+def test_a_candidate_row_and_the_comparison_text() -> None:
+    from semula.dashboard.rows import candidate_row, request_text
+
+    candidate = {"id": "C1", "score": 0.9091, "tier": "bm25",
+                 "last_message": "my screen\nis badly cracked",
+                 "entry_last_message": "my screen is cracked"}  # fmt: skip
+    assert candidate_row(candidate) == {
+        "id": "C1", "score": "0.91", "tier": "Words",
+        "prompt": "my screen is badly cracked", "entry": "my screen is cracked",
+    }  # fmt: skip
+    text = request_text({"messages": [{"role": "system", "content": "Be brief"},
+                                      {"role": "user", "content": "Hi"}],
+                         "tools": [{"type": "function", "function": {"name": "f"}}]})  # fmt: skip
+    assert text == "system:\nBe brief\n\nuser:\nHi\n\ntools: f"
