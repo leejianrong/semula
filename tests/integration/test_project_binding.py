@@ -149,6 +149,14 @@ S: dict[str, Callable[[World], None]] = {
     "create_token": lambda w: forbidden(lambda: w.bound.create_token("t", "record")),
     "list_tokens": lambda w: forbidden(lambda: w.bound.list_tokens()),
     "list_audit": lambda w: forbidden(lambda: w.bound.list_audit()),
+    "list_members": lambda w: forbidden(lambda: w.bound.list_members()),
+    "list_invitations": lambda w: forbidden(lambda: w.bound.list_invitations()),
+    "set_member_role": lambda w: forbidden(lambda: w.bound.set_member_role("x", "viewer")),
+    "remove_member": lambda w: forbidden(lambda: w.bound.remove_member("x")),
+    "create_invitation": lambda w: forbidden(
+        lambda: w.bound.create_invitation("x@example.com", "viewer")
+    ),
+    "revoke_invitation": lambda w: forbidden(lambda: w.bound.revoke_invitation("x")),
     "usage": lambda w: forbidden(lambda: w.bound.usage()),
     "workspace_status": lambda w: _equal(w.bound.workspace_status()["id"], "a"),
     "delete_workspace": lambda w: forbidden(lambda: w.bound.delete_workspace("a")),
@@ -165,7 +173,9 @@ EXEMPT = {
     "for_scope", "owns", "create_workspace", "authenticate_token", "sync_index",
     "sync_embeddings", "prune_log", "log_call", "embeddings_status", "wait_for_answer",
     "prune_audit", "purge_workspaces", "start_cluster", "stop_cluster", "sign_in_identity",
-    "create_session", "authenticate_session", "end_session", "end_sessions_of",
+    "create_session", "authenticate_session", "end_session", "end_sessions_of", "workspaces_of",
+    "membership_of", "principal_for_session", "switch_workspace", "invitation_preview",
+    "accept_invitation",
 }  # fmt: skip
 
 

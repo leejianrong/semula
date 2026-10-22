@@ -714,6 +714,40 @@ def _admin_workspace_state(args: argparse.Namespace) -> int:
     return _ok(args, status, human)
 
 
+def _admin_invite(args: argparse.Namespace) -> int:
+    """Invite someone to a workspace from the operator's side: how the first admin gets in."""
+    try:
+        service = _admin_service(args, args.workspace)
+        from .config import Settings
+
+        public = Settings.from_env().public_url
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    from .errors import SemulaError
+
+    try:
+        made = service.create_invitation(args.email, args.role)
+    except SemulaError as exc:
+        print(f"error: {exc.code}: {exc.message}", file=sys.stderr)
+        return EXIT_REJECTED
+    link = f"{public}/auth/invite/{made['token']}"
+    human = (
+        f"invited {made['email']} as {made['role']} until {made['expires_at']}\n{link}\n"
+        "Send them the link; it works once, for them, after they sign in."
+    )
+    return _ok(args, {**{k: v for k, v in made.items() if k != "token"}, "link": link}, human)
+
+
+def _admin_members(args: argparse.Namespace) -> int:
+    try:
+        service = _admin_service(args, args.workspace)
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    members = service.list_members()
+    lines = [f"{m['person_id']}\t{m['role']}\t{m['email']}\t{m['name']}" for m in members]
+    return _ok(args, members, "\n".join(lines) if lines else "no members")
+
+
 def _admin_recount(args: argparse.Namespace) -> int:
     try:
         service = _admin_service(args, args.workspace)
@@ -981,6 +1015,12 @@ def build_parser() -> argparse.ArgumentParser:
         "Hard-delete every workspace whose 30 days are over",
     )
     purge.set_defaults(verb="purge")
+    invite = add(asub, "invite", _admin_invite, "Invite someone to a workspace (prints the link)")
+    invite.add_argument("--workspace", required=True)
+    invite.add_argument("--email", required=True)
+    invite.add_argument("--role", choices=["viewer", "editor", "admin"], default="admin")
+    members = add(asub, "members", _admin_members, "List a workspace's members")
+    members.add_argument("--workspace", required=True)
     recount = add(
         asub, "recount", _admin_recount, "Rebuild a workspace's quota counters from what is stored"
     )

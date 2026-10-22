@@ -189,3 +189,50 @@ async def logout(request: Request) -> Response:
     response = RedirectResponse("/auth/login", status_code=303)
     cookies.clear(response, cookies.session)
     return response
+
+
+def _invite_page(preview: dict[str, Any], token: str, csrf: str, email: str) -> HTMLResponse:
+    body = (
+        f"<p>You are signed in as <b>{html.escape(email)}</b>.</p>"
+        f"<p>Join <b>{html.escape(preview['workspace'])}</b> as "
+        f"<b>{html.escape(preview['role'])}</b>?</p>"
+        f'<form method=post action="/auth/invite/{html.escape(token)}">'
+        f'<input type=hidden name=csrf value="{html.escape(csrf)}">'
+        "<button>Join</button></form>"
+    )
+    return _page("Join a workspace", body)
+
+
+@router.get("/invite/{token}", response_model=None)
+async def invitation(token: str, request: Request) -> Response:
+    """The link in an invitation. Sign in first (any provider), then confirm."""
+    service, _, cookies, _ = _state(request)
+    session = await offload(service.authenticate_session, request.cookies.get(cookies.session, ""))
+    if session is None:
+        return RedirectResponse(
+            f"/auth/login?{_query({'next': f'/auth/invite/{token}'})}", status_code=302
+        )
+    try:
+        preview = await offload(service.invitation_preview, token)
+    except SemulaError as exc:
+        return _page("Invitation", f"<p>{html.escape(exc.message)}</p>", exc.status)
+    return _invite_page(preview, token, session["csrf"], session["email"])
+
+
+@router.post("/invite/{token}", response_model=None)
+async def accept(token: str, request: Request) -> Response:
+    service, _, cookies, _ = _state(request)
+    session = await offload(service.authenticate_session, request.cookies.get(cookies.session, ""))
+    form = await request.form()
+    origin = request.headers.get("origin")
+    if (
+        session is None
+        or (origin is not None and origin != cookies.origin)
+        or not hmac.compare_digest(str(form.get("csrf", "")), session["csrf"])
+    ):
+        raise SemulaError(403, "csrf", "Joining needs the session's CSRF token.")
+    try:
+        await offload(service.accept_invitation, token, session["person_id"])
+    except SemulaError as exc:
+        return _page("Invitation", f"<p>{html.escape(exc.message)}</p>", exc.status)
+    return RedirectResponse(LANDING, status_code=303)

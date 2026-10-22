@@ -16,6 +16,7 @@ import pytest
 from semula.app import create_app
 from semula.config import Settings
 from semula.oidc import Provider
+from semula.scope import Scope
 from tests.support.db import fresh_database_url
 from tests.support.oidc import CLIENT_ID, CLIENT_SECRET, ISSUER
 from tests.support.oidc import Provider as FakeIdp
@@ -236,3 +237,54 @@ async def test_signing_out_needs_the_csrf_token_and_ends_the_session(site: Site)
 
 async def test_an_unknown_provider_is_a_404(site: Site) -> None:
     assert (await site.client.get("/auth/login/nope")).status_code == 404
+
+
+# --- joining a workspace by invitation, over HTTP --------------------------------------------
+
+
+async def test_the_invitation_link_asks_for_a_sign_in_then_confirms_and_joins(site: Site) -> None:
+    site.service.create_workspace("acme")
+    ws = site.service.for_scope(Scope("acme"))
+    invite = ws.create_invitation("ada@example.com", "editor")
+    link = f"/auth/invite/{invite['token']}"
+
+    first = await site.client.get(link)  # nobody signed in: sign in first, and come back here
+    assert first.status_code == 302 and first.headers["location"].startswith("/auth/login?next=")
+    done = await site.sign_in(next=link)
+    assert done.headers["location"] == link
+
+    page = await site.client.get(link)
+    assert (
+        page.status_code == 200
+        and "Join" in page.text
+        and "acme" in page.text
+        and "editor" in page.text
+    )
+    csrf = (await site.client.get("/auth/me")).json()["csrf"]
+    no_token = await site.client.post(link, data={})
+    assert no_token.status_code == 403
+    cross = await site.client.post(
+        link, data={"csrf": csrf}, headers={"Origin": "https://evil.example"}
+    )
+    assert cross.status_code == 403
+    joined = await site.client.post(link, data={"csrf": csrf}, headers={"Origin": PUBLIC})
+    assert joined.status_code == 303 and joined.headers["location"] == "/ui/"
+    (person,) = people(site)
+    assert site.service.membership_of(person["id"], "acme") == "editor"
+    again = await site.client.get(link)
+    assert again.status_code == 404  # spent
+
+
+async def test_someone_else_cannot_use_an_invitation_that_is_not_theirs(site: Site) -> None:
+
+    site.service.create_workspace("acme")
+    invite = site.service.for_scope(Scope("acme")).create_invitation(
+        "someone.else@example.com", "admin"
+    )
+    link = f"/auth/invite/{invite['token']}"
+    await site.sign_in(next=link)  # signs in as ada@example.com
+    csrf = (await site.client.get("/auth/me")).json()["csrf"]
+    refused = await site.client.post(link, data={"csrf": csrf}, headers={"Origin": PUBLIC})
+    assert refused.status_code == 403 and "different email" in refused.text
+    (person,) = people(site)
+    assert site.service.membership_of(person["id"], "acme") is None

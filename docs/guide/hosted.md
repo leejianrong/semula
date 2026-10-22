@@ -46,6 +46,33 @@ A sign-in is a server-side row and an opaque cookie (`HttpOnly`, `SameSite=Lax`,
 !!! note "Checked against a stand-in"
     The sign-in flow is tested end to end against a provider written for the tests, which speaks the real protocol and is made to misbehave in ten ways (a wrong state, nonce, audience, issuer or signature, an expired or unsigned token, a reused code, an unverified email). It has not been run against Google's or GitHub's own servers, so check your first real sign-in, and the redirect URI in particular.
 
+## Members and roles
+
+Signing in makes a person; **membership** lets them into a workspace, with one of three roles that apply to every project in it:
+
+| | viewer | editor | admin |
+|---|---|---|---|
+| read entries, the log, pending calls, review candidates, usage | yes | yes | yes |
+| answer, edit, pin, approve and reject, `test_match`, switch a project's mode | | yes | yes |
+| force past a pin, delete entries, import and export, project settings | | | yes |
+| create and delete projects, tokens, members and roles, invitations, the workspace | | | yes |
+
+The last admin cannot leave or be demoted. A person who belongs to no workspace can do nothing.
+
+Membership comes from an **invitation**: by email and role, good for seven days and for one person once. The operator invites the first admin from the command line, and admins invite everyone else:
+
+```bash
+semula admin invite --workspace acme --email boss@example.com --role admin
+```
+
+```
+invited boss@example.com as admin until 2026-10-30T12:00:00.000Z
+https://semula.example.com/auth/invite/smla_inv_…
+Send them the link; it works once, for them, after they sign in.
+```
+
+The link asks the person to sign in (with any provider), then to confirm, and it works only if the provider has **verified** the very email that was invited. An invitation is never a way to sign in: someone who cannot prove the address gets nothing. Whatever the reason, an expired, used, revoked or unknown invitation looks the same. `semula admin members --workspace acme` lists who belongs.
+
 ## Scopes
 
 A token has one of three scopes, each including the ones above it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist, and listings (projects, pending, the log) hold only its own. It cannot create projects.
@@ -161,5 +188,5 @@ Hosting wants Postgres. Every tenant table has a [row-level-security](../referen
 
 ## What is not there yet
 
-- **Who may do what.** Signing in makes a person, but nothing yet lets a person into a workspace: members, roles and invitations, and the dashboard behind sign-in, are next.
+- **The dashboard behind sign-in.** People, roles and invitations exist; the screens that use them (members, tokens, the audit log, usage) are next, and the open dashboard stays off while hosted.
 - **A delete button.** A signed-in admin will delete a workspace from the dashboard; today it is the operator's command.

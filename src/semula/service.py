@@ -47,6 +47,8 @@ from .lexical import make_index, similarity
 from .oidc import Identity
 from .project_settings import FINGERPRINT_FIELDS, ProjectSettings
 from .responses import parse_answer, validate_tool_calls
+from .roles import LEVEL as ROLE_LEVEL
+from .roles import needs
 from .schema import DEFAULT_PROJECT, DEFAULT_WORKSPACE, iso, now_iso
 from .schema import alias as A
 from .schema import api_token as T
@@ -56,6 +58,8 @@ from .schema import candidate as C
 from .schema import entry as E
 from .schema import entry_revision as R
 from .schema import identity as ID
+from .schema import invitation as IV
+from .schema import membership as MB
 from .schema import pending as Q
 from .schema import person as PE
 from .schema import person_session as SE
@@ -121,6 +125,7 @@ class MatchResult:
     nearest: dict[str, Any] | None = None
 
 
+INVITATION_DAYS = 7  # an invitation can be accepted for this long, once
 IDLE_SESSION_SECONDS = 12 * 3600  # a sign-in ends after twelve idle hours ...
 SESSION_SECONDS = 7 * 86400  # ... or seven days, however active
 SESSION_TOUCH_EVERY = 60.0  # last-seen is written at most this often
@@ -224,6 +229,20 @@ class Service:
         if self.project_limit is not None and project_id != self.project_limit:
             raise SemulaError(404, code, what)
 
+    def _require_role(self, role: str) -> None:
+        """A signed-in person needs at least ``role`` here (ADR-0010 section 3). Local use and
+        tokens are not people: they are governed by being local and by their scopes."""
+        who = self.principal
+        if who is None or who.kind != "person":
+            return
+        if ROLE_LEVEL.get(who.role or "", 0) < ROLE_LEVEL[role]:
+            raise SemulaError(
+                403,
+                "insufficient_role",
+                f"This needs the {role} role" + (f"; you are a {who.role}." if who.role else "."),
+                err_type="authentication_error",
+            )
+
     def _not_a_token(self) -> None:
         """Tokens, bound or not, never manage tokens or the operator's settings (ADR-0010)."""
         if self.acting_as_token:
@@ -239,6 +258,7 @@ class Service:
         return (R.c.workspace_id == self.workspace_id, R.c.entry_id == entry_id)
 
     # --- API tokens (ADR-0010) ---------------------------------------------------------
+    @needs("admin")
     def create_token(
         self,
         name: str,
@@ -288,6 +308,7 @@ class Service:
             )
         return {**self._token_view(self._token_row(token_id)), "token": secret}
 
+    @needs("admin")
     def list_tokens(self) -> list[dict[str, Any]]:
         self._not_a_token()
         rows = self.db.rows(
@@ -297,6 +318,7 @@ class Service:
         )
         return [self._token_view(r) for r in rows]
 
+    @needs("admin")
     def revoke_token(self, token_id: str) -> dict[str, Any]:
         """Stop a token working. In this process the effect is immediate; another replica that
         has the token cached notices within ``TOKEN_CACHE_TTL`` seconds."""
@@ -313,6 +335,7 @@ class Service:
         self._forget_token(token_id)
         return self._token_view(self._token_row(token_id))
 
+    @needs("admin")
     def rotate_token(self, token_id: str, grace_seconds: float = 86400.0) -> dict[str, Any]:
         """Mint a successor with the same name, scope and project, and let the old token keep
         working for ``grace_seconds`` so deployed configuration can be swapped without an outage."""
@@ -470,6 +493,7 @@ class Service:
     def _entry_size(canonical_request: str, responses: str) -> int:
         return len(canonical_request) + len(responses)
 
+    @needs("viewer")
     def usage(self) -> dict[str, Any]:
         """What this workspace holds against what it may: counters kept as writes happen, plus
         the live number of parked calls and active tokens. Whole-workspace figures, so not for a
@@ -515,6 +539,7 @@ class Service:
             },
         }
 
+    @needs("admin")
     def recount_usage(self) -> dict[str, int]:
         """Rebuild the counters from what is stored (if they ever drift) and return them."""
         self._not_a_token()
@@ -574,6 +599,7 @@ class Service:
             conn,
         )
 
+    @needs("admin")
     def list_audit(
         self, limit: int = 50, before_id: int | None = None, action: str | None = None
     ) -> list[dict[str, Any]]:
@@ -624,6 +650,335 @@ class Service:
             )
             fresh._reserve(conn, projects=1)  # the default project
             fresh._audit("workspace.create", workspace_id, conn=conn)
+
+    # --- members and invitations (ADR-0010 section 3) ----------------------------------------
+    @needs("admin")
+    def list_members(self) -> list[dict[str, Any]]:
+        self._not_a_token()
+        rows = self.db.for_workspace(None).rows(
+            sa.select(MB, PE.c.email, PE.c.name)
+            .select_from(MB.join(PE, PE.c.id == MB.c.person_id))
+            .where(MB.c.workspace_id == self.workspace_id)
+            .order_by(MB.c.created_at, MB.c.person_id)
+        )
+        return [
+            {
+                "person_id": r["person_id"],
+                "email": r["email"],
+                "name": r["name"],
+                "role": r["role"],
+                "since": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def _admins(self, conn: Connection | None = None) -> set[str]:
+        rows = self.db.for_workspace(None).rows(
+            sa.select(MB.c.person_id).where(
+                MB.c.workspace_id == self.workspace_id, MB.c.role == "admin"
+            ),
+            conn,
+        )
+        return {r["person_id"] for r in rows}
+
+    @needs("admin")
+    def set_member_role(self, person_id: str, role: str) -> dict[str, Any]:
+        """Change someone's role. The last admin cannot be demoted."""
+        self._not_a_token()
+        if role not in ROLE_LEVEL:
+            raise SemulaError(
+                422, "invalid_role", f"role must be one of {list(ROLE_LEVEL)}.", param="role"
+            )
+        db = self.db.for_workspace(None)
+        with db.begin() as conn:
+            current = db.one(
+                sa.select(MB.c.role).where(
+                    MB.c.workspace_id == self.workspace_id, MB.c.person_id == person_id
+                ),
+                conn,
+            )
+            if current is None:
+                raise SemulaError(404, "member_not_found", f"No member {person_id}.")
+            if current["role"] == "admin" and role != "admin" and self._admins(conn) == {person_id}:
+                raise SemulaError(409, "last_admin", "The last admin cannot be demoted.")
+            db.execute(
+                sa.update(MB)
+                .where(MB.c.workspace_id == self.workspace_id, MB.c.person_id == person_id)
+                .values(role=role),
+                conn,
+            )
+            self._audit("member.role", person_id, {"role": role, "was": current["role"]}, conn)
+        return {"person_id": person_id, "role": role}
+
+    @needs("admin")
+    def remove_member(self, person_id: str) -> None:
+        """Take someone out of the workspace and end the sessions they have here. The last admin
+        cannot leave."""
+        self._not_a_token()
+        db = self.db.for_workspace(None)
+        with db.begin() as conn:
+            current = db.one(
+                sa.select(MB.c.role).where(
+                    MB.c.workspace_id == self.workspace_id, MB.c.person_id == person_id
+                ),
+                conn,
+            )
+            if current is None:
+                raise SemulaError(404, "member_not_found", f"No member {person_id}.")
+            if current["role"] == "admin" and self._admins(conn) == {person_id}:
+                raise SemulaError(409, "last_admin", "The last admin cannot leave.")
+            db.execute(
+                sa.delete(MB).where(
+                    MB.c.workspace_id == self.workspace_id, MB.c.person_id == person_id
+                ),
+                conn,
+            )
+            db.execute(
+                sa.update(SE)
+                .where(SE.c.person_id == person_id, SE.c.active_workspace == self.workspace_id)
+                .values(active_workspace=None),
+                conn,
+            )
+            self._audit("member.remove", person_id, {"was": current["role"]}, conn)
+
+    @needs("admin")
+    def create_invitation(self, email: str, role: str) -> dict[str, Any]:
+        """Invite someone by email. The link's token is in the result once. It works once, for
+        seven days, for a signed-in person whose verified email is this one."""
+        self._not_a_token()
+        address = email.strip().lower()
+        if "@" not in address or len(address) > 254:
+            raise SemulaError(422, "invalid_email", "That is not an email address.", param="email")
+        if role not in ROLE_LEVEL:
+            raise SemulaError(
+                422, "invalid_role", f"role must be one of {list(ROLE_LEVEL)}.", param="role"
+            )
+        cap = self.settings.quotas.members
+        if cap is not None:
+            held = len(self.list_members()) + sum(
+                1 for i in self.list_invitations() if i["status"] == "open"
+            )
+            if held >= cap:
+                raise self._over("members", cap, held)
+        secret = "smla_inv_" + secrets.token_urlsafe(24)
+        invitation_id = new_ulid()
+        by = self.principal.id if self.principal and self.principal.kind == "person" else None
+        with self.db.for_workspace(None).begin() as conn:
+            self.db.for_workspace(None).execute(
+                sa.insert(IV).values(
+                    workspace_id=self.workspace_id,
+                    id=invitation_id,
+                    email=address,
+                    role=role,
+                    token_hash=tok.digest(secret),
+                    invited_by=by,
+                    expires_at=iso(self._now() + timedelta(days=INVITATION_DAYS)),
+                ),
+                conn,
+            )
+            self._audit("invitation.create", invitation_id, {"role": role}, conn)
+        row = self._invitation_row(invitation_id)
+        return {**self._invitation_view(row), "token": secret}
+
+    @needs("admin")
+    def list_invitations(self) -> list[dict[str, Any]]:
+        self._not_a_token()
+        rows = self.db.for_workspace(None).rows(
+            sa.select(IV)
+            .where(IV.c.workspace_id == self.workspace_id)
+            .order_by(IV.c.created_at.desc(), IV.c.id)
+        )
+        return [self._invitation_view(r) for r in rows]
+
+    @needs("admin")
+    def revoke_invitation(self, invitation_id: str) -> dict[str, Any]:
+        self._not_a_token()
+        row = self._invitation_row(invitation_id)
+        with self.db.for_workspace(None).begin() as conn:
+            self.db.for_workspace(None).execute(
+                sa.update(IV)
+                .where(
+                    IV.c.workspace_id == self.workspace_id,
+                    IV.c.id == invitation_id,
+                    IV.c.accepted_at.is_(None),
+                    IV.c.revoked_at.is_(None),
+                )
+                .values(revoked_at=now_iso()),
+                conn,
+            )
+            self._audit("invitation.revoke", invitation_id, {"role": row["role"]}, conn)
+        return self._invitation_view(self._invitation_row(invitation_id))
+
+    def _invitation_row(self, invitation_id: str) -> Any:
+        row = self.db.for_workspace(None).one(
+            sa.select(IV).where(IV.c.workspace_id == self.workspace_id, IV.c.id == invitation_id)
+        )
+        if not row:
+            raise SemulaError(404, "invitation_not_found", f"No invitation {invitation_id}.")
+        return row
+
+    def _invitation_view(self, row: Any) -> dict[str, Any]:
+        if row["accepted_at"]:
+            status = "accepted"
+        elif row["revoked_at"]:
+            status = "revoked"
+        elif row["expires_at"] <= iso(self._now()):
+            status = "expired"
+        else:
+            status = "open"
+        return {
+            "id": row["id"],
+            "email": row["email"],
+            "role": row["role"],
+            "status": status,
+            "created_at": row["created_at"],
+            "expires_at": row["expires_at"],
+            "accepted_at": row["accepted_at"],
+        }
+
+    def _open_invitation(self, secret: str) -> Any:
+        """The open invitation a token belongs to, or a 404 that says nothing about why (unknown,
+        used, revoked, expired and in a deleted workspace all look the same)."""
+        row = self.db.for_workspace(None).one(
+            sa.select(IV, WS.c.name.label("workspace_name"), WS.c.deleted_at)
+            .select_from(IV.join(WS, WS.c.id == IV.c.workspace_id))
+            .where(IV.c.token_hash == tok.digest(secret))
+        )
+        if (
+            row is None
+            or row["accepted_at"]
+            or row["revoked_at"]
+            or row["expires_at"] <= iso(self._now())
+            or row["deleted_at"]
+        ):
+            raise SemulaError(404, "invitation_invalid", "This invitation is not valid any more.")
+        return row
+
+    def invitation_preview(self, secret: str) -> dict[str, Any]:
+        """What the accept page says before anyone accepts: which workspace, which role."""
+        row = self._open_invitation(secret)
+        return {
+            "workspace_id": row["workspace_id"],
+            "workspace": row["workspace_name"],
+            "email": row["email"],
+            "role": row["role"],
+        }
+
+    def accept_invitation(self, secret: str, person_id: str) -> dict[str, Any]:
+        """Join a workspace by invitation. The person must be signed in with a **verified** email
+        that is the one invited; the invitation is then spent. It is never a way to sign in."""
+        row = self._open_invitation(secret)
+        db = self.db.for_workspace(None)
+        emails = {
+            r["email"].lower()
+            for r in db.rows(sa.select(ID.c.email).where(ID.c.person_id == person_id))
+        }
+        if row["email"] not in emails:
+            raise SemulaError(
+                403,
+                "invitation_email_mismatch",
+                "This invitation is for a different email address than the one you signed in with.",
+            )
+        ws = self.for_scope(Scope(row["workspace_id"], None, self.request_id, self.client))
+        with db.begin() as conn:
+            spent = db.execute(
+                sa.update(IV)
+                .where(
+                    IV.c.workspace_id == row["workspace_id"],
+                    IV.c.id == row["id"],
+                    IV.c.accepted_at.is_(None),
+                )
+                .values(accepted_at=now_iso(), accepted_by=person_id),
+                conn,
+            )
+            if spent != 1:  # someone used it between our read and this write
+                raise SemulaError(
+                    404, "invitation_invalid", "This invitation is not valid any more."
+                )
+            existing = db.one(
+                sa.select(MB.c.role).where(
+                    MB.c.workspace_id == row["workspace_id"], MB.c.person_id == person_id
+                ),
+                conn,
+            )
+            if existing is None:
+                db.execute(
+                    sa.insert(MB).values(
+                        workspace_id=row["workspace_id"],
+                        person_id=person_id,
+                        role=row["role"],
+                        invited_by=row["invited_by"],
+                    ),
+                    conn,
+                )
+            elif ROLE_LEVEL[row["role"]] > ROLE_LEVEL[existing["role"]]:
+                db.execute(
+                    sa.update(MB)
+                    .where(MB.c.workspace_id == row["workspace_id"], MB.c.person_id == person_id)
+                    .values(role=row["role"]),
+                    conn,
+                )
+            ws._audit(
+                "invitation.accept",
+                row["id"],
+                {"role": row["role"], "person": person_id},
+                conn,
+            )
+        return {"workspace_id": row["workspace_id"], "role": row["role"]}
+
+    def membership_of(self, person_id: str, workspace_id: str) -> str | None:
+        row = self.db.for_workspace(None).one(
+            sa.select(MB.c.role)
+            .select_from(MB.join(WS, WS.c.id == MB.c.workspace_id))
+            .where(
+                MB.c.workspace_id == workspace_id,
+                MB.c.person_id == person_id,
+                WS.c.deleted_at.is_(None),
+            )
+        )
+        return str(row["role"]) if row else None
+
+    def workspaces_of(self, person_id: str) -> list[dict[str, Any]]:
+        """The workspaces a person belongs to (not deleted ones), oldest membership first."""
+        rows = self.db.for_workspace(None).rows(
+            sa.select(MB.c.workspace_id, MB.c.role, WS.c.name)
+            .select_from(MB.join(WS, WS.c.id == MB.c.workspace_id))
+            .where(MB.c.person_id == person_id, WS.c.deleted_at.is_(None))
+            .order_by(MB.c.created_at, MB.c.workspace_id)
+        )
+        return [
+            {"workspace_id": r["workspace_id"], "name": r["name"], "role": r["role"]} for r in rows
+        ]
+
+    def principal_for_session(self, session: dict[str, Any]) -> Principal | None:
+        """Who a signed-in person is in the workspace their session is working in: that
+        workspace if they still belong to it, else their first one, else nobody (a person who
+        belongs nowhere yet can do nothing)."""
+        person = session["person_id"]
+        chosen = session.get("active_workspace")
+        role = self.membership_of(person, chosen) if chosen else None
+        if role is None:
+            first = self.workspaces_of(person)
+            if not first:
+                return None
+            chosen, role = first[0]["workspace_id"], first[0]["role"]
+        return Principal(
+            kind="person",
+            id=person,
+            workspace_id=str(chosen),
+            role=role,
+            name=session.get("name", ""),
+        )
+
+    def switch_workspace(self, secret: str, workspace_id: str) -> bool:
+        """Work in another workspace the person belongs to. False if they do not."""
+        session = self.authenticate_session(secret)
+        if session is None or self.membership_of(session["person_id"], workspace_id) is None:
+            return False
+        self.db.for_workspace(None).execute(
+            sa.update(SE).where(SE.c.id == tok.digest(secret)).values(active_workspace=workspace_id)
+        )
+        return True
 
     # --- people and their sessions (ADR-0010 section 1) -------------------------------------
     def _now(self) -> datetime:
@@ -764,6 +1119,7 @@ class Service:
             self._release(str(event["pending"]))
 
     # --- deleting a workspace (ADR-0011 section 5) ------------------------------------------
+    @needs("viewer")
     def workspace_status(self) -> dict[str, Any]:
         """Whether this workspace is deleted, and when it will be purged for good."""
         row = self.db.one(sa.select(WS.c.deleted_at).where(WS.c.id == self.workspace_id))
@@ -778,6 +1134,7 @@ class Service:
         )
         return {"id": self.workspace_id, "deleted_at": deleted, "purge_after": purge_after}
 
+    @needs("admin")
     def delete_workspace(self, confirm: str) -> dict[str, Any]:
         """Delete this workspace: its tokens stop working at once and it is purged after
         ``WORKSPACE_GRACE_DAYS``, until when it can still be exported or restored. The workspace
@@ -803,6 +1160,7 @@ class Service:
         self._forget_workspace_tokens()
         return self.workspace_status()
 
+    @needs("admin")
     def restore_workspace(self) -> dict[str, Any]:
         """Bring a deleted workspace back during its grace period, tokens and all."""
         self._not_a_token()
@@ -845,11 +1203,13 @@ class Service:
                 if principal.workspace_id == self.workspace_id:
                     del self._tokens.cache[digest]
 
+    @needs("viewer")
     def mode_of(self, project: str) -> str:
         """What a call to ``project`` does when nothing answers it: the project's own mode,
         else the server's default."""
         return self.project_settings(project).mode or self.default_mode
 
+    @needs("editor")
     def set_mode(self, mode: str, project: str | None = None) -> dict[str, Any]:
         """Switch between replay and record.
 
@@ -869,13 +1229,14 @@ class Service:
                 err_type="authentication_error",
             )
         if project is not None:
-            self.update_project(project, settings={"mode": mode})  # announces the change
+            self._update_project(project, settings={"mode": mode})  # announces the change
             return {"mode": self.mode_of(project), "persisted": True, "project": project}
         self.default_mode = mode
         self._publish({"type": "mode", "project": None, "mode": mode})
         return {"mode": mode, "persisted": False, "project": None}
 
     # --- projects -----------------------------------------------------------------
+    @needs("admin")
     def create_project(self, slug: str, name: str | None = None) -> dict[str, Any]:
         if self.project_limit is not None:
             raise SemulaError(
@@ -901,6 +1262,7 @@ class Service:
         self._publish({"type": "projects"})
         return self.get_project(slug)
 
+    @needs("viewer")
     def list_projects(self) -> list[dict[str, Any]]:
         entries = (
             sa.select(sa.func.count())
@@ -934,6 +1296,7 @@ class Service:
         )
         return [{**r, "mode": self.mode_of(r["id"])} for r in map(dict, rows)]
 
+    @needs("viewer")
     def get_project(self, slug: str) -> dict[str, Any]:
         for project in self.list_projects():
             if project["id"] == slug:
@@ -941,10 +1304,12 @@ class Service:
                 return project
         raise SemulaError(404, "project_not_found", f"No project '{slug}'.", param="project")
 
+    @needs("viewer")
     def require_project(self, slug: str) -> str:
         self.project_settings(slug)
         return slug
 
+    @needs("viewer")
     def project_settings(self, slug: str) -> ProjectSettings:
         """A project's settings. Read on every call, so cached for ``SETTINGS_TTL`` seconds;
         a change made here is visible at once, one made by another replica within the TTL."""
@@ -960,10 +1325,16 @@ class Service:
         self._settings_cache[(self.workspace_id, slug)] = (time.monotonic(), settings)
         return settings
 
+    @needs("admin")
     def update_project(
         self, slug: str, name: str | None = None, settings: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Rename and/or patch settings. A ``null`` value resets that setting to its default."""
+        return self._update_project(slug, name, settings)
+
+    def _update_project(
+        self, slug: str, name: str | None = None, settings: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         before = self.project_settings(slug)
         self._settings_cache.pop((self.workspace_id, slug), None)
         if name:
@@ -1062,6 +1433,7 @@ class Service:
             if clean != row["preview"]:
                 self.db.execute(sa.update(L).where(L.c.id == row["id"]).values(preview=clean), conn)
 
+    @needs("admin")
     def delete_project(self, slug: str) -> None:
         self.require_project(slug)
         self._settings_cache.pop((self.workspace_id, slug), None)
@@ -1116,6 +1488,7 @@ class Service:
         """Tell live views that an entry of ``project`` was added, changed or removed."""
         self._publish({"type": "entries", "project": project})
 
+    @needs("viewer")
     def queue_counts(self, project: str | None = None) -> dict[str, int]:
         """How many requests are parked and how many near-matches wait for review, for one
         project or all of them."""
@@ -1134,11 +1507,13 @@ class Service:
         }
 
     # --- models -----------------------------------------------------------------
+    @needs("viewer")
     def list_models(self, project: str = DEFAULT_PROJECT) -> list[str]:
         """Model ids for /v1/models: the project ``models`` setting, else the env default."""
         configured = self.project_settings(project).models
         return list(configured) if configured else list(self.settings.models)
 
+    @needs("viewer")
     def record_timeout(self, project: str) -> float:
         return self.project_settings(project).record_timeout or self.settings.record_timeout
 
@@ -1395,6 +1770,7 @@ class Service:
             if row["id"] not in have:
                 self.indexer.schedule(row["id"])
 
+    @needs("viewer")
     def embeddings_status(self) -> dict[str, Any]:
         if not self.vectors or not self.indexer:
             return {"enabled": False}
@@ -1433,6 +1809,7 @@ class Service:
         return [(s, i) for s, i in weak if i in same]
 
     # --- entries ------------------------------------------------------------------
+    @needs("viewer")
     def list_entries(
         self,
         project: str,
@@ -1499,6 +1876,7 @@ class Service:
             "entries": [_entry_view(r, full=False) for r in rows],
         }
 
+    @needs("editor")
     def upsert_entry(
         self,
         project: str,
@@ -1574,6 +1952,7 @@ class Service:
         self._entries_changed(project)
         return self.get_entry(entry_id), True
 
+    @needs("viewer")
     def get_entry(self, entry_id: str) -> dict[str, Any]:
         return _entry_view(self._entry_row(entry_id), full=True)
 
@@ -1588,6 +1967,8 @@ class Service:
         self, row: Any, version: int | None, actor: str, force: bool, action: str
     ) -> bool:
         """Optimistic concurrency and pin protection. Returns True when a pin was forced."""
+        if force:
+            self._require_role("admin")  # passing a pin is for admins (ADR-0010 section 3)
         if not isinstance(version, int) or isinstance(version, bool):
             raise SemulaError(
                 400,
@@ -1617,6 +1998,7 @@ class Service:
             return True
         return False
 
+    @needs("editor")
     def update_entry(
         self,
         entry_id: str,
@@ -1751,6 +2133,7 @@ class Service:
                 sa.delete(R).where(*self._rk(entry_id), R.c.version < edge["version"]), conn
             )
 
+    @needs("viewer")
     def entry_history(self, entry_id: str, version: int | None = None) -> dict[str, Any]:
         """The entry's revisions, newest first and without their snapshots; or, with ``version``,
         that one revision with its snapshot (the entry's responses, selection and pin then)."""
@@ -1773,6 +2156,7 @@ class Service:
         rows = self.db.rows(sa.select(R).where(*self._rk(entry_id)).order_by(R.c.version.desc()))
         return {**base, "revisions": [_revision_view(r) for r in rows]}
 
+    @needs("admin")
     def delete_entry(
         self, entry_id: str, version: int | None, *, actor: str = "agent", force: bool = False
     ) -> None:
@@ -1810,6 +2194,7 @@ class Service:
             conn,
         )
 
+    @needs("editor")
     def test_match(self, req: CanonicalRequest, project: str) -> dict[str, Any]:
         """What would happen to this request right now, without serving, logging or counting."""
         self.require_project(project)
@@ -1902,6 +2287,7 @@ class Service:
                 self.lexical.delete(stale, self.workspace_id, conn)
 
     # --- export and import ----------------------------------------------------
+    @needs("admin")
     def export_project(self, slug: str) -> dict[str, Any]:
         """Everything authored in a project as a ``semula/1`` bundle: entries (ULIDs kept) and
         approved aliases. Runtime state (hit counts, pending, the call log, the review queue)
@@ -1947,6 +2333,7 @@ class Service:
             "aliases": aliases,
         }
 
+    @needs("admin")
     def import_project(
         self,
         bundle: Any,
@@ -2226,6 +2613,7 @@ class Service:
         if queued:
             self._queues_changed(project)
 
+    @needs("viewer")
     def list_candidates(
         self, project: str | None = None, status: str | None = "open"
     ) -> list[dict[str, Any]]:
@@ -2246,6 +2634,7 @@ class Service:
         )
         return [_candidate_view(r, full=False) for r in rows]
 
+    @needs("viewer")
     def get_candidate(self, candidate_id: str) -> dict[str, Any]:
         row = self._candidate_row(candidate_id)
         view = _candidate_view(row, full=True)
@@ -2265,6 +2654,7 @@ class Service:
         self._own(row["project_id"], "candidate_not_found", f"No review candidate {candidate_id}.")
         return row
 
+    @needs("editor")
     def approve_candidate(self, candidate_id: str) -> dict[str, Any]:
         """Say the request and the entry mean the same: the request now serves that entry."""
         row = self._candidate_row(candidate_id)
@@ -2289,6 +2679,7 @@ class Service:
         self._queues_changed(row["project_id"])
         return self.get_candidate(candidate_id)
 
+    @needs("editor")
     def reject_candidate(self, candidate_id: str) -> dict[str, Any]:
         """Say they differ. The pairing is remembered and never queued or served again."""
         row = self._candidate_row(candidate_id)
@@ -2431,6 +2822,7 @@ class Service:
         for loop, event in waiting:
             loop.call_soon_threadsafe(event.set)
 
+    @needs("viewer")
     def list_pending(
         self, status: str | None = "pending", project: str | None = None
     ) -> list[dict[str, Any]]:
@@ -2444,6 +2836,7 @@ class Service:
         rows = self.db.rows(sa.select(Q).where(*conditions).order_by(Q.c.id))
         return [_pending_view(r, full=False) for r in rows]
 
+    @needs("viewer")
     async def wait_for_pending(
         self, project: str | None = None, timeout: float = 30.0
     ) -> list[dict[str, Any]]:
@@ -2477,6 +2870,7 @@ class Service:
                         continue  # a one-second look-again between replicas, not the end
                     return await run_in_threadpool(self.list_pending, "pending", project)
 
+    @needs("viewer")
     def get_pending(self, pending_id: str) -> dict[str, Any]:
         row = self.db.one(
             sa.select(Q).where(Q.c.id == pending_id, Q.c.workspace_id == self.workspace_id)
@@ -2486,6 +2880,7 @@ class Service:
         self._own(row["project_id"], "pending_not_found", f"No pending request {pending_id}.")
         return _pending_view(row, full=True)
 
+    @needs("editor")
     def answer_pending(self, pending_id: str, payload: Any, *, actor: str = "agent") -> str:
         """Validate an answer, save it as an entry, and release any held calls."""
         row = self.db.one(
@@ -2582,6 +2977,7 @@ class Service:
         if self._logged % PRUNE_EVERY == 0:
             self.prune_log()
 
+    @needs("viewer")
     def list_calls(
         self,
         project: str | None = None,
@@ -2604,6 +3000,7 @@ class Service:
         )
         return [{"id": r["id"], **_log_view(r)} for r in rows]
 
+    @needs("viewer")
     def log_stats(
         self, project: str | None = None, window: str = "30m", *, now: datetime | None = None
     ) -> dict[str, Any]:

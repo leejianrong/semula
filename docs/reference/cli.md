@@ -60,6 +60,8 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula admin workspace-delete` | `<workspace>` `--confirm` | Delete a workspace: tokens stop at once, purged after 30 days |
 | `semula admin workspace-restore` | `<workspace>` | Bring a deleted workspace back during its 30 days |
 | `semula admin workspace-purge` |  | Hard-delete every workspace whose 30 days are over |
+| `semula admin invite` | `--workspace` `--email` `--role` | Invite someone to a workspace (prints the link) |
+| `semula admin members` | `--workspace` | List a workspace's members |
 | `semula admin recount` | `--workspace` | Rebuild a workspace's quota counters from what is stored |
 | `semula admin token-create` | `--workspace` `--name` `--scope` `--project` `--expires` | Mint an API token for a workspace (the secret is shown once) |
 | `semula admin token-list` | `--workspace` | List a workspace's API tokens |

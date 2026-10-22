@@ -10,6 +10,11 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Members, roles and invitations** (migration 0017, ADR-0010): viewer, editor and admin, per
+  workspace; the last admin cannot leave or be demoted; invitations by email, single use, seven
+  days, accepted only by a signed-in person whose verified email matches; `/auth/invite/<token>`;
+  `semula admin invite` and `members`. A role is enforced in the service on every method a person
+  reaches (a decorator, and a test fails for a method without one).
 - **People can sign in** (migration 0016, ADR-0010): OpenID Connect (Google, or any issuer) and
   GitHub, with PKCE, `state`, `nonce`, issuer and audience checks, signature and expiry
   verification and verified-email-only; a person is (issuer, subject), never an email. Opaque
