@@ -8,6 +8,8 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-22
+
 The first public release. semula is a fake OpenAI-compatible server for development and tests:
 unknown prompts are held for a coding agent (or you) to answer, and every later identical
 prompt replays that answer for free.
@@ -46,17 +48,19 @@ prompt replays that answer for free.
 - **Redaction** of secrets in everything stored, export and import of a project as JSON files.
 - **Observability.** A call log with a live tail, per-minute stats and a prompt preview;
   `test_match` explains each matching tier.
-- **A CLI** (`semula`) with `--json` and stable exit codes, and **22 MCP tools** over HTTP and
-  stdio, for coding agents. See `docs/agents/PLAYBOOK.md`.
-- **A dashboard preview at `/ui`:** the live log. It switches itself off when `SEMULA_API_KEY` is
-  set.
+- **A CLI** (`semula`) with `--json` and stable exit codes, and **23 MCP tools** over HTTP and
+  stdio, for coding agents (checked with Claude Code and Codex). See `docs/agents/PLAYBOOK.md`.
+- **A dashboard at `/ui`:** the live log and the Pending screen. It switches itself off when
+  `SEMULA_API_KEY` is set.
 - **Databases:** SQLite (a file in the data directory) or Postgres.
-- **A container image**, about 244 MB, non-root, starting in about two seconds, with all state on
+- **A container image** at `ghcr.io/leejianrong/semula` (amd64 and arm64), about 244 MB, non-root, starting in about two seconds, with all state on
   one volume.
 
 ### Known limits
 
 - Only Chat Completions. Clients that use the OpenAI Responses API or Anthropic Messages cannot
   point at semula yet.
-- One shared API key and no accounts; the dashboard is local-only and read-mostly.
-- The Codex MCP registration command is unverified.
+- One shared API key and no accounts; the dashboard is local-only. It has the live log and the
+  Pending screen; browsing and editing entries, the review queue and a playground are in the
+  CLI, MCP and REST for now.
+- The standalone CLI binary has the HTTP commands only (no `serve`, `mcp` or `embeddings fetch`).
