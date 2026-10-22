@@ -13,6 +13,10 @@ on:
       - Dockerfile
       - scripts/release.py
       - scripts/smoke_image.sh
+      - scripts/build_cli_binary.sh
+      - scripts/smoke_cli_binary.sh
+      - scripts/cli_entry.py
+      - src/semula/cli.py
 
 concurrency:
   group: release-${{ github.ref }}
@@ -69,15 +73,75 @@ jobs:
       - id: flags
         run: python3 scripts/release.py flags "${{ steps.what.outputs.tag }}" >> "$GITHUB_OUTPUT"
 
-  release:
+  # The CLI alone as one file per platform. Linux is built on the oldest Ubuntu runner so the
+  # binary runs on older glibc. Each binary is smoke-tested against a server before it is kept.
+  binaries:
     needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-amd64, os: ubuntu-22.04 }
+          - { target: linux-arm64, os: ubuntu-22.04-arm }
+          - { target: macos-arm64, os: macos-15 }
+          - { target: macos-amd64, os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: uv sync --frozen --no-dev
+      - name: Build
+        run: scripts/build_cli_binary.sh dist
+      - name: Smoke test against a running server
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          SEMULA_DATA_DIR="$RUNNER_TEMP/data" SEMULA_PORT=18080 uv run semula serve &
+          server=$!
+          trap 'kill $server' EXIT
+          for _ in $(seq 1 100); do curl -fs http://127.0.0.1:18080/health >/dev/null && break; sleep 0.3; done
+          scripts/smoke_cli_binary.sh dist/semula http://127.0.0.1:18080 "$VERSION"
+      - name: Name it and checksum it
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          mv dist/semula "dist/semula-$VERSION-${{ matrix.target }}"
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum "semula-$VERSION-${{ matrix.target }}" > "semula-$VERSION-${{ matrix.target }}.sha256"
+          else shasum -a 256 "semula-$VERSION-${{ matrix.target }}" > "semula-$VERSION-${{ matrix.target }}.sha256"; fi
+          cat "semula-$VERSION-${{ matrix.target }}.sha256"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/semula-*
+          if-no-files-found: error
+
+  release:
+    # Only when every binary built and passed its smoke test: no release without them.
+    needs: [verify, binaries]
     if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the release
     steps:
       - uses: actions/checkout@v7
-      - name: Create the GitHub Release from the CHANGELOG
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: cli-*
+          path: binaries
+          merge-multiple: true
+      - name: All four binaries are here
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          for t in linux-amd64 linux-arm64 macos-arm64 macos-amd64; do
+            [ -x "binaries/semula-$VERSION-$t" ] || { echo "::error::missing binary for $t"; exit 1; }
+            [ -s "binaries/semula-$VERSION-$t.sha256" ] || { echo "::error::missing checksum for $t"; exit 1; }
+          done
+          (cd binaries && cat semula-*.sha256 > SHA256SUMS && sha256sum -c SHA256SUMS)
+          rm binaries/*.sha256
+          ls -l binaries
+      - name: Create the GitHub Release from the CHANGELOG, with the binaries
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.verify.outputs.tag }}
@@ -85,13 +149,14 @@ jobs:
           PRERELEASE: ${{ needs.verify.outputs.prerelease }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; leaving it as it is."
+            echo "Release $TAG exists; making sure the binaries are attached."
+            gh release upload "$TAG" binaries/* --clobber
             exit 0
           fi
           python3 scripts/release.py notes "$TAG" > notes.md
           flag=""
           [ "$PRERELEASE" = true ] && flag="--prerelease"
-          gh release create "$TAG" --verify-tag --title "semula $VERSION" --notes-file notes.md $flag
+          gh release create "$TAG" --verify-tag --title "semula $VERSION" --notes-file notes.md $flag binaries/*
 
   image:
     needs: verify

@@ -92,11 +92,29 @@ def _bad_json(exc: ValueError) -> int:
 
 
 # --- commands ---------------------------------------------------------------------------
-def _serve(args: argparse.Namespace) -> int:
-    import uvicorn
+NOT_IN_BINARY = (
+    "error: `semula {name}` is not in this build (the standalone binary has the HTTP commands "
+    "only). {hint}"
+)
 
-    from .app import create_app
-    from .config import Settings
+
+def _left_out(name: str, hint: str) -> int:
+    """The standalone binary leaves the server library out; say where the command lives."""
+    print(NOT_IN_BINARY.format(name=name, hint=hint), file=sys.stderr)
+    return EXIT_USAGE
+
+
+SERVER_HINT = "Run the container (docker run ghcr.io/leejianrong/semula) or `pip install semula`."
+
+
+def _serve(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+
+        from .app import create_app
+        from .config import Settings
+    except ImportError:
+        return _left_out("serve", SERVER_HINT)
 
     settings = Settings.from_env()
     host = args.host or settings.host
@@ -357,8 +375,11 @@ def _embeddings_status(args: argparse.Namespace) -> int:
 
 def _embeddings_fetch(args: argparse.Namespace) -> int:
     """Download the model once, to the model directory, so the server can start offline."""
-    from .config import Settings
-    from .embeddings import EmbeddingsUnavailable, FastEmbedder
+    try:
+        from .config import Settings
+        from .embeddings import EmbeddingsUnavailable, FastEmbedder
+    except ImportError:
+        return _left_out("embeddings fetch", SERVER_HINT)
 
     directory = Settings.from_env().resolved_model_dir
     try:
@@ -587,7 +608,14 @@ def _tier_text(tier: dict[str, Any]) -> str:
 
 
 def _mcp(args: argparse.Namespace) -> int:
-    from .mcp_server import run_stdio_proxy
+    try:
+        from .mcp_server import run_stdio_proxy
+    except ImportError:
+        return _left_out(
+            "mcp",
+            "Point an MCP client that speaks HTTP at <server>/mcp/ instead, "
+            "or `pip install semula`.",
+        )
 
     # Fail fast and loudly: a stdio MCP client otherwise just sees a silent dead server.
     health = _call(args, "GET", "/api/v1/mode")  # an authenticated route, so a bad key shows

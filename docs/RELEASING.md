@@ -13,7 +13,7 @@ Release from the CHANGELOG and publishes the container image to
      `## [Unreleased]` above it;
    - `uv sync --extra dev && make check`, then open the PR and merge it when CI is green.
 2. **Check it** without publishing: *Actions → Release → Run workflow* (a dry run) builds the
-   image for both architectures, runs the smoke test and publishes nothing.
+   four CLI binaries and the image, runs the smoke tests and publishes nothing.
 3. **Tag the merge commit** and push the tag:
    ```bash
    git checkout main && git pull
@@ -31,6 +31,12 @@ Release from the CHANGELOG and publishes the container image to
 
 - A GitHub Release named `semula X.Y.Z` with the CHANGELOG section as its notes. A `0.x` release is
   marked pre-release.
+- The CLI as one file per platform, attached to the Release with a `SHA256SUMS` file:
+  `semula-X.Y.Z-linux-amd64`, `-linux-arm64`, `-macos-arm64`, `-macos-amd64`. It has the HTTP
+  commands only (no `serve`, `mcp` or `embeddings fetch`, which say so and point to the image).
+  Each is built on its own runner (Linux on Ubuntu 22.04, for older glibc), smoke-tested against a
+  running server (`scripts/smoke_cli_binary.sh`), and the release job fails, creating nothing, if
+  any of the four is missing. Build one locally with `make cli-binary`.
 - The image `ghcr.io/leejianrong/semula` for `linux/amd64` and `linux/arm64`, tagged `X.Y.Z`,
   `X.Y` and `latest` (and `X` from 1.0), with build provenance. It is smoke-tested after the push:
   started, `/health` and `/ui` answered.
