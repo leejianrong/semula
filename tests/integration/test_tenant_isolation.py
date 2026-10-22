@@ -221,20 +221,7 @@ def test_every_public_service_method_is_covered() -> None:
     )
 
 
-# Entry ids are still global primary keys, so importing a bundle that another workspace already
-# holds collides with it. The composite keys of SEM-82 end that; strict, so it must then pass.
-KNOWN_GAPS = {"import_project": "SEM-82: composite primary keys"}
-
-
-@pytest.mark.parametrize(
-    "method",
-    [
-        pytest.param(m, marks=pytest.mark.xfail(reason=KNOWN_GAPS[m], strict=True))
-        if m in KNOWN_GAPS
-        else m
-        for m in sorted(SCENARIOS)
-    ],
-)
+@pytest.mark.parametrize("method", sorted(SCENARIOS))
 def test_workspace_a_cannot_reach_workspace_b_through(world: World, method: str) -> None:
     SCENARIOS[method](world)
     # Whatever A tried, B's data is exactly as it was.
@@ -318,3 +305,54 @@ async def test_the_routes_serve_each_workspace_only_its_own_data(tmp_path: Path)
         assert (await client.get("/api/v1/projects/shop/entries", headers=as_b)).json()[
             "total"
         ] == 1
+
+
+def test_the_same_ids_in_two_workspaces_never_touch_each_other(world: World) -> None:
+    """Import keeps ULIDs, so workspace A can hold entries, aliases and revisions with exactly
+    the ids workspace B has (the composite keys of ADR-0011). Every write, read and cascade by
+    id must act on its own workspace's row only."""
+    from semula.lexical import Fts5Index
+
+    report = world.a.import_project(world.bundle, "twin")
+    assert report["entries"]["created"] == 1 and report["aliases"]["created"] == 1
+    twin = world.a.get_entry(world.entry)
+    assert twin["id"] == world.entry and twin["project"] == "twin"
+    alias_id = world.bundle["aliases"][0]["id"]
+
+    # a write by id changes the caller's row only, and each keeps its own history
+    world.a.update_entry(world.entry, 1, {"response": {"content": "a's rewrite"}})
+    assert world.b.get_entry(world.entry)["version"] == 1
+    assert (
+        world.b.get_entry(world.entry)["responses"][0]["message"]["content"] == "b's secret answer"
+    )
+    assert [r["version"] for r in world.a.entry_history(world.entry)["revisions"]] == [2, 1]
+    assert [r["version"] for r in world.b.entry_history(world.entry)["revisions"]] == [1]
+
+    # hits are counted per workspace
+    world.a.log_call("hit", 0.0, project="twin", entry_id=world.entry, count_hit=True)
+    assert world.a.get_entry(world.entry)["hit_count"] == 1
+    assert world.b.get_entry(world.entry)["hit_count"] == 0
+
+    # a review decision by id is the caller's
+    world.a.record_candidates(req("b's secret prompts"), "twin", [Candidate(world.entry, 0.8)])
+    (own,) = world.a.list_candidates("twin")
+    world.a.reject_candidate(own["id"])
+    assert [c["status"] for c in world.b.list_candidates("shop", "open")] == ["open"]
+
+    # both workspaces serve their own answer for the same words
+    served_a = world.a.lookup(req("b's secret prompt"), "twin").match
+    served_b = world.b.lookup(req("b's secret prompt"), "shop").match
+    assert served_a is not None and served_b is not None
+    assert served_a.stored["message"]["content"] == "a's rewrite"
+    assert served_b.stored["message"]["content"] == "b's secret answer"
+
+    # deleting A's entry removes A's aliases, history and index rows, and none of B's
+    world.a.delete_entry(world.entry, 2)
+    assert world.b.get_entry(world.entry)["version"] == 1
+    assert [r["version"] for r in world.b.entry_history(world.entry)["revisions"]] == [1]
+    assert world.b.export_project("shop")["aliases"][0]["id"] == alias_id
+    index = world.service.lexical
+    if isinstance(index, Fts5Index):
+        assert world.entry in index.indexed_ids("b")
+        assert world.entry not in index.indexed_ids("a")
+    assert world.b.lookup(req("b's secret prompt"), "shop").match is not None

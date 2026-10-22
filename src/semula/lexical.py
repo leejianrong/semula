@@ -47,14 +47,15 @@ class LexicalIndex(Protocol):
         conn: Connection | None = None,
     ) -> None: ...
 
-    def delete(self, entry_id: str, conn: Connection | None = None) -> None: ...
+    def delete(self, entry_id: str, workspace_id: str, conn: Connection | None = None) -> None: ...
 
     def delete_project(
         self, workspace_id: str, project_id: str, conn: Connection | None = None
     ) -> None: ...
 
-    def indexed_ids(self, conn: Connection | None = None) -> set[str] | None:
-        """Entry ids currently indexed, or None if this index keeps no state to repair."""
+    def indexed_ids(self, workspace_id: str, conn: Connection | None = None) -> set[str] | None:
+        """A workspace's entry ids currently indexed, or None if this index keeps no state to
+        repair."""
         ...
 
     def search(
@@ -87,7 +88,7 @@ class Fts5Index:
         tokens: Sequence[str],
         conn: Connection | None = None,
     ) -> None:
-        self.delete(entry_id, conn)
+        self.delete(entry_id, workspace_id, conn)
         self.db.execute(
             sa.text(
                 "INSERT INTO entry_fts (text, entry_id, workspace_id, project_id) "
@@ -101,9 +102,12 @@ class Fts5Index:
             conn,
         )
 
-    def delete(self, entry_id: str, conn: Connection | None = None) -> None:
+    def delete(self, entry_id: str, workspace_id: str, conn: Connection | None = None) -> None:
         self.db.execute(
-            sa.text("DELETE FROM entry_fts WHERE entry_id = :id").bindparams(id=entry_id), conn
+            sa.text("DELETE FROM entry_fts WHERE entry_id = :id AND workspace_id = :w").bindparams(
+                id=entry_id, w=workspace_id
+            ),
+            conn,
         )
 
     def delete_project(
@@ -116,8 +120,13 @@ class Fts5Index:
             conn,
         )
 
-    def indexed_ids(self, conn: Connection | None = None) -> set[str]:
-        rows = self.db.rows(sa.text("SELECT entry_id FROM entry_fts"), conn)
+    def indexed_ids(self, workspace_id: str, conn: Connection | None = None) -> set[str]:
+        rows = self.db.rows(
+            sa.text("SELECT entry_id FROM entry_fts WHERE workspace_id = :w").bindparams(
+                w=workspace_id
+            ),
+            conn,
+        )
         return {str(r["entry_id"]) for r in rows}
 
     def search(
@@ -188,7 +197,7 @@ class ScanIndex:
     ) -> None:
         return None
 
-    def delete(self, entry_id: str, conn: Connection | None = None) -> None:
+    def delete(self, entry_id: str, workspace_id: str, conn: Connection | None = None) -> None:
         return None
 
     def delete_project(
@@ -196,7 +205,7 @@ class ScanIndex:
     ) -> None:
         return None
 
-    def indexed_ids(self, conn: Connection | None = None) -> set[str] | None:
+    def indexed_ids(self, workspace_id: str, conn: Connection | None = None) -> set[str] | None:
         return None
 
     def search(

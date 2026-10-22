@@ -26,7 +26,7 @@ The service takes a `Scope(workspace_id, principal)` as its first argument and p
 ### 2. Isolation, in three layers
 
 1. **Application:** every query filters by `scope.workspace_id`; a test builds two workspaces and calls every service method and every route with the other's ids, expecting 404 or an empty list. A new method without this test fails review.
-2. **Database shape (the hosted migration):** primary keys become `(workspace_id, id)` on `entry`, `pending`, `candidate` and `alias`; child foreign keys become composite (`(workspace_id, entry_id)`), so a child cannot name another tenant's parent and the same ULID can exist in two workspaces (which fixes import). Done before there is hosted data, while tables are small.
+2. **Database shape (the hosted migration; built in SEM-82, revision 0010, 2026-10-22: composite keys for six tables, SQLite rebuilt table by table and Postgres altered in place; Postgres RLS follows):** primary keys become `(workspace_id, id)` on `entry`, `pending`, `candidate` and `alias`; child foreign keys become composite (`(workspace_id, entry_id)`), so a child cannot name another tenant's parent and the same ULID can exist in two workspaces (which fixes import). Done before there is hosted data, while tables are small.
 3. **Postgres row-level security as a backstop:** each transaction runs `SET LOCAL semula.workspace_id = ...` and every tenant table has a policy `workspace_id = current_setting('semula.workspace_id')`. The application role is not a superuser and has no `BYPASSRLS`. A forgotten filter returns nothing instead of leaking. SQLite (local) is single-tenant and has no RLS.
 
 ### 3. The rule for every table
