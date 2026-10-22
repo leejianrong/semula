@@ -27,6 +27,15 @@ The **Entries** screen lists what a project has recorded: the prompt, how often 
 
 Select a row to open the entry at its own address (`/ui/projects/<project>/entries/<id>`), so you can paste the link to a colleague. It shows the request, every answer and the history of changes.
 
+### Fix a recording by hand
+
+The same page edits the entry. Change the text in **Edit answer** and press **Save answer**. Plain text is the reply; start with `{` to write a tool call or `{"chunks": [...]}`. The answer is checked exactly as it is when an agent sends it, and a rejection appears under the box with nothing saved.
+
+- **Pin** and **Unpin** protect the entry from agents. Your own edits go through a pin.
+- **Add another answer** stores a second answer; **Pick** chooses `first`, `sequence` or `cycle`.
+- If someone else changed the entry while you were typing, saving says so, keeps your text, and **Reload** shows their version. Your edit never overwrites theirs.
+- **Delete entry** asks first.
+
 ## Good to know
 
 The dashboard is built on the first visit to `/ui`, so the server starts as fast as ever. `SEMULA_UI=off` hides it.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime, tzinfo
 from typing import Any
@@ -269,3 +270,45 @@ def revision_row(revision: dict[str, Any], tz: tzinfo | None = None) -> dict[str
         "actor": revision["actor"],
         "summary": revision["summary"] + forced,
     }
+
+
+def answer_form(response: dict[str, Any]) -> dict[str, Any]:
+    """A stored response as the answer a person would type: ``{"content": ...}``, a tool call
+    with its arguments as an object, or ``{"chunks": [...]}``. ``parse_answer`` takes it back."""
+    message = response.get("message") or {}
+    if response.get("chunks"):
+        return {"chunks": [c.get("content", "") for c in response["chunks"]]}
+    if message.get("tool_calls"):
+        calls = []
+        for call in message["tool_calls"]:
+            fn = dict(call.get("function") or {})
+            with contextlib.suppress(TypeError, ValueError):  # not JSON: leave the text as it is
+                fn["arguments"] = json.loads(fn.get("arguments") or "{}")
+            calls.append({"function": fn})
+        return {"message": {"content": message.get("content"), "tool_calls": calls}}
+    return {"content": message.get("content") or ""}
+
+
+def editor_text(responses: list[dict[str, Any]]) -> str:
+    """What the entry editor opens with: the text itself for one plain answer, otherwise JSON."""
+    forms = [answer_form(r) for r in responses]
+    if len(forms) == 1:
+        only = forms[0]
+        if list(only) == ["content"]:
+            return str(only["content"])
+        return json.dumps(only, indent=2, ensure_ascii=False)
+    return json.dumps(forms, indent=2, ensure_ascii=False)
+
+
+def answers_from_editor(text: str, *, multiple: bool) -> list[Any]:
+    """The answers an edit sends, from the editor's text. Raises ``ValueError`` with a sentence
+    to show beside the field."""
+    if not multiple:
+        return [answer_from_text(text)]
+    try:
+        body = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"That is not valid JSON: {exc.msg} (line {exc.lineno}).") from exc
+    if not isinstance(body, list) or not body:
+        raise ValueError("This entry has several answers: write a JSON list with one per answer.")
+    return body
