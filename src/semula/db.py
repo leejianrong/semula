@@ -7,6 +7,7 @@ raw-SQL helpers (``query``, ``query_one``) exist for tests and diagnostics only.
 
 from __future__ import annotations
 
+import copy
 import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -87,7 +88,26 @@ class Database:
         raw = str(url)
         self.url = raw if "://" in raw else f"sqlite:///{raw}"
         self.engine = make_engine(self.url)
+        # The workspace this handle acts for. On Postgres it becomes ``semula.workspace_id`` in
+        # every transaction, which the row-level-security policies compare with ``workspace_id``
+        # (ADR-0011): a query that forgot its filter still sees only this workspace's rows.
+        self.workspace_id: str | None = None
         self.migrate()
+
+    def for_workspace(self, workspace_id: str | None) -> Database:
+        """A handle on the same database acting for ``workspace_id`` (shares the engine)."""
+        bound = copy.copy(self)
+        bound.workspace_id = workspace_id
+        return bound
+
+    def _scope(self, conn: Connection) -> Connection:
+        """Tell Postgres which workspace this transaction is for."""
+        if self.workspace_id is not None and self.dialect == "postgresql":
+            conn.execute(
+                sa.text("SELECT set_config('semula.workspace_id', :w, true)"),
+                {"w": self.workspace_id},
+            )
+        return conn
 
     @property
     def dialect(self) -> str:
@@ -164,26 +184,26 @@ class Database:
     def begin(self) -> Iterator[Connection]:
         """One transaction: commits on success, rolls back on any exception."""
         with self.engine.begin() as conn:
-            yield conn
+            yield self._scope(conn)
 
     def execute(self, stmt: Any, conn: Connection | None = None) -> int:
         """Run one statement (in ``conn``'s transaction, or its own). Returns rowcount."""
         if conn is not None:
             return int(conn.execute(stmt).rowcount)
         with self.engine.begin() as own:
-            return int(own.execute(stmt).rowcount)
+            return int(self._scope(own).execute(stmt).rowcount)
 
     def rows(self, stmt: Any, conn: Connection | None = None) -> list[RowMapping]:
         if conn is not None:
             return list(conn.execute(stmt).mappings().all())
         with self.engine.connect() as own:
-            return list(own.execute(stmt).mappings().all())
+            return list(self._scope(own).execute(stmt).mappings().all())
 
     def one(self, stmt: Any, conn: Connection | None = None) -> RowMapping | None:
         if conn is not None:
             return conn.execute(stmt).mappings().first()
         with self.engine.connect() as own:
-            return own.execute(stmt).mappings().first()
+            return self._scope(own).execute(stmt).mappings().first()
 
     # Raw SQL with :named parameters, for tests and diagnostics (not the service).
     def query(self, sql: str, params: Mapping[str, Any] | None = None) -> list[RowMapping]:

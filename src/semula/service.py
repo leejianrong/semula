@@ -113,7 +113,7 @@ class MatchResult:
 
 class Service:
     def __init__(self, db: Database, settings: Settings, embedder: Embedder | None = None) -> None:
-        self.db = db
+        self.db = db.for_workspace(DEFAULT_WORKSPACE)
         self.settings = settings
         # Held calls waiting on an answer: pending id -> [(their event loop, their event)].
         # Answers arrive on worker threads, so waking a waiter must go through its loop.
@@ -122,14 +122,14 @@ class Service:
         # What a project follows until it chooses its own mode. Lives in memory: it starts from
         # SEMULA_MODE and PUT /api/v1/mode moves it, but a restart returns to the environment.
         self.workspace_id = DEFAULT_WORKSPACE  # ``for_scope`` binds a copy to another workspace
-        self.default_mode: str = settings.mode
-        self.lexical = make_index(db)
+        self._process: dict[str, str] = {"mode": settings.mode}  # shared by every scoped copy
+        self.lexical = make_index(self.db)
         # Semantic matching is optional: with no embedder none of this loads (ADR-0003).
         if embedder is None and settings.embeddings:
             embedder = load_embedder(
                 settings.resolved_model_dir, offline=settings.embeddings_offline
             )
-        self.vectors: VectorStore | None = VectorStore(db, embedder) if embedder else None
+        self.vectors: VectorStore | None = VectorStore(self.db, embedder) if embedder else None
         self.indexer: Indexer | None = (
             Indexer(self.vectors, self._texts_to_embed, DEFAULT_WORKSPACE) if self.vectors else None
         )
@@ -138,6 +138,15 @@ class Service:
         self._logged = 0
 
     # --- mode -----------------------------------------------------------------------
+    @property
+    def default_mode(self) -> str:
+        """What a project follows until it chooses its own mode (one value per process)."""
+        return self._process["mode"]
+
+    @default_mode.setter
+    def default_mode(self, mode: str) -> None:
+        self._process["mode"] = mode
+
     def for_scope(self, scope: Scope) -> Service:
         """This service bound to ``scope``'s workspace: same database, caches and event bus,
         every query filtered by that workspace. Meaning-based matching is only built for the
@@ -146,6 +155,8 @@ class Service:
             return self
         bound = copy.copy(self)
         bound.workspace_id = scope.workspace_id
+        bound.db = self.db.for_workspace(scope.workspace_id)
+        bound.lexical = self.lexical.bound(bound.db)
         if scope.workspace_id != DEFAULT_WORKSPACE:
             bound.vectors = None
             bound.indexer = None
