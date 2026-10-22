@@ -85,7 +85,7 @@ def test_a_parked_call_appears_live_and_answering_releases_it(server: str) -> No
         tab.send(tab.find("table", label="Parked calls"), "select", {"key": key})
         tab.wait_for(lambda m: "Where is my parcel?" in str(m), 3, mark)  # the full request
 
-        tab.send(tab.find("textarea", label="Answer"), "input", {"value": "On its way."})
+        tab.send(tab.find("codeeditor", label="Answer"), "input", {"value": "On its way."})
         tab.send(tab.find("button", label="Send answer"), "click")
         held["thread"].join(10)
         assert held["response"].json()["choices"][0]["message"]["content"] == "On its way."
@@ -105,7 +105,7 @@ def test_a_json_answer_with_a_bad_tool_call_shows_the_error_and_keeps_the_call_h
         tab.wait_for(saw_rows("Weather in KL?"), 3)
         key = pending_id(server)
         tab.send(tab.find("table", label="Parked calls"), "select", {"key": key})
-        field = tab.find("textarea", label="Answer")
+        field = tab.find("codeeditor", label="Answer")
         send = tab.find("button", label="Send answer")
 
         bad = tool_call("nope", {})
@@ -134,7 +134,7 @@ def test_broken_json_is_explained_without_calling_the_service(server: str) -> No
         key = pending_id(server)
         tab.send(tab.find("table", label="Parked calls"), "select", {"key": key})
         mark = tab.mark()
-        tab.send(tab.find("textarea", label="Answer"), "input", {"value": '{"content": '})
+        tab.send(tab.find("codeeditor", label="Answer"), "input", {"value": '{"content": '})
         tab.send(tab.find("button", label="Send answer"), "click")
         tab.wait_for(lambda m: "not valid" in str(m), 3, mark)
         assert held["thread"].is_alive()
