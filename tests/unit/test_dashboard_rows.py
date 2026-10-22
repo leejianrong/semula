@@ -181,3 +181,32 @@ def test_a_revision_becomes_a_history_line() -> None:
         "id": "h2", "version": "v2", "when": "10:03:31.081", "actor": "agent",
         "summary": "answer replaced (forced past a pin)",
     }  # fmt: skip
+
+
+def test_stored_answers_open_in_the_editor_and_survive_a_round_trip() -> None:
+    from semula.dashboard.rows import answers_from_editor, editor_text
+    from semula.responses import parse_answer
+
+    plain = parse_answer({"content": "hello"})
+    tools = parse_answer({"message": {"content": None, "tool_calls": [
+        {"function": {"name": "f", "arguments": {"a": 1}}}]}})  # fmt: skip
+    stream = parse_answer({"chunks": ["Hel", "lo"]})
+
+    assert editor_text([plain]) == "hello"
+    assert '"arguments": {\n' in editor_text([tools]) and '"a": 1' in editor_text([tools])
+    assert '"chunks"' in editor_text([stream])
+
+    for stored in (plain, tools, stream):
+        (again,) = answers_from_editor(editor_text([stored]), multiple=False)
+        reparsed = parse_answer(again)
+        assert reparsed["message"]["content"] == stored["message"]["content"]
+        assert reparsed.get("chunks") == stored.get("chunks")
+        assert bool(reparsed["message"].get("tool_calls")) == bool(
+            stored["message"].get("tool_calls")
+        )
+
+    several = answers_from_editor(editor_text([plain, plain]), multiple=True)
+    assert several == [{"content": "hello"}, {"content": "hello"}]
+    for bad in ("not json", "{}", "[]"):
+        with pytest.raises(ValueError):
+            answers_from_editor(bad, multiple=True)

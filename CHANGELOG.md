@@ -13,7 +13,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 - **Entries screen** in the dashboard: every recorded entry of a project with search, a filter
   menu (pinned, never hit, tool calls, aliases), sort, hit counts and flags, kept up to date as
   entries are recorded. Selecting one opens it at its own address with its request, answers and
-  history. The service now announces entry writes (`entries` events) for live views.
+  history. The entry page is also an editor: change the answer (plain text, or JSON for a tool call or
+  a stream), choose how several answers are picked, add another answer, pin or unpin, delete.
+  Edits are made as a person, so a pin does not stop them, and a stale edit meets a version
+  conflict instead of overwriting someone else's change. The service now announces entry writes (`entries` events) for live views.
 
 ## [0.1.0] - 2026-10-22
 
