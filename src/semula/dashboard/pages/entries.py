@@ -206,11 +206,11 @@ def entries_page(tab: Tab) -> indah.Component:
             indah.Row(
                 children=[
                     indah.Text("# Entries", markdown=True),
-                    indah.Button("New entry", start),
+                    *tab.only("edit", lambda: indah.Button("New entry", start)),
                 ],
                 align="center",
             ),
-            form,
+            *tab.only("edit", lambda: form),
             indah.Row(
                 children=[
                     indah.TextInput(query, label="Search", placeholder="Find a prompt"),

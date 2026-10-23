@@ -153,12 +153,15 @@ def review_page(tab: Tab) -> indah.Component:
                         children=[indah.Text(lambda: answer.value, size="body")],
                     ),
                     indah.Text(lambda: problem.value, size="body"),
-                    indah.Row(
-                        children=[
-                            indah.Button("Approve", approve),
-                            indah.Button("Reject", reject, variant="outlined"),
-                        ],
-                        align="center",
+                    *tab.only(
+                        "edit",
+                        lambda: indah.Row(
+                            children=[
+                                indah.Button("Approve", approve),
+                                indah.Button("Reject", reject, variant="outlined"),
+                            ],
+                            align="center",
+                        ),
                     ),
                 ]
             ),

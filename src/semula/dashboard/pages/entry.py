@@ -25,6 +25,12 @@ def _answer_text(response: dict[str, Any]) -> str:
     return _text(message.get("content") or message.get("tool_calls"))
 
 
+SINGLE_HINT = (
+    "Plain text is the reply. Start with `{` for a tool call or a stream, "
+    'such as `{"chunks": ["Hel", "lo"]}`.'
+)
+
+
 def entry_page(tab: Tab) -> indah.Component:
     ctx = tab.ctx
     entry: indah.Signal[dict[str, Any] | None] = indah.Signal(None)
@@ -264,57 +270,75 @@ def entry_page(tab: Tab) -> indah.Component:
                     indah.List(indah.computed(answer_rows), key="id", item=MESSAGE, empty="")
                 ],
             ),
-            indah.Card(
-                title="Edit the answer",
-                children=[
-                    indah.CodeEditor(
-                        draft,
-                        language="text",
-                        lint=False,
-                        height="12rem",
-                        label="Edit answer",
-                    ),
-                    indah.Text(
-                        lambda: (
-                            "This entry has several answers: edit them as a JSON list."
-                            if entry.value and len(entry.value["responses"]) > 1
-                            else "Plain text is the reply. Start with `{` for a tool call or "
-                            'a stream, such as `{"chunks": ["Hel", "lo"]}`.'
+            *tab.only(
+                "edit",
+                lambda: indah.Column(
+                    children=[
+                        indah.Card(
+                            title="Edit the answer",
+                            children=[
+                                indah.CodeEditor(
+                                    draft,
+                                    language="text",
+                                    lint=False,
+                                    height="12rem",
+                                    label="Edit answer",
+                                ),
+                                indah.Text(
+                                    lambda: (
+                                        "This entry has several answers: edit them as a JSON list."
+                                        if entry.value and len(entry.value["responses"]) > 1
+                                        else SINGLE_HINT
+                                    ),
+                                    markdown=True,
+                                    size="body",
+                                ),
+                                indah.Select(
+                                    selection, options=["first", "sequence", "cycle"], label="Pick"
+                                ),
+                                indah.Text(
+                                    lambda: problem.value, size="body"
+                                ),  # plain: codes have underscores
+                                indah.Text(lambda: saved.value, markdown=True, size="body"),
+                                indah.Row(
+                                    children=[
+                                        indah.Button("Save answer", save),
+                                        indah.Button("Reload", reload_current, variant="outlined"),
+                                        indah.Button(
+                                            lambda: (
+                                                "Unpin"
+                                                if entry.value and entry.value["pinned"]
+                                                else "Pin"
+                                            ),
+                                            toggle_pin,
+                                            variant="outlined",
+                                        ),
+                                        indah.Button(
+                                            "Delete entry",
+                                            delete,
+                                            variant="outlined",
+                                            confirm="Delete this entry? Its history goes with it.",
+                                        ),
+                                    ],
+                                    align="center",
+                                ),
+                            ],
                         ),
-                        markdown=True,
-                        size="body",
-                    ),
-                    indah.Select(selection, options=["first", "sequence", "cycle"], label="Pick"),
-                    indah.Text(lambda: problem.value, size="body"),  # plain: codes have underscores
-                    indah.Text(lambda: saved.value, markdown=True, size="body"),
-                    indah.Row(
-                        children=[
-                            indah.Button("Save answer", save),
-                            indah.Button("Reload", reload_current, variant="outlined"),
-                            indah.Button(
-                                lambda: "Unpin" if entry.value and entry.value["pinned"] else "Pin",
-                                toggle_pin,
-                                variant="outlined",
-                            ),
-                            indah.Button(
-                                "Delete entry",
-                                delete,
-                                variant="outlined",
-                                confirm="Delete this entry? Its history goes with it.",
-                            ),
-                        ],
-                        align="center",
-                    ),
-                ],
-            ),
-            indah.Card(
-                title="Add another answer",
-                children=[
-                    indah.CodeEditor(
-                        extra, language="text", lint=False, height="6rem", label="Another answer"
-                    ),
-                    indah.Button("Add answer", add_answer, variant="outlined"),
-                ],
+                        indah.Card(
+                            title="Add another answer",
+                            children=[
+                                indah.CodeEditor(
+                                    extra,
+                                    language="text",
+                                    lint=False,
+                                    height="6rem",
+                                    label="Another answer",
+                                ),
+                                indah.Button("Add answer", add_answer, variant="outlined"),
+                            ],
+                        ),
+                    ]
+                ),
             ),
             indah.Card(title="History", children=[revisions]),
         ]

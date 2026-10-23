@@ -138,17 +138,26 @@ def pending_page(tab: Tab) -> indah.Component:
         children=[
             indah.Text(heading, markdown=True),
             indah.List(indah.computed(messages), key="id", item=MESSAGE, empty=""),
-            indah.CodeEditor(
-                answer,
-                language="text",
-                lint=False,
-                height="10rem",
-                label="Answer",
-                placeholder="What the real model would say",
+            *tab.only(
+                "edit",
+                lambda: indah.Column(
+                    children=[
+                        indah.CodeEditor(
+                            answer,
+                            language="text",
+                            lint=False,
+                            height="10rem",
+                            label="Answer",
+                            placeholder="What the real model would say",
+                        ),
+                        indah.Text(
+                            lambda: error.value, size="body"
+                        ),  # plain: codes have underscores
+                        indah.Text(HINT, markdown=True),
+                        indah.Button("Send answer", on_click=send),
+                    ]
+                ),
             ),
-            indah.Text(lambda: error.value, size="body"),  # plain: codes have underscores
-            indah.Text(HINT, markdown=True),
-            indah.Button("Send answer", on_click=send),
         ]
     )
     return indah.Column(

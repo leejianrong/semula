@@ -104,9 +104,10 @@ def create_app(
     mcp = LazyMcp(service)
     # The dashboard cannot send a header on a page load, so it is off behind any key or token
     # until it has sign-in (ADR-0010); hosted mode never serves the open one.
+    signed_in = settings.hosted and bool(settings.auth_providers)
     dashboard = (
-        LazyDashboard(service)
-        if settings.ui and not settings.api_key and not settings.hosted
+        LazyDashboard(service, settings)
+        if settings.ui and not settings.api_key and (signed_in or not settings.hosted)
         else None
     )
 

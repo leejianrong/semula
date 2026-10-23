@@ -15,9 +15,18 @@ import httpx
 class Tab:
     """One open tab: an SSE connection to ``/ui/api/stream`` and the events it would post."""
 
-    def __init__(self, url: str, path: str = "/projects/default/log") -> None:
+    def __init__(
+        self, url: str, path: str = "/projects/default/log", cookies: dict[str, str] | None = None
+    ) -> None:
         self.url = url
+        self.cookies = cookies or {}
         self.sid = uuid.uuid4().hex
+        if self.cookies:  # a hosted dashboard: trade the sign-in for a signed session id
+            resp = httpx.post(
+                url + "/ui/api/session", json={}, cookies=self.cookies, headers={"Origin": url}
+            )
+            assert resp.status_code == 200, resp.text
+            self.sid = resp.json()["token"]
         self.messages: list[dict[str, Any]] = []
         self.arrived: list[float] = []
         self._lock = threading.Condition()
@@ -30,7 +39,11 @@ class Tab:
         params = {"sid": self.sid, "path": path}
         try:
             with httpx.stream(
-                "GET", self.url + "/ui/api/stream", params=params, timeout=httpx.Timeout(5, read=60)
+                "GET",
+                self.url + "/ui/api/stream",
+                params=params,
+                cookies=self.cookies,
+                timeout=httpx.Timeout(5, read=60),
             ) as resp:
                 for line in resp.iter_lines():
                     if self._stop.is_set():
@@ -103,7 +116,13 @@ class Tab:
 
     def send(self, node: dict[str, Any], event: str, payload: dict[str, Any] | None = None) -> None:
         body = {"sid": self.sid, "component": node["id"], "event": event, "payload": payload or {}}
-        resp = httpx.post(self.url + "/ui/api/event", json=body, timeout=5)
+        resp = httpx.post(
+            self.url + "/ui/api/event",
+            json=body,
+            cookies=self.cookies,
+            headers={"Origin": self.url} if self.cookies else {},
+            timeout=5,
+        )
         assert resp.status_code == 200, resp.text
 
     def close(self) -> None:

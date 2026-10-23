@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from functools import partial
 from typing import Any
 
 import indah
 
+from ..service import Service
 from .pages.entries import entries_page
 from .pages.entry import entry_page
 from .pages.log import log_page
 from .pages.pending import pending_page
 from .pages.playground import playground_page
 from .pages.review import review_page
+from .pages.workspace import audit_page, members_page, tokens_page, usage_page
 from .state import Dash, blocking, cancel, every
 
 EMPTY_STATS: dict[str, Any] = {"hit_rate": None, "median_latency_ms": None, "parked": 0}
@@ -22,10 +25,19 @@ EMPTY_STATS: dict[str, Any] = {"hit_rate": None, "median_latency_ms": None, "par
 class Tab:
     """Everything one open tab knows: the project in the URL, the queue counts, the mode."""
 
-    def __init__(self, ctx: indah.Context, dash: Dash) -> None:
+    def __init__(
+        self,
+        ctx: indah.Context,
+        dash: Dash,
+        service: Service,
+        who: indah.Principal | None = None,
+        public_url: str = "",
+    ) -> None:
         self.ctx = ctx
         self.dash = dash
-        self.service = dash.service
+        self.service = service  # as the person acting (hosted), else the server itself
+        self.who = who  # the signed-in person when hosted; None locally, where all is allowed
+        self.public_url = public_url  # for links an admin sends (an invitation)
         self.project = indah.computed(lambda: ctx.params.value.get("project") or "default")
         self.projects: list[str] = dash.project_ids()
         self.counts: indah.Signal[dict[str, int]] = indah.Signal({"pending": 0, "review": 0})
@@ -41,6 +53,20 @@ class Tab:
         self._stale.set()  # the first refresh is due now
         self._follow_events(ctx)
         every(ctx, 1.0, self._refresh)
+
+    def can(self, perm: str) -> bool:
+        """May the person here ``view``, ``edit`` or ``manage``? Locally everything is allowed."""
+        return True if self.who is None else bool(self.ctx.can(perm))
+
+    @property
+    def administers(self) -> bool:
+        """A signed-in admin: members, tokens, audit and usage are hosted-only screens."""
+        return self.who is not None and self.can("manage")
+
+    def only(self, perm: str, build: Callable[[], indah.Component]) -> list[indah.Component]:
+        """``build()`` for someone who may ``perm``, else nothing: a control that is only hidden is
+        still sent to the browser, so a restricted one is not built at all (indah, ADR-0035)."""
+        return [build()] if self.can(perm) else []
 
     def _follow_events(self, ctx: indah.Context) -> None:
         # A ring, not ``ctx.latest``: a signal ignores a value equal to the one it holds, and
@@ -110,7 +136,10 @@ def nav(tab: Tab) -> indah.Component:
             indah.Select(_chosen(tab), options=tab.projects, label="Project"),
             indah.Link(tab.ctx, "Live log", to=to("log"), match="prefix"),
             indah.Link(tab.ctx, "Entries", to=to("entries"), match="prefix"),
-            indah.Link(tab.ctx, "Playground", to=to("playground"), match="prefix"),
+            *tab.only(
+                "edit",
+                lambda: indah.Link(tab.ctx, "Playground", to=to("playground"), match="prefix"),
+            ),
             indah.Row(
                 children=[
                     indah.Link(tab.ctx, "Review", to=to("review"), match="prefix"),
@@ -129,9 +158,23 @@ def nav(tab: Tab) -> indah.Component:
                 ],
                 align="center",
             ),
-            indah.Switch(tab.recording, label="Record"),
+            *tab.only("edit", lambda: indah.Switch(tab.recording, label="Record")),
+            *workspace_links(tab),
         ]
     )
+
+
+def workspace_links(tab: Tab) -> list[indah.Component]:
+    """Admins only: the workspace's own screens, not tied to a project."""
+    if not tab.administers:
+        return []
+    return [
+        indah.Text("**Workspace**", markdown=True, size="body"),
+        indah.Link(tab.ctx, "Members", to="/workspace/members", match="prefix"),
+        indah.Link(tab.ctx, "Tokens", to="/workspace/tokens", match="prefix"),
+        indah.Link(tab.ctx, "Audit", to="/workspace/audit", match="prefix"),
+        indah.Link(tab.ctx, "Usage", to="/workspace/usage", match="prefix"),
+    ]
 
 
 def _chosen(tab: Tab) -> indah.Signal[str]:
@@ -155,18 +198,67 @@ def _chosen(tab: Tab) -> indah.Signal[str]:
     return chosen
 
 
-def build_session(ctx: indah.Context, dash: Dash) -> indah.Session:
-    tab = Tab(ctx, dash)
+def build_session(
+    ctx: indah.Context,
+    dash: Dash,
+    service: Service,
+    who: indah.Principal | None = None,
+    public_url: str = "",
+) -> indah.Session:
+    tab = Tab(ctx, dash, service, who, public_url)
+    routes: dict[str, indah.Component] = {
+        "/projects/{project}/log": log_page(tab),
+        "/projects/{project}/pending": pending_page(tab),
+        "/projects/{project}/review": review_page(tab),
+        "/projects/{project}/entries": entries_page(tab),
+        "/projects/{project}/entries/{entry}": entry_page(tab),
+    }
+    if tab.can("edit"):  # test_match is an editor's tool
+        routes["/projects/{project}/playground"] = playground_page(tab)
+    if tab.administers:  # an admin's, and only built for one
+        routes["/workspace/members"] = members_page(tab)
+        routes["/workspace/tokens"] = tokens_page(tab)
+        routes["/workspace/audit"] = audit_page(tab)
+        routes["/workspace/usage"] = usage_page(tab)
     pages = indah.Router(
         ctx,
-        routes={
-            "/projects/{project}/log": log_page(tab),
-            "/projects/{project}/pending": pending_page(tab),
-            "/projects/{project}/review": review_page(tab),
-            "/projects/{project}/playground": playground_page(tab),
-            "/projects/{project}/entries": entries_page(tab),
-            "/projects/{project}/entries/{entry}": entry_page(tab),
-        },
+        routes=routes,
         not_found=indah.Text("### There is nothing at this address.", markdown=True),
     )
-    return indah.Session(indah.Sidebar(children=[nav(tab), pages]))
+    side = [account(tab, who), nav(tab)] if who is not None else [nav(tab)]
+    return indah.Session(indah.Sidebar(children=[indah.Column(children=side), pages]))
+
+
+def account(tab: Tab, who: indah.Principal) -> indah.Component:
+    """Who is signed in, where, in which role, and the way out."""
+    role = next(iter(who.roles), "")
+
+    async def sign_out() -> None:
+        # End this device's sign-in, then every open tab of it; the next request is not signed in.
+        await blocking(tab.service.end_session_id, str(who.claims.get("session_id", "")))
+        tab.ctx.sign_out()
+
+    return indah.Column(
+        children=[
+            indah.Text(f"**{who.name or who.email}**", markdown=True, size="body"),
+            indah.Text(f"{role} in {who.workspace}", size="body"),
+            indah.Button("Sign out", sign_out, variant="outlined"),
+        ]
+    )
+
+
+def build_waiting_session(ctx: indah.Context, who: indah.Principal | None) -> indah.Session:
+    """A signed-in person who belongs to no workspace yet can do nothing but wait for a link."""
+    name = who.email if who is not None else ""
+    return indah.Session(
+        indah.Column(
+            children=[
+                indah.Text("# No workspace yet", markdown=True),
+                indah.Text(
+                    f"You are signed in as {name}, but you do not belong to a workspace. Ask an "
+                    "admin to invite you, and open the link they send.",
+                    size="body",
+                ),
+            ]
+        )
+    )

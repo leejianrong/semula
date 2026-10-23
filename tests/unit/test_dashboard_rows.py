@@ -257,3 +257,117 @@ def test_the_playground_words_a_match_and_a_miss() -> None:
     assert near_text(miss) == ('Nearest recorded prompt: "Name a fruit." (score 0.67). '
                                "1 weak candidate(s) would go to the review queue.")  # fmt: skip
     assert near_text({"matched": True, "candidates": []}) == ""
+
+
+# --- the admin screens (SEM-91) -------------------------------------------------------------
+from semula.dashboard.rows import (  # noqa: E402
+    audit_row,
+    invitation_row,
+    member_row,
+    stamp,
+    token_row,
+    usage_lines,
+)
+
+TOKEN = {
+    "id": "T1", "name": "ci", "scope": "record", "project": None, "prefix": "smla_live_ab",
+    "created_at": "2026-10-01T00:00:00.000Z", "expires_at": None, "revoked_at": None,
+    "last_used_at": None, "last_used_from": None,
+}  # fmt: skip
+
+
+def test_a_stamp_is_the_date_and_minute_or_nothing() -> None:
+    assert stamp("2026-10-22T10:03:44.123Z") == "2026-10-22 10:03"
+    assert stamp(None) == "" and stamp("") == ""
+
+
+def test_a_member_shows_their_name_or_else_their_email() -> None:
+    named = {"person_id": "P1", "email": "a@x.io", "name": "Ada", "role": "admin",
+             "since": "2026-10-22T10:03:44.123Z"}  # fmt: skip
+    assert member_row(named) == {
+        "id": "P1", "who": "Ada", "email": "a@x.io", "role": "admin", "since": "2026-10-22 10:03",
+    }  # fmt: skip
+    assert member_row({**named, "name": None, "since": None})["who"] == "a@x.io"
+    assert member_row({**named, "name": "", "since": None})["since"] == ""
+
+
+def test_an_invitation_row_carries_its_status_and_expiry() -> None:
+    row = invitation_row({"id": "I1", "email": "b@x.io", "role": "editor", "status": "open",
+                          "expires_at": "2026-10-29T10:03:44.123Z"})  # fmt: skip
+    assert row == {"id": "I1", "email": "b@x.io", "role": "editor", "status": "open",
+                   "expires": "2026-10-29 10:03"}  # fmt: skip
+
+
+def test_a_token_row_never_has_more_than_the_prefix_and_names_its_reach() -> None:
+    row = token_row(TOKEN)
+    assert row["prefix"] == "smla_live_ab…" and row["project"] == "all projects"
+    assert row["state"] == "active" and row["used"] == "never"
+    bound = token_row({**TOKEN, "project": "shop"})
+    assert bound["project"] == "shop"
+
+
+def test_a_token_is_revoked_or_expired_by_the_clock() -> None:
+    assert token_row({**TOKEN, "revoked_at": "2026-10-02T00:00:00.000Z"})["state"] == "revoked"
+    assert token_row({**TOKEN, "expires_at": "2020-01-01T00:00:00.000Z"})["state"] == "expired"
+    assert token_row({**TOKEN, "expires_at": "2999-01-01T00:00:00.000Z"})["state"] == "active"
+    both = {
+        **TOKEN,
+        "revoked_at": "2026-10-02T00:00:00.000Z",
+        "expires_at": "2020-01-01T00:00:00.000Z",
+    }
+    assert token_row(both)["state"] == "revoked"  # revoking wins over running out
+
+
+def test_a_token_says_when_and_from_where_it_was_last_used() -> None:
+    used = {**TOKEN, "last_used_at": "2026-10-03T08:15:00.000Z"}
+    assert token_row(used)["used"] == "2026-10-03 08:15"
+    assert (
+        token_row({**used, "last_used_from": "10.0.0.7"})["used"]
+        == "2026-10-03 08:15 from 10.0.0.7"
+    )
+
+
+def test_an_audit_row_names_the_kind_of_actor_and_the_tail_of_its_id() -> None:
+    event = {"id": 12, "ts": "2026-10-22T10:03:44.123Z", "principal_kind": "person",
+             "principal_id": "01HZZZZZZZABCDEF", "action": "token.create", "target": "T1",
+             "detail": {"scope": "record", "name": "ci"}}  # fmt: skip
+    row = audit_row(event)
+    assert row["id"] == "12" and row["who"] == "person:ABCDEF" and row["target"] == "T1"
+    assert row["detail"] == '{"name": "ci", "scope": "record"}'  # sorted, so it reads the same
+    local = audit_row({**event, "principal_kind": "local", "principal_id": "", "target": None,
+                       "detail": None})  # fmt: skip
+    assert local["who"] == "local" and local["target"] == "" and local["detail"] == ""
+
+
+def test_usage_lines_show_each_count_against_its_limit() -> None:
+    usage = {
+        "used": {"projects": 2, "entries": 1500, "bytes": 2_500_000, "parked": 0, "tokens": 3},
+        "limits": {"projects": 10, "entries": None, "bytes": 50_000_000,
+                   "parked_per_workspace": 100, "tokens": 20},
+    }  # fmt: skip
+    lines = {line["id"]: line for line in usage_lines(usage)}
+    assert lines["projects"]["value"] == "2" and lines["projects"]["limit"] == "10"
+    assert lines["entries"]["value"] == "1,500" and lines["entries"]["limit"] == "no limit"
+    assert lines["bytes"]["value"] == "2.5 MB" and lines["bytes"]["limit"] == "50.0 MB"
+    assert lines["parked"]["limit"] == "100"
+    small = usage_lines({"used": {**usage["used"], "bytes": 900}, "limits": {}})
+    assert [x for x in small if x["id"] == "bytes"][0]["value"] == "900 B"
+
+
+def test_the_invitation_link_is_the_public_address_and_the_token() -> None:
+    from semula.dashboard.rows import invite_link
+
+    assert invite_link("https://semula.example/", "smla_inv_x") == (
+        "https://semula.example/auth/invite/smla_inv_x"
+    )
+
+
+def test_the_audit_filter_offers_every_action_the_service_records() -> None:
+    import re
+    from pathlib import Path
+
+    from semula.dashboard.rows import AUDIT_ACTIONS
+
+    source = Path("src/semula/service.py").read_text()
+    recorded = set(re.findall(r'_audit\(\s*"([a-z_.]+)"', source))
+    assert recorded and recorded <= set(AUDIT_ACTIONS), recorded - set(AUDIT_ACTIONS)

@@ -58,6 +58,7 @@ nav = [
     { "SQLAlchemy and Postgres" = "adr/0009-sqlalchemy-core-alembic-postgres-path.md" },
     { "Hosted auth and tokens" = "adr/0010-hosted-auth-and-tokens.md" },
     { "Tenancy and mode per project" = "adr/0011-workspace-tenancy-and-per-project-mode.md" },
+    { "Hosted dashboard stays on indah" = "adr/0012-hosted-dashboard-stays-on-indah.md" },
   ] },
   { "Contributing" = ["RELEASING.md"] },
 ]

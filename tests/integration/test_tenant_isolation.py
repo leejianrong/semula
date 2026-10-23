@@ -227,6 +227,7 @@ EXEMPT = {
     "create_session": "a person's sign-in: global",
     "authenticate_session": "finds the person from a cookie: global",
     "end_session": "a person's sign-in: global",
+    "end_session_id": "a person's sign-in by id: global",
     "end_sessions_of": "a person's sign-ins: global",
     "for_scope": "builds a scoped view",
     "start_cluster": "process-level: joins the other replicas' event channel",
