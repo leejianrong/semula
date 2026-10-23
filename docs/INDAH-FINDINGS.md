@@ -54,3 +54,4 @@ Checked while building the sign-in gate, the per-role shell and the four admin s
 - **A `ClientDisconnect` traceback is logged** by `POST /api/session` when the browser navigates away while it is in flight. Harmless, but noisy in a server log.
 - **An ephemeral value is sent as an ordinary patch** (`props.value` of the node), so a test, or a person reading the wire, sees it; that is expected ("to the open tab only") and worth saying in the docs, since "never in a snapshot" is not "never on the wire".
 - **A plain `Text` is still heading-sized** and `size="body"` is needed on every sentence (see the 0.3 list).
+- **A server cannot reload or redirect a tab.** `ctx.navigate` takes in-app paths only and a `signed_out` message just stops the stream, so switching workspace (a tab is signed for one) ends the tab and asks the person to reload. A `reload` message, or letting a session be re-signed for another workspace, would remove the step.

@@ -13,6 +13,7 @@ on:
       - Dockerfile
       - scripts/release.py
       - scripts/smoke_image.sh
+      - scripts/smoke_image_hosted.sh
       - scripts/build_cli_binary.sh
       - scripts/smoke_cli_binary.sh
       - scripts/cli_entry.py
@@ -162,6 +163,20 @@ jobs:
   image:
     needs: verify
     runs-on: ubuntu-latest
+    # Two images from one Dockerfile: the default (local use, small) and `-hosted`, which adds
+    # the sign-in and Postgres drivers a hosted server needs.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: default
+            suffix: ""
+            extras: ""
+            smoke: scripts/smoke_image.sh
+          - variant: hosted
+            suffix: "-hosted"
+            extras: "--extra hosted --extra postgres"
+            smoke: scripts/smoke_image_hosted.sh
     permissions:
       contents: read
       packages: write # push to ghcr.io
@@ -184,7 +199,9 @@ jobs:
         uses: docker/metadata-action@v6.2.0
         with:
           images: ${{ steps.name.outputs.image }}
-          flavor: latest=false
+          flavor: |
+            latest=false
+            suffix=${{ matrix.suffix }}
           tags: |
             type=raw,value=${{ needs.verify.outputs.version }}
             type=raw,value=${{ needs.verify.outputs.version }}-dev,enable=${{ env.PUBLISH != 'true' }}
@@ -205,24 +222,25 @@ jobs:
           load: ${{ env.PUBLISH != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: UV_EXTRAS=${{ matrix.extras }}
           provenance: ${{ env.PUBLISH == 'true' && 'mode=max' || 'false' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
       - name: Smoke test the image users will pull
         run: |
           if [ "$PUBLISH" = true ]; then
             docker pull "${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
-            scripts/smoke_image.sh "${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
+            ${{ matrix.smoke }} "${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
           else
-            scripts/smoke_image.sh "${{ steps.name.outputs.image }}:${{ needs.verify.outputs.version }}-dev"
+            ${{ matrix.smoke }} "${{ steps.name.outputs.image }}:${{ needs.verify.outputs.version }}-dev${{ matrix.suffix }}"
           fi
       - name: What was published
         if: env.PUBLISH == 'true'
         run: |
           {
-            echo "### Image"
+            echo "### Image (${{ matrix.variant }})"
             echo '```'
-            echo "docker pull ${{ steps.name.outputs.image }}:${{ needs.verify.outputs.version }}"
+            echo "docker pull ${{ steps.name.outputs.image }}:${{ needs.verify.outputs.version }}${{ matrix.suffix }}"
             echo "digest: ${{ steps.build.outputs.digest }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

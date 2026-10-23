@@ -1,6 +1,6 @@
 # ADR-0012: The hosted dashboard stays on indah
 
-- Status: Proposed (2026-10-23, by the agent that built SEM-91; the owner has not reviewed it yet)
+- Status: Accepted (2026-10-23, owner)
 - Date: 2026-10-23
 - Deciders: Jian (owner)
 - Builds on: [ADR-0006](0006-headless-first-dashboard-on-indah.md), [ADR-0010](0010-hosted-auth-and-tokens.md)
