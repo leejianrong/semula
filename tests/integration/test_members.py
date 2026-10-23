@@ -332,3 +332,16 @@ def test_tokens_cannot_manage_members(team: Team) -> None:
         lambda: svc.revoke_invitation("x"),
     ):
         refused(call, 403, "forbidden")
+
+
+def test_a_session_can_be_switched_by_its_id_and_only_to_a_workspace_the_person_belongs_to(
+    team: Team,
+) -> None:
+    secret, _ = team.service.create_session(team.people["ada"])
+    session = team.service.authenticate_session(secret)
+    assert session is not None
+    assert team.service.switch_session(session["session_id"], "other") is False  # not a member
+    assert team.service.switch_session("no such session", "acme") is False
+    assert team.service.switch_session(session["session_id"], "acme") is True
+    again = team.service.authenticate_session(secret)
+    assert again is not None and again["active_workspace"] == "acme"

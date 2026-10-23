@@ -29,7 +29,7 @@ Only a hash of the token is stored, so a lost token cannot be recovered, only re
 
 People sign in with a provider you set up, and semula keeps no passwords. Register an application with the provider, with the redirect URI `https://<your host>/auth/callback/<name>` exactly (a different one is refused), and give semula its client id and secret:
 
-Install the `hosted` extra (`pip install 'semula[hosted]'`, or build the image with `--build-arg UV_EXTRAS="--extra hosted"`), then:
+Install the `hosted` extra (`pip install 'semula[hosted]'`), or use the hosted image, `ghcr.io/leejianrong/semula:<version>-hosted`, which has it and the Postgres driver (releases after 0.2.0; to build it yourself, `--build-arg UV_EXTRAS="--extra hosted --extra postgres"`), then:
 
 ```bash
 SEMULA_PUBLIC_URL=https://semula.example.com
@@ -188,7 +188,7 @@ Hosting wants Postgres. Every tenant table has a [row-level-security](../referen
 
 ## The dashboard
 
-With a sign-in provider configured, `/ui` is the same dashboard as locally, behind sign-in. A page load without a sign-in goes to `/auth/login`; the dashboard's own calls get a 401. It shows one workspace, the one the person is working in, and what it offers follows their role: a **viewer** can read the log, entries, review and pending, an **editor** also answers, edits, approves and turns recording on, and controls a role may not use are not sent to the browser at all. The role is read again on every action, so an admin who demotes or removes someone is obeyed at that person's next click, with no wait for them to sign in again. A person who belongs to no workspace sees only a page saying so.
+With a sign-in provider configured, `/ui` is the same dashboard as locally, behind sign-in. A page load without a sign-in goes to `/auth/login`; the dashboard's own calls get a 401. It shows one workspace, the one the person is working in, and what it offers follows their role: a **viewer** can read the log, entries, review and pending, an **editor** also answers, edits, approves and turns recording on, and controls a role may not use are not sent to the browser at all. The role is read again on every action, so an admin who demotes or removes someone is obeyed at that person's next click, with no wait for them to sign in again. A person who belongs to no workspace sees only a page saying so. A person who belongs to several has a *Workspace* menu above the project switcher: picking one is remembered by their sign-in, ends the open tab, and a reload opens the dashboard in the new workspace with the role they hold there. Picking one they do not belong to is refused.
 
 An **admin** also gets a *Workspace* section in the sidebar:
 
@@ -201,4 +201,4 @@ Every one of these calls the same service as the REST API and the CLI, so the ru
 
 ## What is not there yet
 
-- **A workspace switcher.** A person who belongs to several workspaces works in the one they joined first. The service can switch a session to another (`switch_workspace`), but no screen or route offers it yet.
+- **Reloading by itself after a switch.** See the workspace switcher above: the tab ends and asks for a reload, because the dashboard framework cannot reload a page from the server.

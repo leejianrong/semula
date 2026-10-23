@@ -37,6 +37,7 @@ Release from the CHANGELOG and publishes the container image to
   Each is built on its own runner (Linux on Ubuntu 22.04, for older glibc), smoke-tested against a
   running server (`scripts/smoke_cli_binary.sh`), and the release job fails, creating nothing, if
   any of the four is missing. Build one locally with `make cli-binary`.
+- The hosted image, `ghcr.io/leejianrong/semula:X.Y.Z-hosted` (and `X.Y-hosted`, `latest-hosted`): the same Dockerfile with `UV_EXTRAS="--extra hosted --extra postgres"`, smoke-tested by `scripts/smoke_image_hosted.sh` (needs a minted token to be accepted). Build and check it locally with `docker build --build-arg UV_EXTRAS="--extra hosted --extra postgres" -t semula:hosted-check .` and `make image-smoke-hosted`.
 - The image `ghcr.io/leejianrong/semula` for `linux/amd64` and `linux/arm64`, tagged `X.Y.Z`,
   `X.Y` and `latest` (and `X` from 1.0), with build provenance. It is smoke-tested after the push:
   started, `/health` and `/ui` answered.

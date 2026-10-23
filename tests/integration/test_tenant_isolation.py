@@ -220,6 +220,7 @@ EXEMPT = {
     "membership_of": "a person's role in a named workspace: people are global",
     "principal_for_session": "a signed-in person's identity: global",
     "switch_workspace": "a person's own session: checks their membership",
+    "switch_session": "a person's own session: checks their membership",
     "invitation_preview": "found by its secret token, before a workspace is known",
     "accept_invitation": "found by its secret token, before a workspace is known",
     "purge_workspaces": "the operator's schedule: purges deleted workspaces past their grace",

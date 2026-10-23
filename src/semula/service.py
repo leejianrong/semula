@@ -974,10 +974,19 @@ class Service:
     def switch_workspace(self, secret: str, workspace_id: str) -> bool:
         """Work in another workspace the person belongs to. False if they do not."""
         session = self.authenticate_session(secret)
-        if session is None or self.membership_of(session["person_id"], workspace_id) is None:
+        return session is not None and self.switch_session(session["session_id"], workspace_id)
+
+    def switch_session(self, session_id: str, workspace_id: str) -> bool:
+        """The same, for a session named by the id ``authenticate_session`` reports (the
+        dashboard never holds the cookie's secret). False if there is no such session or the
+        person does not belong to that workspace."""
+        row = self.db.for_workspace(None).one(
+            sa.select(SE.c.person_id).where(SE.c.id == session_id)
+        )
+        if row is None or self.membership_of(row["person_id"], workspace_id) is None:
             return False
         self.db.for_workspace(None).execute(
-            sa.update(SE).where(SE.c.id == tok.digest(secret)).values(active_workspace=workspace_id)
+            sa.update(SE).where(SE.c.id == session_id).values(active_workspace=workspace_id)
         )
         return True
 

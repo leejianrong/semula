@@ -5,7 +5,7 @@
 PORT ?= 8080
 FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: docs docs-serve run demo docker image-check image-smoke release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: docs docs-serve run demo docker image-check image-smoke image-smoke-hosted release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -43,6 +43,9 @@ image-check: ## Build the image and enforce its size, cold-start and /data budge
 
 image-smoke: ## Start IMAGE (default semula:check) and check /health, /v1, a miss and /ui (needs Docker)
 	scripts/smoke_image.sh $(or $(IMAGE),semula:check)
+
+image-smoke-hosted: ## Check a hosted image (IMAGE, default semula:hosted-check, built with the hosted and postgres extras)
+	scripts/smoke_image_hosted.sh $(or $(IMAGE),semula:hosted-check)
 
 release-check: ## Would TAG (like v0.1.0) release? Tag, pyproject, lockfile and CHANGELOG must agree
 	python3 scripts/release.py check $(TAG)

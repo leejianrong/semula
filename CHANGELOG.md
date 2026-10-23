@@ -8,6 +8,17 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Added
+
+- **A hosted image**, `ghcr.io/leejianrong/semula:<version>-hosted` (also `<major>.<minor>-hosted`
+  and `latest-hosted`), published beside the default one from the next release on. It adds the
+  sign-in (PyJWT) and Postgres (psycopg) drivers and is about 22 MB larger; the release smoke-tests
+  it by minting a token in it and calling with and without that token. Hosting 0.2.0 still needs
+  your own build (`--build-arg UV_EXTRAS="--extra hosted --extra postgres"`).
+- **A workspace switcher** in the hosted dashboard for people who belong to more than one
+  workspace. The choice is kept by the sign-in; the open tab ends and a reload opens the new
+  workspace (the dashboard framework cannot reload a page from the server).
+
 ## [0.2.0] - 2026-10-23
 
 This release adds hosted semula (one server for several teams, with sign-in, roles and API

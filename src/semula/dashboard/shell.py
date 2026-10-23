@@ -242,9 +242,45 @@ def account(tab: Tab, who: indah.Principal) -> indah.Component:
         children=[
             indah.Text(f"**{who.name or who.email}**", markdown=True, size="body"),
             indah.Text(f"{role} in {who.workspace}", size="body"),
+            *workspace_switcher(tab, who),
             indah.Button("Sign out", sign_out, variant="outlined"),
         ]
     )
+
+
+def workspace_switcher(tab: Tab, who: indah.Principal) -> list[indah.Component]:
+    """A person in several workspaces picks the one to work in. Their sign-in remembers it, but
+    a tab is signed for one workspace, so this tab is ended and the page must be reloaded: a
+    server cannot reload a tab (indah has no such message), so it says so."""
+    mine = [w["workspace_id"] for w in tab.service.workspaces_of(who.id)]
+    if len(mine) < 2:
+        return []
+    chosen: indah.Signal[str] = indah.Signal(str(who.workspace))
+    note: indah.Signal[str] = indah.Signal("")
+
+    async def switch() -> None:
+        target = chosen.peek()
+        if target == who.workspace:
+            return
+        done = await blocking(
+            tab.service.switch_session, str(who.claims.get("session_id", "")), target
+        )
+        if not done:
+            chosen.set(str(who.workspace))
+            note.set(f"You do not belong to {target}.")
+            return
+        note.set(f"Now working in {target}. Reload this page to continue.")
+        tab.ctx.sign_out()  # this tab (and the person's others) end; the reload starts afresh
+
+    def on_pick() -> None:
+        chosen.value  # noqa: B018 (reading it is the point: act when the person picks)
+        tab.ctx.on_close(partial(cancel, asyncio.get_running_loop().create_task(switch())))
+
+    indah.effect(on_pick)
+    return [
+        indah.Select(chosen, options=mine, label="Workspace"),
+        indah.Text(lambda: note.value, size="body"),
+    ]
 
 
 def build_waiting_session(ctx: indah.Context, who: indah.Principal | None) -> indah.Session:
