@@ -20,7 +20,7 @@ gh auth token | docker login ghcr.io -u <your-github-user> --password-stdin
 ```
 
 To run a different version, set `SEMULA_IMAGE`, for example
-`SEMULA_IMAGE=ghcr.io/leejianrong/semula:0.1.0 docker compose up -d --wait`. To use an image you
+`SEMULA_IMAGE=ghcr.io/leejianrong/semula:0.2.0 docker compose up -d --wait`. To use an image you
 built yourself, set it to that tag.
 
 ## Three ways in
