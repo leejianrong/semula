@@ -37,3 +37,20 @@ A running list from building the dashboard (SEM-E10) on indah 0.3.0. Each item s
 
 - **Event handlers run on the event loop.** A synchronous `on_click` that touches the database blocks every tab. We use `async def` handlers that call the service through `asyncio.to_thread`. A line in the guide would save others from finding this the hard way.
 - **`POST /api/event` has no Origin check and parses JSON whatever the content type**, so a page on another site can send it (a `text/plain` body is a CORS "simple request"). An event with no `sid` goes to one shared `default` session built by the session factory. A tab's own session id is unguessable, so a stranger cannot drive someone's tab, but the shared session is reachable by anyone who can reach the port. This is indah's H2. For now semula switches the dashboard off whenever `SEMULA_API_KEY` is set, and relies on loopback otherwise.
+
+## The hosted dashboard on indah 0.4 (SEM-91, SEM-55)
+
+Checked while building the sign-in gate, the per-role shell and the four admin screens, and in Chromium under the strict CSP (no console errors, no violations). Outcome and the decision are in ADR-0012.
+
+**What worked first time:** `auth` with `Policy` and `ctx.can` (a control a role may not use is simply not built, so it is not in the snapshot); `ctx.sign_out()`; the origin and session-token checks (a session id minted for one person is refused for another); `secure`, `csp="strict"` and `security_headers`; `SecretReveal` (the secret is one patch to one tab, in no snapshot and no second tab); `Button(confirm=)` and `RowAction(confirm=)`.
+
+**Gaps:**
+
+- **`RowAction`s are addressed by position** (`a0`, `a1`, ... in the order given). A test or a protocol client has to know the order; a name would survive reordering.
+- **A row action's label is the same on every row.** The Members table offers "Make viewer" on a viewer; it cannot be hidden or relabelled per row.
+- **No form.** Three signals and a button have no "invalid" or "disabled until filled" state and no per-field error, so the screens show the service's refusal in a line of plain text (`code: message`).
+- **`find` by type finds every route's component.** Every route is built for every tab, so a test looking for "the" `SecretReveal` gets the first one on any page; tests must name it by `label`. (A restatement of the existing note on routes, now with a consequence for tests.)
+- **`Select` options are fixed at build**, so the token screen's project list misses a project created after the tab opened (same as the project switcher).
+- **A `ClientDisconnect` traceback is logged** by `POST /api/session` when the browser navigates away while it is in flight. Harmless, but noisy in a server log.
+- **An ephemeral value is sent as an ordinary patch** (`props.value` of the node), so a test, or a person reading the wire, sees it; that is expected ("to the open tab only") and worth saying in the docs, since "never in a snapshot" is not "never on the wire".
+- **A plain `Text` is still heading-sized** and `size="body"` is needed on every sentence (see the 0.3 list).
