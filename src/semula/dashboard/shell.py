@@ -16,6 +16,7 @@ from .pages.log import log_page
 from .pages.pending import pending_page
 from .pages.playground import playground_page
 from .pages.review import review_page
+from .pages.workspace import audit_page, members_page, tokens_page, usage_page
 from .state import Dash, blocking, cancel, every
 
 EMPTY_STATS: dict[str, Any] = {"hit_rate": None, "median_latency_ms": None, "parked": 0}
@@ -30,11 +31,13 @@ class Tab:
         dash: Dash,
         service: Service,
         who: indah.Principal | None = None,
+        public_url: str = "",
     ) -> None:
         self.ctx = ctx
         self.dash = dash
         self.service = service  # as the person acting (hosted), else the server itself
         self.who = who  # the signed-in person when hosted; None locally, where all is allowed
+        self.public_url = public_url  # for links an admin sends (an invitation)
         self.project = indah.computed(lambda: ctx.params.value.get("project") or "default")
         self.projects: list[str] = dash.project_ids()
         self.counts: indah.Signal[dict[str, int]] = indah.Signal({"pending": 0, "review": 0})
@@ -54,6 +57,11 @@ class Tab:
     def can(self, perm: str) -> bool:
         """May the person here ``view``, ``edit`` or ``manage``? Locally everything is allowed."""
         return True if self.who is None else bool(self.ctx.can(perm))
+
+    @property
+    def administers(self) -> bool:
+        """A signed-in admin: members, tokens, audit and usage are hosted-only screens."""
+        return self.who is not None and self.can("manage")
 
     def only(self, perm: str, build: Callable[[], indah.Component]) -> list[indah.Component]:
         """``build()`` for someone who may ``perm``, else nothing: a control that is only hidden is
@@ -151,8 +159,22 @@ def nav(tab: Tab) -> indah.Component:
                 align="center",
             ),
             *tab.only("edit", lambda: indah.Switch(tab.recording, label="Record")),
+            *workspace_links(tab),
         ]
     )
+
+
+def workspace_links(tab: Tab) -> list[indah.Component]:
+    """Admins only: the workspace's own screens, not tied to a project."""
+    if not tab.administers:
+        return []
+    return [
+        indah.Text("**Workspace**", markdown=True, size="body"),
+        indah.Link(tab.ctx, "Members", to="/workspace/members", match="prefix"),
+        indah.Link(tab.ctx, "Tokens", to="/workspace/tokens", match="prefix"),
+        indah.Link(tab.ctx, "Audit", to="/workspace/audit", match="prefix"),
+        indah.Link(tab.ctx, "Usage", to="/workspace/usage", match="prefix"),
+    ]
 
 
 def _chosen(tab: Tab) -> indah.Signal[str]:
@@ -177,9 +199,13 @@ def _chosen(tab: Tab) -> indah.Signal[str]:
 
 
 def build_session(
-    ctx: indah.Context, dash: Dash, service: Service, who: indah.Principal | None = None
+    ctx: indah.Context,
+    dash: Dash,
+    service: Service,
+    who: indah.Principal | None = None,
+    public_url: str = "",
 ) -> indah.Session:
-    tab = Tab(ctx, dash, service, who)
+    tab = Tab(ctx, dash, service, who, public_url)
     routes: dict[str, indah.Component] = {
         "/projects/{project}/log": log_page(tab),
         "/projects/{project}/pending": pending_page(tab),
@@ -189,6 +215,11 @@ def build_session(
     }
     if tab.can("edit"):  # test_match is an editor's tool
         routes["/projects/{project}/playground"] = playground_page(tab)
+    if tab.administers:  # an admin's, and only built for one
+        routes["/workspace/members"] = members_page(tab)
+        routes["/workspace/tokens"] = tokens_page(tab)
+        routes["/workspace/audit"] = audit_page(tab)
+        routes["/workspace/usage"] = usage_page(tab)
     pages = indah.Router(
         ctx,
         routes=routes,

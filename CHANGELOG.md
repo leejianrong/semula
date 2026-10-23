@@ -10,6 +10,14 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **The hosted dashboard** (ADR-0010): with a sign-in provider set up, `/ui` is behind sign-in.
+  A page load without one goes to the sign-in page and the app's own calls get a 401; a session
+  belongs to one person and one workspace and sees only its data. Viewers, editors and admins are
+  given different controls (a control a role may not use is not sent to the browser) and the role
+  is read again on every action, so a demotion or removal takes effect at the next click. Admins
+  get Members (roles, remove, invite: the link is shown once), Tokens (create, rotate, revoke:
+  the secret is shown once), Audit (filter, paging) and Usage, with deleting the workspace by
+  typing its id back. A strict content security policy and security headers are on.
 - **Members, roles and invitations** (migration 0017, ADR-0010): viewer, editor and admin, per
   workspace; the last admin cannot leave or be demoted; invitations by email, single use, seven
   days, accepted only by a signed-in person whose verified email matches; `/auth/invite/<token>`;

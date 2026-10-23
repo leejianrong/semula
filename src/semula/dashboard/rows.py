@@ -481,3 +481,25 @@ def _size(n: int) -> str:
         if n >= size:
             return f"{n / size:.1f} {unit}"
     return f"{n} B"
+
+
+# What the audit screen's filter offers: every action the service records (a unit test reads
+# the service's source and fails when one is missing here).
+AUDIT_ACTIONS = (
+    "candidate.approve", "candidate.reject", "entry.delete", "entry.forced_delete",
+    "entry.forced_write", "invitation.accept", "invitation.create", "invitation.revoke",
+    "member.remove", "member.role", "project.create", "project.delete", "project.import",
+    "project.mode", "project.rename", "project.settings", "token.create", "token.revoke",
+    "token.rotate", "workspace.create", "workspace.delete", "workspace.purge",
+    "workspace.restore",
+)  # fmt: skip
+AUDIT_PAGE = 50
+ROLES = ("viewer", "editor", "admin")
+TOKEN_SCOPES = ("replay", "record", "admin")
+ALL_PROJECTS = "All projects"
+ALL_ACTIONS = "All actions"
+
+
+def invite_link(public_url: str, token: str) -> str:
+    """The link an admin sends: opening it signed in as the invited address accepts it."""
+    return f"{public_url.rstrip('/')}/auth/invite/{token}"

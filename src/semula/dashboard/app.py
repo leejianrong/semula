@@ -68,7 +68,13 @@ def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
             live_role=lambda: service.membership_of(user.id, workspace),
         )
         acting = service.for_scope(Scope(user.workspace, person))
-        return build_session(ctx, dashes.get(user.workspace), acting, who=user)
+        return build_session(
+            ctx,
+            dashes.get(user.workspace),
+            acting,
+            who=user,
+            public_url=settings.public_url if settings else "",
+        )
 
     options: dict[str, Any] = {}
     if hosted and settings is not None:

@@ -1,12 +1,12 @@
 # Host semula for a team
 
-Locally, semula trusts whoever can reach its port. To share one server between teams or projects, turn on hosted mode: every call then carries an **API token**, and the token decides which workspace, which project and what it may do. This page is the operator's view. It covers what exists today; people signing in, roles and the hosted dashboard are still to come, so the list of [what is missing](#what-is-not-there-yet) is worth a read.
+Locally, semula trusts whoever can reach its port. To share one server between teams or projects, turn on hosted mode: every call then carries an **API token**, and the token decides which workspace, which project and what it may do. This page is the operator's view, and the list of [what is missing](#what-is-not-there-yet) is worth a read.
 
 ```bash
 SEMULA_HOSTED=on SEMULA_DATABASE_URL=postgresql://... semula serve
 ```
 
-In hosted mode the open dashboard is off, and `X-Semula-Actor` means nothing. `/health` stays open for load balancers.
+In hosted mode the dashboard is off until a sign-in provider is set up (then it is behind that sign-in; see [the dashboard](#the-dashboard)), and `X-Semula-Actor` means nothing. `/health` stays open for load balancers.
 
 ## Workspaces and tokens
 
@@ -186,7 +186,19 @@ The log keeps ids, key names and counts, never a prompt, an answer or a secret: 
 
 Hosting wants Postgres. Every tenant table has a [row-level-security](../reference/configuration.md) policy on `workspace_id`, so a query that forgot its filter sees nothing of another workspace's. The role that owns the tables, and any superuser, bypasses it. Migrate as the owner, then run semula as a role that is neither.
 
+## The dashboard
+
+With a sign-in provider configured, `/ui` is the same dashboard as locally, behind sign-in. A page load without a sign-in goes to `/auth/login`; the dashboard's own calls get a 401. It shows one workspace, the one the person is working in, and what it offers follows their role: a **viewer** can read the log, entries, review and pending, an **editor** also answers, edits, approves and turns recording on, and controls a role may not use are not sent to the browser at all. The role is read again on every action, so an admin who demotes or removes someone is obeyed at that person's next click, with no wait for them to sign in again. A person who belongs to no workspace sees only a page saying so.
+
+An **admin** also gets a *Workspace* section in the sidebar:
+
+- **Members.** Everyone in the workspace with their role, to change or remove (the last admin cannot be demoted or removed, and the screen says why), and the open invitations to revoke. *Invite someone* takes an email and a role and shows the link once, in a box with a Copy button: `https://<your host>/auth/invite/<token>`. Reloading the page, or opening another tab, never shows it again; make a new invitation instead.
+- **Tokens.** Every API token with its scope, project, the start of its secret and when it was last used. *New token* takes a name, a scope and, optionally, one project; the secret is shown once, like an invitation link. *Rotate* makes a successor and lets the old token run for 24 hours; *Revoke* stops one now (immediately on the replica that serves the click, within 30 seconds on the others).
+- **Audit.** The [audit log](#the-audit-log), newest first, 50 to a page, filterable by action.
+- **Usage.** What the workspace holds against its [limits](#limits), and *Delete this workspace*, which needs the workspace id typed back and can be undone with *Restore* during the 30 days.
+
+Every one of these calls the same service as the REST API and the CLI, so the rules do not differ by surface: an editor who crafts the request by hand gets `insufficient_role` from the service, not from the screen.
+
 ## What is not there yet
 
-- **The dashboard behind sign-in.** People, roles and invitations exist; the screens that use them (members, tokens, the audit log, usage) are next, and the open dashboard stays off while hosted.
-- **A delete button.** A signed-in admin will delete a workspace from the dashboard; today it is the operator's command.
+- **A workspace switcher.** A person who belongs to several workspaces works in the one they joined first. The service can switch a session to another (`switch_workspace`), but no screen or route offers it yet.
