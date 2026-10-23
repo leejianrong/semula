@@ -9,10 +9,10 @@ Everything is in one place: the SQLite file `semula.db` in the data directory (`
 Replace the container with the new image. The volume stays, and semula upgrades the database itself on start:
 
 ```bash
-docker pull ghcr.io/leejianrong/semula:0.1.0
+docker pull ghcr.io/leejianrong/semula:0.2.0
 docker stop semula && docker rm semula
 docker run -d --name semula -p 127.0.0.1:8080:8080 \
-  -v semula-data:/data ghcr.io/leejianrong/semula:0.1.0
+  -v semula-data:/data ghcr.io/leejianrong/semula:0.2.0
 ```
 
 Three things to know:
@@ -23,7 +23,7 @@ Three things to know:
     ```
     error: This database was made by a newer semula (revision 0009) and cannot be downgraded. Run a release at least as new as the one that wrote it, or restore a backup taken before the upgrade.
     ```
-- **Pin a version in anything shared.** `ghcr.io/leejianrong/semula:latest` moves. Use `:0.1.0`, or `:0.1` to follow patch releases.
+- **Pin a version in anything shared.** `ghcr.io/leejianrong/semula:latest` moves. Use `:0.2.0`, or `:0.2` to follow patch releases.
 
 ## Back up
 

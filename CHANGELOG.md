@@ -8,6 +8,27 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-23
+
+This release adds hosted semula (one server for several teams, with sign-in, roles and API
+tokens) and the rest of the dashboard. Local use is unchanged.
+
+**Before you upgrade, back up your data** (see [Upgrade and back up](docs/guide/upgrade-and-backup.md)).
+Migrations 0010 to 0017 run on start. On SQLite, 0010 rebuilds six tables, so it takes longer on a
+large file and cannot be undone by installing 0.1.0 again.
+
+**Hosted mode needs more than the default image.** Signing in uses PyJWT (the `hosted` extra),
+and hosting wants Postgres (the `postgres` extra); the published image has neither, to stay
+small. Build your own with
+`docker build --build-arg UV_EXTRAS="--extra hosted --extra postgres" .`
+(see [Host semula for a team](docs/guide/hosted.md)). The published image and the CLI binaries
+are for local use.
+
+### Changed
+
+- The always-on laptop service (`deploy/laptop`) listens on port 8731 by default instead of 8787.
+  Set `SEMULA_PORT` to keep the old one.
+
 ### Added
 
 - **The hosted dashboard** (ADR-0010): with a sign-in provider set up, `/ui` is behind sign-in.
