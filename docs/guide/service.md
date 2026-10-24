@@ -42,7 +42,7 @@ SEMULA_UPSTREAM_KEY=sk-... semula serve        # optionally SEMULA_UPSTREAM_URL 
 semula project settings game --set '{"mode": "record", "record_through": true, "upstream_max_calls": 200}'
 ```
 
-A miss in that project calls the provider once, saves the answer (chunks and usage if your app streams) and returns it. The same prompt replays from then on with no call. It only happens in `record` mode; replay mode fails a miss fast as always.
+Copy `.env.example` to `.env` for the variables (it is git-ignored) and start with `uv run --env-file .env semula serve`. A miss in that project calls the provider once, saves the answer (chunks and usage if your app streams) and returns it. The same prompt replays from then on with no call. It only happens in `record` mode; replay mode fails a miss fast as always.
 
 - The key lives only in the server's environment. It is never stored, logged, exported or shown in an error.
 - `upstream_max_calls` (default 100) is a hard ceiling per project. A miss after it fails with `semula_upstream_budget`; recorded answers keep replaying. A failed call does not count.
