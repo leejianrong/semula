@@ -56,6 +56,7 @@ Both were run against the container on 2026-10-22 (Claude Code 2.1.308, Codex CL
 | `test_match` | `semula test-match --prompt "..."` or `--file request.json` |
 | `list_calls` | `semula log [--project P] [--outcome miss]`; `semula tail` follows live (`--json` for one object per line) |
 | `entry_history` | `semula entry history <id>`; `--version N` shows that revision in full |
+| `get_upstream_usage` | `semula project upstream <id>` (calls and tokens forwarded to a real provider against the caps; `--reset` counts again) |
 | `log_stats` | `semula log --stats [--window 30m] [--project P]` |
 | (no MCP tool) | `semula export <project> --dir DIR`, `semula import DIR`: cassettes as files for git |
 | (status in `get_status`) | `semula embeddings status` |
