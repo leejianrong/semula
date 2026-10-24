@@ -33,6 +33,22 @@ The direct port stays published, so both ways work at once. Without Traefik, lea
 !!! note "`*.localhost` is the browser's"
     Browsers resolve `semula.localhost`; `curl` and most language runtimes do not. From those, use the port, or add `127.0.0.1 semula.localhost` to `/etc/hosts`.
 
+## Record through a real model
+
+Normally a miss waits for a coding agent to answer it. To capture a real model's answers once and replay them for free, point semula at a provider and let one project forward its misses:
+
+```bash
+SEMULA_UPSTREAM_KEY=sk-... semula serve        # optionally SEMULA_UPSTREAM_URL for a compatible provider
+semula project settings game --set '{"mode": "record", "record_through": true, "upstream_max_calls": 200}'
+```
+
+A miss in that project calls the provider once, saves the answer (chunks and usage if your app streams) and returns it. The same prompt replays from then on with no call. It only happens in `record` mode; replay mode fails a miss fast as always.
+
+- The key lives only in the server's environment. It is never stored, logged, exported or shown in an error.
+- `upstream_max_calls` (default 100) is a hard ceiling per project. A miss after it fails with `semula_upstream_budget`; recorded answers keep replaying. A failed call does not count.
+- `upstream_model` sends a different model upstream than the app asked for.
+- Forwarding spends the operator's money. On a hosted server a workspace admin can turn it on only if the operator set `SEMULA_UPSTREAM_TENANTS=on`.
+
 ## Give each project its own recordings
 
 Create one semula project per app, set the project in the URL (`/v1/projects/<id>`) or with the `X-Semula-Project` header, and keep each app's mode separate. See [One project per app](../tutorial/projects.md).

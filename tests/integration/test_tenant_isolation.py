@@ -104,6 +104,14 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
     "mode_of": lambda w: missing(lambda: w.a.mode_of("shop"), "project_not_found"),
     "record_timeout": lambda w: missing(lambda: w.a.record_timeout("shop"), "project_not_found"),
     "list_models": lambda w: missing(lambda: w.a.list_models("shop"), "project_not_found"),
+    "through_enabled": lambda w: missing(lambda: w.a.through_enabled("shop"), "project_not_found"),
+    "upstream_usage_of": lambda w: missing(
+        lambda: w.a.upstream_usage_of("shop"), "project_not_found"
+    ),
+    "forward_miss": lambda w: missing(
+        lambda: asyncio.run(w.a.forward_miss(req("x"), {"messages": []}, "shop")),
+        "project_not_found",
+    ),
     "update_project": lambda w: missing(
         lambda: w.a.update_project("shop", name="mine now"), "project_not_found"
     ),

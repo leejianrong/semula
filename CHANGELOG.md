@@ -10,6 +10,13 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- **Record-through** (SEM-92, [ADR-0013](docs/adr/0013-record-through-and-its-budget.md)): a project
+  can forward a miss to a real OpenAI-compatible provider, save the answer (chunks and usage when
+  streamed) and replay it free afterwards. Off by default and per project: set `record_through`
+  with the project in record mode and `SEMULA_UPSTREAM_KEY` on the server. The key lives only in
+  the server's environment and is never stored, logged, exported or echoed in an error. Each
+  project has a hard cap, `upstream_max_calls` (default 100); past it a miss fails with
+  `semula_upstream_budget`. Replay mode never forwards. Migration 0018 adds the counter table.
 - **A hosted image**, `ghcr.io/leejianrong/semula:<version>-hosted` (also `<major>.<minor>-hosted`
   and `latest-hosted`), published beside the default one from the next release on. It adds the
   sign-in (PyJWT) and Postgres (psycopg) drivers and is about 22 MB larger; the release smoke-tests

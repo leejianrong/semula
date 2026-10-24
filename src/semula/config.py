@@ -91,6 +91,12 @@ class Settings:
     auth_providers: dict[str, Provider] = field(default_factory=dict)
     quotas: Quotas = field(default_factory=Quotas)
     database_url: str | None = field(default=None, repr=False)  # may hold a password
+    # Record-through (ADR-0013): the real provider a project may forward a miss to. The key lives
+    # here and nowhere else; it is never stored, logged, exported or echoed in an error.
+    upstream_url: str = "https://api.openai.com/v1"
+    upstream_key: str | None = field(default=None, repr=False)
+    upstream_timeout: float = 120.0
+    upstream_tenants: bool = False  # hosted: may a workspace admin turn forwarding on?
 
     @property
     def db_path(self) -> Path:
@@ -133,6 +139,12 @@ class Settings:
             auth_providers=providers_from_env(dict(os.environ)),
             quotas=_quotas_from_env(_flag(os.environ.get("SEMULA_HOSTED", "off"))),
             database_url=os.environ.get("SEMULA_DATABASE_URL") or None,
+            upstream_url=os.environ.get("SEMULA_UPSTREAM_URL", "https://api.openai.com/v1").rstrip(
+                "/"
+            ),
+            upstream_key=os.environ.get("SEMULA_UPSTREAM_KEY") or None,
+            upstream_timeout=float(os.environ.get("SEMULA_UPSTREAM_TIMEOUT", "120")),
+            upstream_tenants=_flag(os.environ.get("SEMULA_UPSTREAM_TENANTS", "off")),
             models=tuple(
                 m.strip() for m in os.environ.get("SEMULA_MODELS", "semula").split(",") if m.strip()
             ),

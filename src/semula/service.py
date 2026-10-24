@@ -45,7 +45,7 @@ from .exchange import FORMAT
 from .ids import new_ulid
 from .lexical import make_index, similarity
 from .oidc import Identity
-from .project_settings import FINGERPRINT_FIELDS, ProjectSettings
+from .project_settings import FINGERPRINT_FIELDS, OPERATOR_FIELDS, ProjectSettings
 from .responses import parse_answer, validate_tool_calls
 from .roles import LEVEL as ROLE_LEVEL
 from .roles import needs
@@ -64,9 +64,11 @@ from .schema import pending as Q
 from .schema import person as PE
 from .schema import person_session as SE
 from .schema import project as P
+from .schema import upstream_usage as UU
 from .schema import workspace as WS
 from .schema import workspace_usage as U
 from .scope import Principal, Scope
+from .upstream import Upstream
 
 log = logging.getLogger("semula.service")
 
@@ -88,6 +90,7 @@ TOOL_CALLS_LIKE = '%"tool_calls": [%'
 
 STATS_OUTCOMES = {
     "hit": "hits",
+    "forwarded": "forwarded",
     "miss": "misses",
     "recorded": "recorded",
     "record_timeout": "timed_out",
@@ -146,9 +149,16 @@ class _TokenState:
 
 
 class Service:
-    def __init__(self, db: Database, settings: Settings, embedder: Embedder | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        settings: Settings,
+        embedder: Embedder | None = None,
+        upstream_transport: Any = None,
+    ) -> None:
         self.db = db.for_workspace(DEFAULT_WORKSPACE)
         self.settings = settings
+        self.upstream = Upstream(settings, upstream_transport)
         # Held calls waiting on an answer: pending id -> [(their event loop, their event)].
         # Answers arrive on worker threads, so waking a waiter must go through its loop.
         self._waiters: dict[str, list[tuple[asyncio.AbstractEventLoop, asyncio.Event]]] = {}
@@ -1374,6 +1384,23 @@ class Service:
                     str(first["msg"]).removeprefix("Value error, "),
                     param=where,
                 ) from exc
+            if after.record_through and not before.record_through:
+                if not self.upstream.configured:
+                    raise SemulaError(
+                        422,
+                        "upstream_not_configured",
+                        "This server has no upstream key (SEMULA_UPSTREAM_KEY), so a project "
+                        "cannot forward misses.",
+                        param="settings.record_through",
+                    )
+                if self.settings.hosted and not self.settings.upstream_tenants:
+                    raise SemulaError(
+                        403,
+                        "forbidden",
+                        "Forwarding to an upstream provider is off on this server.",
+                        err_type="authentication_error",
+                        param="settings.record_through",
+                    )
             longest = self.settings.quotas.record_timeout_max
             if longest is not None and after.record_timeout and after.record_timeout > longest:
                 raise SemulaError(
@@ -1939,6 +1966,20 @@ class Service:
                 existing["id"], version, {"response": response}, actor=actor, force=force
             )
             return entry, False
+        entry_id = self._insert_entry(project, req, config, fp, response, actor, "created")
+        return self.get_entry(entry_id), True
+
+    def _insert_entry(
+        self,
+        project: str,
+        req: CanonicalRequest,
+        config: FingerprintConfig,
+        fp: str,
+        response: Any,
+        actor: str,
+        summary: str,
+    ) -> str:
+        """Validate ``response`` and save it as a new entry for ``req``; return the entry id."""
         stored = parse_answer(response)
         validate_tool_calls(stored, req.tools)
         entry_id = new_ulid()
@@ -1961,11 +2002,11 @@ class Service:
             )
             self._index(entry_id, project, req, config, conn)
             superseded = self._supersede(conn, project, fp)
-            self._revise(conn, entry_id, 1, actor, "created", [stored], "first", False)
+            self._revise(conn, entry_id, 1, actor, summary, [stored], "first", False)
         if superseded:
             self._queues_changed(project)
         self._entries_changed(project)
-        return self.get_entry(entry_id), True
+        return entry_id
 
     @needs("viewer")
     def get_entry(self, entry_id: str) -> dict[str, Any]:
@@ -2341,7 +2382,7 @@ class Service:
                 "id": slug,
                 "name": project["name"],
                 "settings": self.project_settings(slug).model_dump(
-                    exclude_defaults=True, exclude={"mode"}
+                    exclude_defaults=True, exclude=set(OPERATOR_FIELDS)
                 ),
             },
             "entries": entries,
@@ -2946,6 +2987,119 @@ class Service:
         self._entries_changed(row["project_id"])
         return entry_id
 
+    # --- record-through (ADR-0013) ------------------------------------------------------
+    @needs("viewer")
+    def through_enabled(self, project: str) -> bool:
+        """Does a miss in ``project`` go to the upstream provider? Only in record mode, only when
+        the project opted in, and only when the server holds a key. Replay never forwards."""
+        settings = self.project_settings(project)
+        return (
+            settings.record_through
+            and self.upstream.configured
+            and (settings.mode or self.default_mode) == "record"
+        )
+
+    @needs("viewer")
+    def upstream_usage_of(self, project: str) -> dict[str, Any]:
+        """What ``project`` has spent forwarding upstream, against its cap."""
+        self.require_project(project)
+        row = self.db.one(sa.select(UU).where(*self._upstream_key(project)))
+        return {
+            "project": project,
+            "calls": int(row["calls"]) if row else 0,
+            "max_calls": self.project_settings(project).upstream_max_calls,
+            "prompt_tokens": int(row["prompt_tokens"]) if row else 0,
+            "completion_tokens": int(row["completion_tokens"]) if row else 0,
+        }
+
+    def _upstream_key(self, project: str) -> tuple[Any, Any]:
+        return (UU.c.workspace_id == self.workspace_id, UU.c.project_id == project)
+
+    def _reserve_upstream(self, project: str, cap: int) -> None:
+        """Count a call before it is made. One guarded UPDATE, so concurrent misses cannot both
+        pass the cap; refused with 429 once it is spent."""
+        if self.db.dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            stmt: Any = (
+                pg_insert(UU)
+                .values(workspace_id=self.workspace_id, project_id=project)
+                .on_conflict_do_nothing()
+            )
+        else:
+            from sqlalchemy.dialects.sqlite import insert as lite_insert
+
+            stmt = (
+                lite_insert(UU)
+                .values(workspace_id=self.workspace_id, project_id=project)
+                .on_conflict_do_nothing()
+            )
+        with self.db.begin() as conn:
+            self.db.execute(stmt, conn)
+            done = self.db.execute(
+                sa.update(UU)
+                .where(*self._upstream_key(project), UU.c.calls < cap)
+                .values(calls=UU.c.calls + 1),
+                conn,
+            )
+        if not done:
+            raise SemulaError(
+                429,
+                "semula_upstream_budget",
+                f"Project {project!r} has used its {cap} upstream calls "
+                "(upstream_max_calls). Raise the cap or reset the count to forward more.",
+                err_type="semula_error",
+                extra={"upstream": {"calls": cap, "max_calls": cap}},
+            )
+
+    def _settle_upstream(self, project: str, calls: int, stored: dict[str, Any] | None) -> None:
+        """Take back a call that never cost anything, or add the tokens an answer used."""
+        usage = (stored or {}).get("usage") or {}
+        values: dict[str, Any] = {}
+        if calls:
+            values["calls"] = sa.case((UU.c.calls + calls < 0, 0), else_=UU.c.calls + calls)
+        for column in ("prompt_tokens", "completion_tokens"):
+            if isinstance(usage.get(column), int):
+                values[column] = UU.c[column] + usage[column]
+        if values:
+            self.db.execute(sa.update(UU).where(*self._upstream_key(project)).values(**values))
+
+    async def forward_miss(
+        self, req: CanonicalRequest, body: dict[str, Any], project: str
+    ) -> tuple[dict[str, Any], str, bool]:
+        """Answer a miss from the upstream provider: (stored answer, entry id, whether a call was
+        made). Identical misses at once make one call; the rest share its answer."""
+        config = self.project_settings(project).fingerprint_config()
+        fp = normalised_fingerprint(req, config)
+
+        async def work() -> tuple[dict[str, Any], str, bool]:
+            again = await run_in_threadpool(self.lookup, req, project)
+            if again.match:  # an identical miss finished just before us
+                return again.match.stored, again.match.entry_id, False
+            settings = await run_in_threadpool(self.project_settings, project)
+            await run_in_threadpool(self._reserve_upstream, project, settings.upstream_max_calls)
+            try:
+                payload = await self.upstream.complete(body, settings.upstream_model)
+                stored = parse_answer(payload)
+                validate_tool_calls(stored, req.tools)
+            except BaseException:
+                await run_in_threadpool(self._settle_upstream, project, -1, None)
+                raise
+            await run_in_threadpool(self._settle_upstream, project, 0, stored)
+            entry_id = await run_in_threadpool(
+                self._insert_entry,
+                project,
+                req,
+                config,
+                fp,
+                stored,
+                "agent",
+                "recorded from upstream",
+            )
+            return stored, entry_id, True
+
+        return await self.upstream.once((self.workspace_id, project, fp), work)
+
     # --- call log -----------------------------------------------------------------
     def log_call(
         self,
@@ -3146,7 +3300,9 @@ def _bundle_settings(raw: Any) -> ProjectSettings:
     """Settings from a bundle. A bundle never sets the mode: whether a project records is a
     decision about this server, and importing a file must not switch it."""
     try:
-        return ProjectSettings.model_validate(raw or {}).model_copy(update={"mode": None})
+        return ProjectSettings.model_validate(raw or {}).model_copy(
+            update={f: ProjectSettings.model_fields[f].get_default() for f in OPERATOR_FIELDS}
+        )
     except ValidationError as exc:
         first = exc.errors()[0]
         where = ".".join(["project", "settings", *(str(p) for p in first["loc"])])

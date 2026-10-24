@@ -75,6 +75,26 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             extra={"nearest": found.nearest},
         )
 
+    if await offload(service.through_enabled, project):
+        try:
+            answer, entry_id, called = await service.forward_miss(req, body, project)
+        except SemulaError:
+            await offload(partial(service.log_call, "miss", started, project=project, req=req))
+            raise
+        await offload(
+            partial(
+                service.log_call,
+                "forwarded" if called else "hit",
+                started,
+                tier=None if called else "exact",
+                entry_id=entry_id,
+                project=project,
+                count_hit=not called,
+                req=req,
+            )
+        )
+        return _respond(service, body, answer, model)
+
     pending_id = await offload(service.open_pending, req, project)
     timeout = await offload(service.record_timeout, project)
     stored = await service.wait_for_answer(pending_id, timeout)
