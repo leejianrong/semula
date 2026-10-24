@@ -5,7 +5,7 @@
 PORT ?= 8080
 FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: docs docs-serve run demo docker image-check image-smoke image-smoke-hosted release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -16,6 +16,9 @@ run: ## Run the server on the first free port from 8080; the dashboard is at /ui
 
 demo: ## Run with demo data and a moving log; prints the dashboard URL (ARGS=--record parks calls)
 	@uv run python scripts/demo.py --port $(PORT) $(ARGS)
+
+demo-video: ## Re-record docs/assets/semula-dashboard-demo.mp4 (needs ffmpeg, Chromium and the video-demo skill)
+	uv run --extra dev --with playwright python scripts/video/record_dashboard_demo.py
 
 docker: ## Build and run the container on the first free port from 8080
 	@P=$$($(FREE_PORT)); echo ">>> semula: http://127.0.0.1:$$P/health"; docker build -q -t semula:dev . && docker run --rm -p 127.0.0.1:$$P:8080 -v semula-data:/data semula:dev
