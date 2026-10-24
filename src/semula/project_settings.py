@@ -26,7 +26,14 @@ FINGERPRINT_FIELDS = (
 
 # Decisions about this server (and its money), not about the prompts: a bundle never carries them
 # and importing one never changes them.
-OPERATOR_FIELDS = ("mode", "record_through", "upstream_model", "upstream_max_calls")
+OPERATOR_FIELDS = (
+    "mode",
+    "record_through",
+    "upstream_model",
+    "upstream_max_calls",
+    "upstream_max_tokens",
+    "upstream_dry_run",
+)
 
 
 class ProjectSettings(BaseModel):
@@ -91,6 +98,23 @@ class ProjectSettings(BaseModel):
         description=(
             "Most calls this project may forward upstream; after that a miss fails with "
             "semula_upstream_budget until the count is reset. Never exported."
+        ),
+    )
+    upstream_max_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Most prompt plus completion tokens the project may spend upstream. Tokens are only "
+            "known after a call, so one call may overshoot; the next miss then fails with "
+            "semula_upstream_budget. Unset means calls are the only cap. Never exported."
+        ),
+    )
+    upstream_dry_run: bool = Field(
+        default=False,
+        description=(
+            "With record_through on, a miss is not forwarded: it fails with "
+            "semula_upstream_dry_run and is listed as what would have been called "
+            "(semula project upstream). Never exported."
         ),
     )
 

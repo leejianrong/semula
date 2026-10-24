@@ -11,6 +11,7 @@ Arguments marked `?` are optional. The tool descriptions the agent sees are long
 | `list_projects` |  | Projects with their entry and pending counts. |
 | `create_project` | `id` `name`? | Create a project (a slug: lowercase letters, digits, hyphens). |
 | `get_project_settings` | `id` | A project's matching and recording settings, with defaults. |
+| `get_upstream_usage` | `project` | Calls and tokens a project has forwarded upstream, its caps, and the prompts a dry run would forward. |
 | `update_project_settings` | `id` `settings` | Patch settings; `null` resets one. Changing a matching setting re-keys existing entries. |
 | `list_pending` | `project`? `include_answered`? | Parked requests waiting for an answer, oldest first. |
 | `wait_for_pending` | `project`? `timeout_seconds`? | Block until a call is parked (or return what already waits); empty at the timeout, 60 s at most. |

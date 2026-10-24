@@ -47,6 +47,7 @@ Errors come back as JSON with a 'code' and 'param'; fix what they name and resub
 # what a human decides. A tool not listed here is refused to tokens, so a new one is closed first.
 TOOL_SCOPES = {
     "get_status": "record", "list_projects": "record", "get_project_settings": "record",
+    "get_upstream_usage": "record",
     "list_pending": "record", "wait_for_pending": "record", "get_pending": "record",
     "answer_pending": "record", "list_entries": "record", "get_entry": "record",
     "entry_history": "record", "upsert_entry": "record", "update_entry": "record",
@@ -188,6 +189,16 @@ def build_mcp(base: Service) -> FastMCP:
     def get_project_settings(id: str) -> dict[str, Any]:
         """Show a project's matching and recording settings with their defaults."""
         return service.get_project(id)["settings"]  # type: ignore[no-any-return]
+
+    @tool
+    def get_upstream_usage(project: str) -> dict[str, Any]:
+        """How many calls and tokens a project has forwarded to the real upstream provider
+        (record-through), against its caps, and, in a dry run, the prompts it would have
+        forwarded ('would_forward')."""
+        return {
+            **service.upstream_usage_of(project),
+            "would_forward": service.upstream_dry_run_misses(project),
+        }
 
     @tool
     def update_project_settings(id: str, settings: dict[str, Any]) -> dict[str, Any]:

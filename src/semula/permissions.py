@@ -26,6 +26,7 @@ RULES: tuple[tuple[str, str, str], ...] = (
     ("GET", r"/api/v1/projects", "record"),
     ("GET", r"/api/v1/projects/[^/]+", "record"),
     ("GET", r"/api/v1/projects/[^/]+/entries", "record"),
+    ("GET", r"/api/v1/projects/[^/]+/upstream", "record"),
     ("POST", r"/api/v1/projects/[^/]+/entries", "record"),
     ("GET", r"/api/v1/entries/[^/]+", "record"),
     ("GET", r"/api/v1/entries/[^/]+/history", "record"),
@@ -50,6 +51,7 @@ RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/api/v1/candidates/[^/]+/approve", "admin"),
     ("POST", r"/api/v1/candidates/[^/]+/reject", "admin"),
     ("PUT", r"/api/v1/mode", "admin"),
+    ("POST", r"/api/v1/projects/[^/]+/upstream/reset", "admin"),
     ("GET", r"/api/v1/projects/[^/]+/export", "admin"),
     ("POST", r"/api/v1/import", "admin"),
 )

@@ -68,6 +68,8 @@ Matching and recording are tuned per project, not globally. Show them with `semu
 | `record_through` | `false` | Forward a miss to the server's upstream provider and save its answer. Needs the project in record mode and `SEMULA_UPSTREAM_KEY`. Never exported. |
 | `upstream_model` | none | Send this model upstream instead of the one the request names. Never exported. |
 | `upstream_max_calls` | `100` | Most calls the project may forward; a miss after that fails with `semula_upstream_budget`. Never exported. |
+| `upstream_max_tokens` | none | Most prompt plus completion tokens the project may spend upstream. Known only after a call, so one call can overshoot. Never exported. |
+| `upstream_dry_run` | `false` | With `record_through` on, forward nothing: a miss fails with `semula_upstream_dry_run` and is listed by `semula project upstream`. Never exported. |
 
 Changing a matching setting (`tail_n`, `scrub_patterns`, `include_params`) re-keys the project's existing entries. Nothing has to be re-recorded.
 
