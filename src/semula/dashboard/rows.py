@@ -11,6 +11,7 @@ OUTCOMES = {
     "hit": "Hit",
     "miss": "Miss",
     "recorded": "Recorded",
+    "forwarded": "Forwarded",
     "record_timeout": "Timed out",
     "forced_write": "Forced edit",
     "forced_delete": "Forced delete",
@@ -19,6 +20,7 @@ OUTCOME_TONES = {
     "Hit": "ok",
     "Miss": "warn",
     "Recorded": "info",
+    "Forwarded": "info",
     "Timed out": "err",
     "Forced edit": "warn",
     "Forced delete": "warn",
@@ -35,7 +37,7 @@ FILTERS: dict[str, tuple[str, ...] | None] = {
     "All": None,
     "Hits": ("hit",),
     "Misses": ("miss", "record_timeout"),
-    "Recorded": ("recorded",),
+    "Recorded": ("recorded", "forwarded"),
 }
 
 

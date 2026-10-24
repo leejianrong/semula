@@ -28,6 +28,9 @@ async def test_defaults_are_visible_and_documented_by_the_api(replay: httpx.Asyn
         "bm25_review_threshold": 0.6,
         "embedding_review_threshold": 0.75,
         "embedding_serve_threshold": None,
+        "record_through": False,
+        "upstream_model": None,
+        "upstream_max_calls": 100,
     }
 
 

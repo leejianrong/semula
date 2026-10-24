@@ -14,6 +14,8 @@ Some errors carry extra context at the top level: `current` on a 409 holds the e
 |---|---|---|
 | 424 | `semula_no_match` | Replay mode, and nothing recorded matches. `nearest` says what came closest. |
 | 504 | `semula_record_timeout` | Record mode, and nobody answered within `SEMULA_RECORD_TIMEOUT` (300 s by default). A late answer is still saved. |
+| 429 | `semula_upstream_budget` | The project forwards misses upstream and has used its `upstream_max_calls`. Raise the cap; recorded answers still replay. |
+| 502, 504 | `semula_upstream_error`, `semula_upstream_timeout` | The upstream provider refused, failed or did not answer. The message has its status; the key is never in it. The failed call is not counted against the cap. |
 | 401 | `invalid_api_key` | `SEMULA_API_KEY` is set and the request did not send it. |
 | 404 | `model_not_found` | `GET /v1/models/<id>` for a model this server does not list. Chat calls ignore the model name. |
 
@@ -36,5 +38,6 @@ The CLI exits `4` for 400, 409 and 422 and prints `error: <code>: <message> (at 
 | 400 | `version_required` | An edit needs the entry's current `version`. |
 | 400 | `invalid_json`, `invalid_request`, `nothing_to_update` | The request body is not what the route expects. |
 | 422 | `invalid_mode`, `invalid_selection`, `invalid_pinned`, `invalid_settings`, `invalid_project_id`, `invalid_param`, `invalid_bundle` | A value is out of range or malformed. `param` names it. |
+| 422 | `upstream_not_configured` | `record_through` was turned on but the server has no `SEMULA_UPSTREAM_KEY`. |
 | 503 | `mcp_unavailable` | The MCP endpoint could not start. |
 | 500 | `internal_error` | A bug. Please report it with the log line. |

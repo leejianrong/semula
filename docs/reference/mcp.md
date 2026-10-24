@@ -24,7 +24,7 @@ Arguments marked `?` are optional. The tool descriptions the agent sees are long
 | `delete_entry` | `id` `version` `force`? | Delete an entry at its current `version`. Pinned entries are refused unless forced. |
 | `test_match` | `project`? `prompt`? `request`? | What would happen to a request now: the tier, the entry, and why a miss missed. No side effects. |
 | `list_calls` | `project`? `outcome`? `limit`? | Recent calls, newest first, with a preview of the prompt. |
-| `log_stats` | `project`? `window`? | Per-minute counts, hit rate, median latency and how many calls are parked. |
+| `log_stats` | `project`? `window`? | Per-minute counts (including forwarded), hit rate, median latency and how many calls are parked. |
 | `list_candidates` | `project`? `include_decided`? | The review queue: near misses waiting for a decision. |
 | `get_candidate` | `id` | A candidate next to the entry it resembles. |
 | `approve_candidate` | `id` | Serve this prompt from that entry from now on. |

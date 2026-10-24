@@ -27,6 +27,10 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_EMBEDDINGS` | `off` | `on` turns on meaning-based matching. Needs the `embeddings` extra. |
 | `SEMULA_EMBEDDINGS_OFFLINE` | `off` | `on` forbids downloading the model; start fails if it is not cached. |
 | `SEMULA_MODEL_DIR` | `<data dir>/models` | Where the embedding model is stored. |
+| `SEMULA_UPSTREAM_KEY` | none | The API key of a real provider that projects with `record_through` forward misses to. Never stored, logged or exported. See [Record through a real model](../guide/service.md#record-through-a-real-model). |
+| `SEMULA_UPSTREAM_URL` | `https://api.openai.com/v1` | The provider's OpenAI-compatible base URL, no trailing slash. |
+| `SEMULA_UPSTREAM_TIMEOUT` | `120` | Seconds to wait for the provider. |
+| `SEMULA_UPSTREAM_TENANTS` | `off` | Hosted only: `on` lets a workspace admin turn `record_through` on with the operator's key. |
 | `SEMULA_URL` | `http://127.0.0.1:8080` | For the CLI: which server to talk to. |
 
 ## Protecting a server
@@ -61,6 +65,9 @@ Matching and recording are tuned per project, not globally. Show them with `semu
 | `bm25_review_threshold` | `0.6` | The floor for the review queue. |
 | `embedding_review_threshold` | `0.75` | Cosine score at which a paraphrase goes to review. |
 | `embedding_serve_threshold` | none | Serve paraphrases at this score. Unset means never. |
+| `record_through` | `false` | Forward a miss to the server's upstream provider and save its answer. Needs the project in record mode and `SEMULA_UPSTREAM_KEY`. Never exported. |
+| `upstream_model` | none | Send this model upstream instead of the one the request names. Never exported. |
+| `upstream_max_calls` | `100` | Most calls the project may forward; a miss after that fails with `semula_upstream_budget`. Never exported. |
 
 Changing a matching setting (`tail_n`, `scrub_patterns`, `include_params`) re-keys the project's existing entries. Nothing has to be re-recorded.
 

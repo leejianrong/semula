@@ -24,6 +24,10 @@ FINGERPRINT_FIELDS = (
     "redact_defaults",
 )
 
+# Decisions about this server (and its money), not about the prompts: a bundle never carries them
+# and importing one never changes them.
+OPERATOR_FIELDS = ("mode", "record_through", "upstream_model", "upstream_max_calls")
+
 
 class ProjectSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -68,6 +72,26 @@ class ProjectSettings(BaseModel):
         default=None,
         gt=0,
         description="Seconds a call is held in record mode (default: server-wide).",
+    )
+    record_through: bool = Field(
+        default=False,
+        description=(
+            "Opt in to forwarding a miss to the server's upstream provider (SEMULA_UPSTREAM_*) "
+            "and saving its answer. Needs the project in record mode; replay never forwards. "
+            "Spends the operator's credits, so it is capped by upstream_max_calls. Never exported."
+        ),
+    )
+    upstream_model: str | None = Field(
+        default=None,
+        description="Model id sent upstream instead of the one the request names. Never exported.",
+    )
+    upstream_max_calls: int = Field(
+        default=100,
+        ge=0,
+        description=(
+            "Most calls this project may forward upstream; after that a miss fails with "
+            "semula_upstream_budget until the count is reset. Never exported."
+        ),
     )
 
     bm25_serve_threshold: float = Field(

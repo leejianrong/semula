@@ -40,7 +40,7 @@ Two APIs share the port. `/v1` is the OpenAI-compatible surface your app calls. 
 | `POST /api/v1/candidates/{candidate_id}/approve` | Serve that prompt from the entry from now on. |
 | `POST /api/v1/candidates/{candidate_id}/reject` | Never pair them again. |
 | `GET /api/v1/log` | Recent calls, newest first. |
-| `GET /api/v1/log/stats` | Counts, hit rate, median latency. `?window=30m`. |
+| `GET /api/v1/log/stats` | Counts (hits, misses, forwarded, recorded, timed out), hit rate, median latency. `?window=30m`. |
 | `GET /api/v1/log/stream` | The same feed as server-sent events. |
 | `GET /api/v1/projects/{project_id}/export` | A `semula/1` bundle of a project. |
 | `POST /api/v1/import` | Load a bundle: `{"bundle": {...}, "project"?: id, "force"?: bool}`. Idempotent. |

@@ -56,7 +56,8 @@ def needs(role: str) -> Callable[[F], F]:
 UNRESTRICTED = frozenset(
     {
         "for_scope", "owns", "find", "lookup", "open_pending", "record_candidates", "log_call",
-        "prune_log", "prune_audit", "wait_for_answer", "sync_index", "sync_embeddings",
+        "prune_log", "prune_audit", "wait_for_answer", "forward_miss", "sync_index",
+        "sync_embeddings",
         "start_cluster", "stop_cluster", "create_workspace", "purge_workspaces",
         "authenticate_token", "sign_in_identity", "create_session", "authenticate_session",
         "end_session", "end_session_id", "end_sessions_of", "workspaces_of", "membership_of",

@@ -48,7 +48,14 @@ async def test_an_empty_window_is_all_zero_buckets_and_no_rates(replay: httpx.As
         b["hits"] == b["misses"] == b["recorded"] == b["timed_out"] == 0 for b in out["buckets"]
     )
     assert out["hit_rate"] is None and out["median_latency_ms"] is None and out["parked"] == 0
-    assert out["totals"] == {"calls": 0, "hits": 0, "misses": 0, "recorded": 0, "timed_out": 0}
+    assert out["totals"] == {
+        "calls": 0,
+        "hits": 0,
+        "misses": 0,
+        "forwarded": 0,
+        "recorded": 0,
+        "timed_out": 0,
+    }
 
 
 async def test_buckets_are_contiguous_minutes_ending_with_the_current_one(
@@ -79,7 +86,14 @@ async def test_each_outcome_lands_in_its_own_minute(replay: httpx.AsyncClient) -
     assert (by_minute["10:30"]["hits"], by_minute["10:30"]["misses"]) == (2, 1)
     assert (by_minute["10:29"]["recorded"], by_minute["10:29"]["timed_out"]) == (1, 2)
     assert by_minute["10:10"]["hits"] == 1
-    assert out["totals"] == {"calls": 7, "hits": 3, "misses": 1, "recorded": 1, "timed_out": 2}
+    assert out["totals"] == {
+        "calls": 7,
+        "hits": 3,
+        "misses": 1,
+        "forwarded": 0,
+        "recorded": 1,
+        "timed_out": 2,
+    }
     assert out["hit_rate"] == pytest.approx(3 / 7, abs=1e-3)
 
 
@@ -111,7 +125,7 @@ async def test_the_project_filter(replay: httpx.AsyncClient) -> None:
     log(replay, at(30), "miss", project="other")
     assert stats(replay)["totals"]["calls"] == 3
     assert stats(replay, "other")["totals"] == {
-        "calls": 2, "hits": 0, "misses": 2, "recorded": 0, "timed_out": 0,
+        "calls": 2, "hits": 0, "misses": 2, "forwarded": 0, "recorded": 0, "timed_out": 0,
     }  # fmt: skip
     assert stats(replay, "default")["totals"]["hits"] == 1
     assert (await replay.get("/api/v1/log/stats", params={"project": "nope"})).status_code == 404

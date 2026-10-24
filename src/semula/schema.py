@@ -291,6 +291,20 @@ workspace_usage = sa.Table(
     sa.Column("bytes", sa.BigInteger, nullable=False, default=0),
 )
 
+# What a project has spent forwarding misses upstream (ADR-0013), counted before each call so a
+# cap cannot be crossed by concurrent misses. Only a forwarding project has a row.
+upstream_usage = sa.Table(
+    "upstream_usage",
+    metadata,
+    sa.Column("workspace_id", sa.Text, nullable=False),
+    sa.Column("project_id", sa.Text, nullable=False),
+    sa.Column("calls", sa.Integer, nullable=False, default=0),
+    sa.Column("prompt_tokens", sa.BigInteger, nullable=False, default=0),
+    sa.Column("completion_tokens", sa.BigInteger, nullable=False, default=0),
+    sa.PrimaryKeyConstraint("workspace_id", "project_id", name="pk_upstream_usage"),
+    _project_fk("upstream_usage"),
+)
+
 # People who sign in (ADR-0010). Global, not tenant data: one person can belong to many
 # workspaces, and reaching a workspace goes through ``membership`` (SEM-85). A person is found by
 # their provider identity, (issuer, subject), never by email.

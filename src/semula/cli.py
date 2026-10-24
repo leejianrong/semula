@@ -423,6 +423,7 @@ def _log_stats(args: argparse.Namespace) -> int:
         f"parked {out['parked']}\n"
         f"hits {totals['hits']}  misses {totals['misses']}  recorded {totals['recorded']}  "
         f"timed out {totals['timed_out']}"
+        + (f"  forwarded {totals['forwarded']}" if totals["forwarded"] else "")
     )
     return _ok(args, out, human)
 

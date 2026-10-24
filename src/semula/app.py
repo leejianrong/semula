@@ -94,11 +94,13 @@ def create_app(
     embedder: Embedder | None = None,
     *,
     http_transport: Any = None,
+    upstream_transport: Any = None,
 ) -> FastAPI:
-    """``http_transport`` is a test seam: the httpx transport sign-in uses to reach providers."""
+    """``http_transport`` and ``upstream_transport`` are test seams: the httpx transports that
+    sign-in and record-through use to reach providers."""
     settings = settings or Settings.from_env()
     db = Database(settings.resolved_database_url, migrate=settings.migrate)
-    service = Service(db, settings, embedder)
+    service = Service(db, settings, embedder, upstream_transport)
     service.sync_index()
     service.sync_embeddings()
     mcp = LazyMcp(service)

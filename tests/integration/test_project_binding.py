@@ -98,6 +98,11 @@ S: dict[str, Callable[[World], None]] = {
     "mode_of": lambda w: missing(lambda: w.bound.mode_of("other")),
     "record_timeout": lambda w: missing(lambda: w.bound.record_timeout("other")),
     "list_models": lambda w: missing(lambda: w.bound.list_models("other")),
+    "through_enabled": lambda w: missing(lambda: w.bound.through_enabled("other")),
+    "upstream_usage_of": lambda w: missing(lambda: w.bound.upstream_usage_of("other")),
+    "forward_miss": lambda w: missing(
+        lambda: asyncio.run(w.bound.forward_miss(req("x"), {"messages": []}, "other"))
+    ),
     "update_project": lambda w: missing(lambda: w.bound.update_project("other", name="x")),
     "delete_project": lambda w: missing(lambda: w.bound.delete_project("other")),
     "export_project": lambda w: missing(lambda: w.bound.export_project("other")),
