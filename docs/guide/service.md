@@ -46,6 +46,9 @@ A miss in that project calls the provider once, saves the answer (chunks and usa
 
 - The key lives only in the server's environment. It is never stored, logged, exported or shown in an error.
 - `upstream_max_calls` (default 100) is a hard ceiling per project. A miss after it fails with `semula_upstream_budget`; recorded answers keep replaying. A failed call does not count.
+- `upstream_max_tokens` caps prompt plus completion tokens too. Tokens are known after a call, so one call can overshoot; the next miss fails.
+- Dry run first: `--set '{"upstream_dry_run": true}'` forwards nothing, fails each miss with `semula_upstream_dry_run`, and `semula project upstream <id>` lists the prompts that would have been called and how often. Turn it off (`null`) to forward for real.
+- `semula project upstream <id>` shows calls and tokens against the caps; `--reset` counts from zero. The log page of the dashboard shows forwarded and upstream calls.
 - `upstream_model` sends a different model upstream than the app asked for.
 - Forwarding spends the operator's money. On a hosted server a workspace admin can turn it on only if the operator set `SEMULA_UPSTREAM_TENANTS=on`.
 

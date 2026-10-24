@@ -117,6 +117,11 @@ def test_the_stats_follow_the_calls(server: str, tab: Tab) -> None:
     )
 
 
+def test_the_forwarding_counts_are_on_the_log_page(server: str, tab: Tab) -> None:
+    assert tab.find("stat", label="Forwarded")["props"]["value"] == "0"
+    assert tab.find("stat", label="Upstream calls")["props"]["value"] == "0"
+
+
 def test_selecting_a_hit_shows_its_request_and_answer_and_the_rail(server: str, tab: Tab) -> None:
     row = next(r for r in table_rows(tab) if r["prompt"] == "seeded hit" and r["outcome"] == "hit")
     mark = tab.mark()

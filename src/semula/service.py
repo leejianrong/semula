@@ -3004,18 +3004,59 @@ class Service:
         """What ``project`` has spent forwarding upstream, against its cap."""
         self.require_project(project)
         row = self.db.one(sa.select(UU).where(*self._upstream_key(project)))
+        settings = self.project_settings(project)
         return {
             "project": project,
             "calls": int(row["calls"]) if row else 0,
-            "max_calls": self.project_settings(project).upstream_max_calls,
+            "max_calls": settings.upstream_max_calls,
             "prompt_tokens": int(row["prompt_tokens"]) if row else 0,
             "completion_tokens": int(row["completion_tokens"]) if row else 0,
+            "max_tokens": settings.upstream_max_tokens,
+            "dry_run": settings.upstream_dry_run,
         }
+
+    @needs("viewer")
+    def upstream_dry_run_misses(self, project: str, limit: int = 100) -> list[dict[str, Any]]:
+        """What a dry run would have forwarded: each distinct missed prompt (as the log shows
+        it) with how often it was asked and when last, most recent first."""
+        self.require_project(project)
+        rows = self.db.rows(
+            sa.select(L.c.ts, L.c.preview)
+            .where(
+                L.c.workspace_id == self.workspace_id,
+                L.c.project_id == project,
+                L.c.outcome == "dry_run",
+            )
+            .order_by(L.c.id.desc())
+            .limit(1000)
+        )
+        found: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            prompt = row["preview"] or ""
+            if prompt in found:
+                found[prompt]["count"] += 1
+            else:
+                found[prompt] = {"prompt": prompt, "count": 1, "last_ts": row["ts"]}
+        return list(found.values())[: max(1, min(limit, 500))]
+
+    @needs("admin")
+    def reset_upstream_usage(self, project: str) -> dict[str, Any]:
+        """Start a project's upstream count again from zero (after raising a cap, say)."""
+        self.require_project(project)
+        with self.db.begin() as conn:
+            self.db.execute(
+                sa.update(UU)
+                .where(*self._upstream_key(project))
+                .values(calls=0, prompt_tokens=0, completion_tokens=0),
+                conn,
+            )
+            self._audit("project.upstream_reset", project, conn=conn)
+        return self.upstream_usage_of(project)
 
     def _upstream_key(self, project: str) -> tuple[Any, Any]:
         return (UU.c.workspace_id == self.workspace_id, UU.c.project_id == project)
 
-    def _reserve_upstream(self, project: str, cap: int) -> None:
+    def _reserve_upstream(self, project: str, cap: int, token_cap: int | None = None) -> None:
         """Count a call before it is made. One guarded UPDATE, so concurrent misses cannot both
         pass the cap; refused with 429 once it is spent."""
         if self.db.dialect == "postgresql":
@@ -3034,22 +3075,32 @@ class Service:
                 .values(workspace_id=self.workspace_id, project_id=project)
                 .on_conflict_do_nothing()
             )
+        guards = [UU.c.calls < cap]
+        if token_cap is not None:
+            guards.append(UU.c.prompt_tokens + UU.c.completion_tokens < token_cap)
         with self.db.begin() as conn:
             self.db.execute(stmt, conn)
             done = self.db.execute(
                 sa.update(UU)
-                .where(*self._upstream_key(project), UU.c.calls < cap)
+                .where(*self._upstream_key(project), *guards)
                 .values(calls=UU.c.calls + 1),
                 conn,
             )
         if not done:
+            used = self.upstream_usage_of(project)
+            spent = used["prompt_tokens"] + used["completion_tokens"]
+            what = (
+                f"its {cap} upstream calls (upstream_max_calls)"
+                if used["calls"] >= cap
+                else f"its {token_cap} upstream tokens (upstream_max_tokens; {spent} spent)"
+            )
             raise SemulaError(
                 429,
                 "semula_upstream_budget",
-                f"Project {project!r} has used its {cap} upstream calls "
-                "(upstream_max_calls). Raise the cap or reset the count to forward more.",
+                f"Project {project!r} has used {what}. Raise the cap or reset the count "
+                "(semula project upstream --reset) to forward more.",
                 err_type="semula_error",
-                extra={"upstream": {"calls": cap, "max_calls": cap}},
+                extra={"upstream": used},
             )
 
     def _settle_upstream(self, project: str, calls: int, stored: dict[str, Any] | None) -> None:
@@ -3069,15 +3120,30 @@ class Service:
     ) -> tuple[dict[str, Any], str, bool]:
         """Answer a miss from the upstream provider: (stored answer, entry id, whether a call was
         made). Identical misses at once make one call; the rest share its answer."""
-        config = self.project_settings(project).fingerprint_config()
+        settings = self.project_settings(project)
+        config = settings.fingerprint_config()
         fp = normalised_fingerprint(req, config)
+        if settings.upstream_dry_run:
+            raise SemulaError(
+                424,
+                "semula_upstream_dry_run",
+                "Dry run: this miss would be forwarded to the upstream provider "
+                f"(model {settings.upstream_model or body.get('model') or 'unset'}). "
+                "Nothing was called. Turn upstream_dry_run off to forward.",
+                err_type="semula_error",
+            )
 
         async def work() -> tuple[dict[str, Any], str, bool]:
             again = await run_in_threadpool(self.lookup, req, project)
             if again.match:  # an identical miss finished just before us
                 return again.match.stored, again.match.entry_id, False
             settings = await run_in_threadpool(self.project_settings, project)
-            await run_in_threadpool(self._reserve_upstream, project, settings.upstream_max_calls)
+            await run_in_threadpool(
+                self._reserve_upstream,
+                project,
+                settings.upstream_max_calls,
+                settings.upstream_max_tokens,
+            )
             try:
                 payload = await self.upstream.complete(body, settings.upstream_model)
                 stored = parse_answer(payload)
@@ -3240,6 +3306,25 @@ class Service:
             "hit_rate": round(totals["hits"] / calls, 4) if calls else None,
             "median_latency_ms": round(statistics.median(latencies), 3) if latencies else None,
             "parked": int(parked["n"]) if parked else 0,
+            "upstream": self._upstream_totals(project),
+        }
+
+    def _upstream_totals(self, project: str | None) -> dict[str, int]:
+        """What forwarding has cost so far (not per window), for one project or all of them."""
+        conditions = [UU.c.workspace_id == self.workspace_id]
+        if project:
+            conditions.append(UU.c.project_id == project)
+        row = self.db.one(
+            sa.select(
+                sa.func.coalesce(sa.func.sum(UU.c.calls), 0).label("calls"),
+                sa.func.coalesce(sa.func.sum(UU.c.prompt_tokens), 0).label("prompt"),
+                sa.func.coalesce(sa.func.sum(UU.c.completion_tokens), 0).label("completion"),
+            ).where(*conditions)
+        )
+        return {
+            "calls": int(row["calls"]) if row else 0,
+            "prompt_tokens": int(row["prompt"]) if row else 0,
+            "completion_tokens": int(row["completion"]) if row else 0,
         }
 
     def prune_log(self) -> int:

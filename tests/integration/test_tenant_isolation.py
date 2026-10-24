@@ -108,6 +108,12 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
     "upstream_usage_of": lambda w: missing(
         lambda: w.a.upstream_usage_of("shop"), "project_not_found"
     ),
+    "upstream_dry_run_misses": lambda w: missing(
+        lambda: w.a.upstream_dry_run_misses("shop"), "project_not_found"
+    ),
+    "reset_upstream_usage": lambda w: missing(
+        lambda: w.a.reset_upstream_usage("shop"), "project_not_found"
+    ),
     "forward_miss": lambda w: missing(
         lambda: asyncio.run(w.a.forward_miss(req("x"), {"messages": []}, "shop")),
         "project_not_found",

@@ -22,6 +22,8 @@ Two APIs share the port. `/v1` is the OpenAI-compatible surface your app calls. 
 | `POST /api/v1/projects` | Create one: `{"id": "my-app", "name": "My app"}`. |
 | `GET /api/v1/projects/{project_id}` | One project with its settings and defaults. |
 | `PATCH /api/v1/projects/{project_id}` | Rename it or patch `settings`. |
+| `GET /api/v1/projects/{project_id}/upstream` | Calls and tokens forwarded upstream against the caps, and `would_forward` (the prompts a dry run refused). |
+| `POST /api/v1/projects/{project_id}/upstream/reset` | Count upstream calls and tokens from zero again. Admin. |
 | `DELETE /api/v1/projects/{project_id}` | Delete it and everything in it. |
 | `GET /api/v1/projects/{project_id}/entries` | List entries without bodies. Filters: `q`, `pinned`, `has_alias`, `tool_calls`, `never_hit`; `sort`, `order`, `limit`, `offset`. |
 | `POST /api/v1/projects/{project_id}/entries` | Author an entry: `{"request": {...}, "response": ..., "version"?: n}`. `201` if created, `200` if replaced. |

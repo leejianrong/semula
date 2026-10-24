@@ -19,7 +19,13 @@ from .pages.review import review_page
 from .pages.workspace import audit_page, members_page, tokens_page, usage_page
 from .state import Dash, blocking, cancel, every
 
-EMPTY_STATS: dict[str, Any] = {"hit_rate": None, "median_latency_ms": None, "parked": 0}
+EMPTY_STATS: dict[str, Any] = {
+    "hit_rate": None,
+    "median_latency_ms": None,
+    "parked": 0,
+    "totals": {"forwarded": 0},
+    "upstream": {"calls": 0},
+}
 
 
 class Tab:

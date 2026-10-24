@@ -36,6 +36,7 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula project create` | `<id>` `--name` | Create a project |
 | `semula project delete` | `<id>` | Delete a project and all its entries |
 | `semula project settings` | `<id>` `--set` | Show or patch matching settings |
+| `semula project upstream` | `<id>` `--reset` | Show what a project has forwarded upstream |
 | `semula entry list` | `<project>` `--q` `--limit` `--offset` `--pinned` / `--no-pinned` `--has-alias` / `--no-has-alias` `--tool-calls` / `--no-tool-calls` `--never-hit` / `--no-never-hit` `--sort` `--order` | List a project's entries (no bodies) |
 | `semula entry show` | `<id>` | Show one entry in full |
 | `semula entry history` | `<id>` `--version` | An entry's change history (newest first) |

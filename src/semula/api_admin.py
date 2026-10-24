@@ -52,6 +52,20 @@ async def update_project(project_id: str, request: Request) -> dict[str, Any]:
     return await offload(_service(request).update_project, project_id, body.get("name"), settings)
 
 
+@router.get("/projects/{project_id}/upstream")
+def get_upstream(project_id: str, request: Request) -> dict[str, Any]:
+    service = _service(request)
+    return {
+        **service.upstream_usage_of(project_id),
+        "would_forward": service.upstream_dry_run_misses(project_id),
+    }
+
+
+@router.post("/projects/{project_id}/upstream/reset")
+def reset_upstream(project_id: str, request: Request) -> dict[str, Any]:
+    return _service(request).reset_upstream_usage(project_id)
+
+
 @router.delete("/projects/{project_id}", status_code=204)
 def delete_project(project_id: str, request: Request) -> None:
     _service(request).delete_project(project_id)

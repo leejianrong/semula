@@ -165,6 +165,8 @@ def log_page(tab: Tab) -> indah.Component:
         )
     )
     stat_parked = indah.computed(lambda: str(tab.stats.value["parked"]))
+    stat_forwarded = indah.computed(lambda: str(tab.stats.value["totals"]["forwarded"]))
+    stat_upstream = indah.computed(lambda: str(tab.stats.value["upstream"]["calls"]))
 
     table = indah.Table(
         rows=shown,
@@ -205,6 +207,8 @@ def log_page(tab: Tab) -> indah.Component:
                     indah.Stat(stat_rate, label="Hit rate"),
                     indah.Stat(stat_median, label="Median"),
                     indah.Stat(stat_parked, label="Parked"),
+                    indah.Stat(stat_forwarded, label="Forwarded"),
+                    indah.Stat(stat_upstream, label="Upstream calls"),
                 ]
             ),
             table,

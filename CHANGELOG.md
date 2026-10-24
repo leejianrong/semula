@@ -17,6 +17,11 @@ open in the next; the database upgrades itself on start and cannot be downgraded
   the server's environment and is never stored, logged, exported or echoed in an error. Each
   project has a hard cap, `upstream_max_calls` (default 100); past it a miss fails with
   `semula_upstream_budget`. Replay mode never forwards. Migration 0018 adds the counter table.
+- **A budget and a dry run for record-through** (SEM-93): `upstream_max_tokens` caps tokens too,
+  `upstream_dry_run` forwards nothing and lists the prompts that would have been called, and
+  `semula project upstream <id>` (REST, MCP `get_upstream_usage`) shows calls and tokens against the
+  caps, with `--reset` to start again. Stats gain `forwarded` and `upstream`; the dashboard log page
+  shows both.
 - **A hosted image**, `ghcr.io/leejianrong/semula:<version>-hosted` (also `<major>.<minor>-hosted`
   and `latest-hosted`), published beside the default one from the next release on. It adds the
   sign-in (PyJWT) and Postgres (psycopg) drivers and is about 22 MB larger; the release smoke-tests

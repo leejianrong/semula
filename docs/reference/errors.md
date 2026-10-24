@@ -14,7 +14,8 @@ Some errors carry extra context at the top level: `current` on a 409 holds the e
 |---|---|---|
 | 424 | `semula_no_match` | Replay mode, and nothing recorded matches. `nearest` says what came closest. |
 | 504 | `semula_record_timeout` | Record mode, and nobody answered within `SEMULA_RECORD_TIMEOUT` (300 s by default). A late answer is still saved. |
-| 429 | `semula_upstream_budget` | The project forwards misses upstream and has used its `upstream_max_calls`. Raise the cap; recorded answers still replay. |
+| 429 | `semula_upstream_budget` | The project forwards misses upstream and has used its `upstream_max_calls`. Raise the cap or reset the count (`semula project upstream <id> --reset`); recorded answers still replay. |
+| 424 | `semula_upstream_dry_run` | The project is in a dry run: this miss would have been forwarded and nothing was called. |
 | 502, 504 | `semula_upstream_error`, `semula_upstream_timeout` | The upstream provider refused, failed or did not answer. The message has its status; the key is never in it. The failed call is not counted against the cap. |
 | 401 | `invalid_api_key` | `SEMULA_API_KEY` is set and the request did not send it. |
 | 404 | `model_not_found` | `GET /v1/models/<id>` for a model this server does not list. Chat calls ignore the model name. |

@@ -100,6 +100,8 @@ S: dict[str, Callable[[World], None]] = {
     "list_models": lambda w: missing(lambda: w.bound.list_models("other")),
     "through_enabled": lambda w: missing(lambda: w.bound.through_enabled("other")),
     "upstream_usage_of": lambda w: missing(lambda: w.bound.upstream_usage_of("other")),
+    "upstream_dry_run_misses": lambda w: missing(lambda: w.bound.upstream_dry_run_misses("other")),
+    "reset_upstream_usage": lambda w: missing(lambda: w.bound.reset_upstream_usage("other")),
     "forward_miss": lambda w: missing(
         lambda: asyncio.run(w.bound.forward_miss(req("x"), {"messages": []}, "other"))
     ),

@@ -20,7 +20,7 @@ EXPECTED_TOOLS = {
     "list_entries",
     "get_entry", "upsert_entry", "update_entry", "delete_entry", "test_match",
     "list_calls", "log_stats", "entry_history", "list_candidates", "get_candidate",
-    "approve_candidate", "reject_candidate",
+    "approve_candidate", "reject_candidate", "get_upstream_usage",
 }  # fmt: skip
 
 

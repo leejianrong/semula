@@ -78,8 +78,9 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     if await offload(service.through_enabled, project):
         try:
             answer, entry_id, called = await service.forward_miss(req, body, project)
-        except SemulaError:
-            await offload(partial(service.log_call, "miss", started, project=project, req=req))
+        except SemulaError as refused:
+            outcome = "dry_run" if refused.code == "semula_upstream_dry_run" else "miss"
+            await offload(partial(service.log_call, outcome, started, project=project, req=req))
             raise
         await offload(
             partial(

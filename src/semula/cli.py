@@ -213,6 +213,25 @@ def _project_settings(args: argparse.Namespace) -> int:
     return _ok(args, settings, json.dumps(settings, indent=2))
 
 
+def _project_upstream(args: argparse.Namespace) -> int:
+    if args.reset:
+        resp = _call(args, "POST", f"/api/v1/projects/{args.id}/upstream/reset")
+    else:
+        resp = _call(args, "GET", f"/api/v1/projects/{args.id}/upstream")
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    out = resp.json()
+    tokens = out["prompt_tokens"] + out["completion_tokens"]
+    lines = [
+        f"{args.id}: {out['calls']} of {out['max_calls']} upstream calls, "
+        f"{tokens} tokens"
+        + (f" of {out['max_tokens']}" if out["max_tokens"] is not None else "")
+        + ("  (dry run: nothing is forwarded)" if out["dry_run"] else "")
+    ]
+    lines += [f"would forward x{m['count']}: {m['prompt']}" for m in out.get("would_forward", [])]
+    return _ok(args, out, "\n".join(lines))
+
+
 def _entry_list(args: argparse.Namespace) -> int:
     params: dict[str, Any] = {"limit": args.limit, "offset": args.offset}
     if args.q:
@@ -424,6 +443,7 @@ def _log_stats(args: argparse.Namespace) -> int:
         f"hits {totals['hits']}  misses {totals['misses']}  recorded {totals['recorded']}  "
         f"timed out {totals['timed_out']}"
         + (f"  forwarded {totals['forwarded']}" if totals["forwarded"] else "")
+        + (f"  upstream calls {out['upstream']['calls']}" if out["upstream"]["calls"] else "")
     )
     return _ok(args, out, human)
 
@@ -880,6 +900,9 @@ def build_parser() -> argparse.ArgumentParser:
     pset = add(psub, "settings", _project_settings, "Show or patch matching settings")
     pset.add_argument("id")
     pset.add_argument("--set", default=None, help="JSON patch, e.g. '{\"tail_n\": 2}'; null resets")
+    pup = add(psub, "upstream", _project_upstream, "Show what a project has forwarded upstream")
+    pup.add_argument("id")
+    pup.add_argument("--reset", action="store_true", help="count again from zero (admin)")
 
     entry = sub.add_parser("entry", help="Inspect and edit recorded entries")
     esub = entry.add_subparsers(dest="entry_command", required=True)
