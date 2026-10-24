@@ -8,8 +8,26 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-25
+
+This release adds record-through: a project can capture a real model's answers once and replay
+them free. It is off by default and changes nothing for anyone who does not turn it on.
+
+**Before you upgrade, back up your data** (see [Upgrade and back up](docs/guide/upgrade-and-backup.md)).
+Migration 0018 runs on start; it adds one table and cannot be undone by installing 0.2.0 again.
+
+### Changed
+
+- `GET /api/v1/log/stats` (and `semula log --stats`, the MCP `log_stats` tool) gains `forwarded` in
+  its totals and in each bucket, and an `upstream` object with the calls and tokens forwarded so
+  far. Nothing was removed. A project's settings gain `record_through`, `upstream_model`,
+  `upstream_max_calls`, `upstream_max_tokens` and `upstream_dry_run`; none is exported.
+
 ### Added
 
+- `.env.example`: the variables for a record-through trial against OpenRouter (or any
+  OpenAI-compatible provider), to copy to the git-ignored `.env` and start with
+  `uv run --env-file .env semula serve`.
 - **Record-through** (SEM-92, [ADR-0013](docs/adr/0013-record-through-and-its-budget.md)): a project
   can forward a miss to a real OpenAI-compatible provider, save the answer (chunks and usage when
   streamed) and replay it free afterwards. Off by default and per project: set `record_through`
