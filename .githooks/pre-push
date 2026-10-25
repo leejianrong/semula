@@ -3,6 +3,15 @@
 # Bypass once with:  git push --no-verify
 set -euo pipefail
 
+# main takes changes by pull request only. GitHub does not stop the owner's push, so refuse here.
+# git feeds one line per ref on stdin: <local ref> <local sha> <remote ref> <remote sha>.
+while read -r _ _ remote_ref _; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "pre-push: refusing to push to main. Branch (git switch -c <name>), push that, open a PR." >&2
+    exit 1
+  fi
+done
+
 echo "pre-push: ruff + mypy + fast tests"
 uv run ruff check .
 uv run ruff format --check .
