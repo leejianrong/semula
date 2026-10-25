@@ -246,10 +246,10 @@ def build_mcp(base: Service) -> FastMCP:
     @tool
     def get_pending(id: str) -> dict[str, Any]:
         """Read one pending request in full: the messages and any tools the app offered. Read the
-        system prompt for the output format the app expects. 'shape' lists each offered tool with its
-        argument schema and a skeleton answer that passes validation (fill in the arguments and
-        send it), and 'max_tokens' when the app capped the length. It never writes the content for
-        you."""
+        system prompt for the output format the app expects. 'shape' lists each offered tool with
+        its argument schema and a skeleton answer that passes validation (fill in the arguments
+        and send it), and 'max_tokens' when the app capped the length. It never writes the
+        content for you."""
         return service.get_pending(id)
 
     @tool
