@@ -33,6 +33,8 @@ OPERATOR_FIELDS = (
     "upstream_max_calls",
     "upstream_max_tokens",
     "upstream_dry_run",
+    "max_misses",
+    "misses_since",
 )
 
 
@@ -116,6 +118,21 @@ class ProjectSettings(BaseModel):
             "semula_upstream_dry_run and is listed as what would have been called "
             "(semula project upstream). Never exported."
         ),
+    )
+
+    max_misses: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Most distinct misses (calls with no recorded answer, parked and answered alike) the "
+            "project takes in a run; after that a miss fails with semula_miss_ceiling instead of "
+            "parking. Replay hits are never counted. Setting it again, to any new value, starts a "
+            "new run. Unset means no ceiling. Never exported."
+        ),
+    )
+    misses_since: str | None = Field(
+        default=None,
+        description="Where the current run of max_misses began. Set by semula; do not edit.",
     )
 
     bm25_serve_threshold: float = Field(
