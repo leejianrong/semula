@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Added
+
+- `max_misses`, a project setting: the most distinct misses (parked or answered) a project takes in a run. After that a miss fails with 429 `semula_miss_ceiling` and is not parked, so a loop in the app cannot park hundreds of calls. Replay hits are never counted. Setting it to a new value starts a new run. No migration.
+
 ## [0.3.0] - 2026-10-25
 
 This release adds record-through: a project can capture a real model's answers once and replay

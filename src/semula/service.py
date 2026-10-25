@@ -1368,6 +1368,9 @@ class Service:
                 self._audit("project.rename", slug, {"name": name}, conn)
         if settings:
             merged = before.model_dump(exclude_defaults=True)
+            settings = {k: v for k, v in settings.items() if k != "misses_since"}
+            if "max_misses" in settings and settings["max_misses"] != before.max_misses:
+                settings["misses_since"] = now_iso()  # a new ceiling is a new run
             for key, value in settings.items():
                 if value is None:
                     merged.pop(key, None)
@@ -2792,6 +2795,27 @@ class Service:
         if q.parked_per_workspace is not None and total >= q.parked_per_workspace:
             raise self._over("parked_per_workspace", q.parked_per_workspace, total, 429)
 
+    def _check_miss_ceiling(self, project: str) -> None:
+        """Refuse a new miss once the run has used ``max_misses`` (miss path only, never a hit)."""
+        settings = self.project_settings(project)
+        if settings.max_misses is None:
+            return
+        conditions = [Q.c.workspace_id == self.workspace_id, Q.c.project_id == project]
+        if settings.misses_since:
+            conditions.append(Q.c.created_at >= settings.misses_since)
+        used = self.db.one(sa.select(sa.func.count().label("n")).where(*conditions))
+        used_n = int(used["n"]) if used else 0
+        if used_n >= settings.max_misses:
+            raise SemulaError(
+                429,
+                "semula_miss_ceiling",
+                f"Project {project!r} has taken its {settings.max_misses} misses for this run "
+                f"(max_misses; {used_n} used), so this call was not parked. Answer or fix what "
+                "keeps missing, then set max_misses again to start a new run.",
+                err_type="semula_error",
+                extra={"misses": {"used": used_n, "max_misses": settings.max_misses}},
+            )
+
     def open_pending(self, req: CanonicalRequest, project: str = DEFAULT_PROJECT) -> str:
         """Park a miss. A second identical miss joins the first instead of duplicating."""
         config = self.project_settings(project).fingerprint_config()
@@ -2806,6 +2830,7 @@ class Service:
         if row:
             return str(row["id"])
         self._check_parked(project)
+        self._check_miss_ceiling(project)
         pid = new_ulid()
         try:
             self.db.execute(
