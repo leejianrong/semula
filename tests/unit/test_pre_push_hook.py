@@ -12,8 +12,13 @@ HOOK = Path(__file__).resolve().parents[2] / ".githooks" / "pre-push"
 
 def push(refs: str) -> subprocess.CompletedProcess[str]:
     """Run the hook the way git does: one '<local ref> <sha> <remote ref> <sha>' line per ref."""
-    return subprocess.run(  # noqa: S603, S607 (our own hook)
-        ["bash", str(HOOK)], input=refs, capture_output=True, text=True, timeout=10, check=False
+    return subprocess.run(  # noqa: S603 (our own hook)
+        ["/bin/bash", str(HOOK)],
+        input=refs,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
     )
 
 
