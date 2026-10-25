@@ -33,8 +33,6 @@ async def test_defaults_are_visible_and_documented_by_the_api(replay: httpx.Asyn
         "upstream_max_calls": 100,
         "upstream_max_tokens": None,
         "upstream_dry_run": False,
-        "max_misses": None,
-        "misses_since": None,
     }
 
 

@@ -96,11 +96,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
         )
         return _respond(service, body, answer, model)
 
-    try:
-        pending_id = await offload(service.open_pending, req, project)
-    except SemulaError:  # a ceiling or quota: the call was not parked, and the log says so
-        await offload(partial(service.log_call, "miss", started, project=project, req=req))
-        raise
+    pending_id = await offload(service.open_pending, req, project)
     timeout = await offload(service.record_timeout, project)
     stored = await service.wait_for_answer(pending_id, timeout)
     if stored is None:
