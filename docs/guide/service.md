@@ -52,16 +52,6 @@ Copy `.env.example` to `.env` for the variables (it is git-ignored) and start wi
 - `upstream_model` sends a different model upstream than the app asked for.
 - Forwarding spends the operator's money. On a hosted server a workspace admin can turn it on only if the operator set `SEMULA_UPSTREAM_TENANTS=on`.
 
-## Stop a runaway loop
-
-A loop in the app can park hundreds of calls and cost an agent hours. `max_misses` caps the distinct misses a project takes in one run:
-
-```bash
-semula project settings game --set '{"max_misses": 50}'
-```
-
-The 51st new miss fails with 429 `semula_miss_ceiling` and is not parked; it shows as a miss in the log. A call that joins one already parked is not a new miss, and replay hits are never counted. Set `max_misses` to a new value to start a new run, or to `null` to remove the ceiling.
-
 ## Give each project its own recordings
 
 Create one semula project per app, set the project in the URL (`/v1/projects/<id>`) or with the `X-Semula-Project` header, and keep each app's mode separate. See [One project per app](../tutorial/projects.md).
