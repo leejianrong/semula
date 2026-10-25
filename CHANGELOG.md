@@ -10,6 +10,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- A parked call now shows the shape of the answer it allows (`shape` on `GET /api/v1/pending/{id}`, `semula show`, the MCP `get_pending` and the dashboard): each offered tool with its argument schema and a skeleton answer that passes validation, and the `max_tokens` limit when the app set one.
 - `max_misses`, a project setting: the most distinct misses (parked or answered) a project takes in a run. After that a miss fails with 429 `semula_miss_ceiling` and is not parked, so a loop in the app cannot park hundreds of calls. Replay hits are never counted. Setting it to a new value starts a new run. No migration.
 
 ## [0.3.0] - 2026-10-25
