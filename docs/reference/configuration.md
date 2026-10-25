@@ -70,6 +70,7 @@ Matching and recording are tuned per project, not globally. Show them with `semu
 | `upstream_max_calls` | `100` | Most calls the project may forward; a miss after that fails with `semula_upstream_budget`. Never exported. |
 | `upstream_max_tokens` | none | Most prompt plus completion tokens the project may spend upstream. Known only after a call, so one call can overshoot. Never exported. |
 | `upstream_dry_run` | `false` | With `record_through` on, forward nothing: a miss fails with `semula_upstream_dry_run` and is listed by `semula project upstream`. Never exported. |
+| `max_misses` | none | Most distinct misses (parked or answered) the project takes in a run; after that a miss fails with `semula_miss_ceiling` and is not parked. Replay hits are never counted. Setting it to a new value starts a new run. Never exported. |
 
 Changing a matching setting (`tail_n`, `scrub_patterns`, `include_params`) re-keys the project's existing entries. Nothing has to be re-recorded.
 
