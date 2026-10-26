@@ -34,6 +34,7 @@ RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/api/v1/projects/[^/]+/test-match", "record"),
     ("GET", r"/api/v1/pending", "record"),
     ("GET", r"/api/v1/pending/[^/]+", "record"),
+    ("POST", r"/api/v1/pending/claim", "record"),
     ("POST", r"/api/v1/pending/[^/]+/answer", "record"),
     ("GET", r"/api/v1/log", "record"),
     ("GET", r"/api/v1/log/stats", "record"),

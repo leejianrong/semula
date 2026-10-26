@@ -161,6 +161,21 @@ def _show(args: argparse.Namespace) -> int:
     return _ok(args, resp.json(), json.dumps(resp.json(), indent=2))
 
 
+def _claim(args: argparse.Namespace) -> int:
+    body: dict[str, Any] = {"lease_seconds": args.lease}
+    if args.project:
+        body["project"] = args.project
+    if args.worker:
+        body["worker"] = args.worker
+    resp = _call(args, "POST", "/api/v1/pending/claim", json=body)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    claimed = resp.json()["pending"]
+    if claimed is None:
+        return _ok(args, None, "nothing to claim")
+    return _ok(args, claimed, json.dumps(claimed, indent=2))
+
+
 def _answer(args: argparse.Namespace) -> int:
     try:
         payload = _payload(args)
@@ -882,6 +897,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     add(sub, "show", _show, "Show one pending request in full").add_argument("id")
+
+    claim = add(
+        sub, "claim", _claim, "Claim the oldest unclaimed parked request and print it in full"
+    )
+    claim.add_argument("--project", default=None)
+    claim.add_argument(
+        "--lease", type=float, default=300.0, metavar="SECONDS", help="hold it this long (max 3600)"
+    )
+    claim.add_argument("--worker", default=None, help="a name for this worker, shown on the claim")
 
     answer = add(sub, "answer", _answer, "Answer a pending request, releasing the held call")
     answer.add_argument("id")

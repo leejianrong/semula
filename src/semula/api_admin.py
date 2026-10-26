@@ -253,6 +253,36 @@ async def list_pending(
     return {"pending": rows}
 
 
+@router.post("/pending/claim")
+async def claim_pending(request: Request) -> dict[str, Any]:
+    """Hold the oldest unclaimed parked call for a lease and return it in full, or
+    ``{"pending": null}`` when none is claimable. Body (all optional): ``project``,
+    ``lease_seconds`` (default 300, at most 3600), ``worker``."""
+    try:
+        body = await request.json() if await request.body() else {}
+    except ValueError as exc:
+        raise SemulaError(400, "invalid_json", "The request body is not valid JSON.") from exc
+    if not isinstance(body, dict):
+        raise SemulaError(400, "invalid_request", "The body must be a JSON object.")
+    lease = body.get("lease_seconds", 300)
+    if isinstance(lease, bool) or not isinstance(lease, (int, float)):
+        raise SemulaError(
+            422, "invalid_request", "'lease_seconds' must be a number.", param="lease_seconds"
+        )
+    for key in ("project", "worker"):
+        if body.get(key) is not None and not isinstance(body[key], str):
+            raise SemulaError(400, "invalid_request", f"'{key}' must be a string.", param=key)
+    claimed = await offload(
+        partial(
+            _service(request).claim_next,
+            body.get("project"),
+            float(lease),
+            body.get("worker"),
+        )
+    )
+    return {"pending": claimed}
+
+
 @router.get("/pending/{pending_id}")
 def get_pending(pending_id: str, request: Request) -> dict[str, Any]:
     return _service(request).get_pending(pending_id)

@@ -62,6 +62,17 @@ semula project settings game --set '{"max_misses": 50}'
 
 The 51st new miss fails with 429 `semula_miss_ceiling` and is not parked; it shows as a miss in the log. A call that joins one already parked is not a new miss, and replay hits are never counted. Set `max_misses` to a new value to start a new run, or to `null` to remove the ceiling.
 
+## Several workers on one queue
+
+`semula claim` takes the oldest parked call nobody holds and prints it in full (messages, tools, and the answer `shape`), holding it for a lease so another worker does not get it:
+
+```bash
+semula claim --worker alice --lease 120     # prints one call, or "nothing to claim"
+semula answer <id> --text "..."             # before the lease ends
+```
+
+Two workers never get the same call. If a worker dies, its lease runs out (default 300 s, at most 3600) and the call can be claimed again. The lease is advisory: it only keeps other claims away, so a person can still answer the call in the dashboard. MCP has `claim_next` and REST has `POST /api/v1/pending/claim`; the pending list shows who holds a call and until when.
+
 ## Give each project its own recordings
 
 Create one semula project per app, set the project in the URL (`/v1/projects/<id>`) or with the `X-Semula-Project` header, and keep each app's mode separate. See [One project per app](../tutorial/projects.md).

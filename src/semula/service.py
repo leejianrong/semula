@@ -81,6 +81,7 @@ SELECTIONS = ("first", "sequence", "cycle")
 LEXICAL_POOL = 10  # entries the lexical index proposes before they are scored
 MAX_CANDIDATES = 3  # weak matches queued for review per missed request
 PRUNE_EVERY = 200  # call-log rows between retention sweeps
+MAX_LEASE = 3600.0  # the longest a claim_next lease may be, in seconds
 SETTINGS_TTL = 1.0  # seconds a project's settings are reused between reads
 
 MAX_REVISIONS = 50  # snapshots kept per entry; the oldest are dropped
@@ -2918,6 +2919,59 @@ class Service:
         rows = self.db.rows(sa.select(Q).where(*conditions).order_by(Q.c.id))
         return [_pending_view(r, full=False) for r in rows]
 
+    @needs("editor")
+    def claim_next(
+        self,
+        project: str | None = None,
+        lease_seconds: float = 300.0,
+        worker: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Hold the oldest unclaimed parked call for ``lease_seconds`` and return it in full (the
+        view ``get_pending`` gives, plus the claim), or None when nothing is claimable.
+
+        One guarded UPDATE decides each claim, so two workers never get the same call, on SQLite
+        or Postgres, from one process or several. A lease that has run out frees the call again.
+        The lease is advisory: it only keeps other ``claim_next`` calls away, and anyone may still
+        answer the call (an answer ends the claim, since the call is no longer pending).
+        """
+        if not 0 < lease_seconds <= MAX_LEASE:
+            raise SemulaError(
+                422,
+                "invalid_request",
+                f"'lease_seconds' must be above 0 and at most {MAX_LEASE:g}.",
+                param="lease_seconds",
+            )
+        project = self._narrow(project)
+        if project:
+            self.require_project(project)
+        holder = (worker or "worker")[:100]
+        while True:
+            now = now_iso()
+            conditions = [
+                Q.c.workspace_id == self.workspace_id,
+                Q.c.status == "pending",
+                sa.or_(Q.c.claim_expires_at.is_(None), Q.c.claim_expires_at <= now),
+            ]
+            if project:
+                conditions.append(Q.c.project_id == project)
+            oldest = self.db.one(sa.select(Q.c.id).where(*conditions).order_by(Q.c.id).limit(1))
+            if oldest is None:
+                return None
+            expires = iso(datetime.now(UTC) + timedelta(seconds=lease_seconds))
+            won = self.db.execute(
+                sa.update(Q)
+                .where(*self._pk(Q, oldest["id"]), *conditions[1:3])
+                .values(claimed_by=holder, claim_expires_at=expires)
+            )
+            if won == 1:  # otherwise another worker took it first: look for the next oldest
+                view = self.get_pending(oldest["id"])
+                view["claim"] = {
+                    "worker": holder,
+                    "expires_at": expires,
+                    "lease_seconds": lease_seconds,
+                }
+                return view
+
     @needs("viewer")
     async def wait_for_pending(
         self, project: str | None = None, timeout: float = 30.0
@@ -3528,7 +3582,10 @@ def _candidate_view(row: Any, *, full: bool) -> dict[str, Any]:
 
 def _pending_view(row: Any, *, full: bool) -> dict[str, Any]:
     req = CanonicalRequest.from_json(row["canonical_request"])
+    held = row["status"] == "pending" and (row["claim_expires_at"] or "") > now_iso()
     view: dict[str, Any] = {
+        "claimed_by": row["claimed_by"] if held else None,
+        "claimed_until": row["claim_expires_at"] if held else None,
         "id": row["id"],
         "project": row["project_id"],
         "status": row["status"],

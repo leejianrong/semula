@@ -36,6 +36,7 @@ Two APIs share the port. `/v1` is the OpenAI-compatible surface your app calls. 
 | `PUT /api/v1/mode` | Set the mode: `{"mode": "record", "project"?: id}`. |
 | `GET /api/v1/pending` | Parked calls. `?project=`, `?status=all`, and `?wait=SECONDS` (up to 60) to hold until one is parked. |
 | `GET /api/v1/pending/{pending_id}` | One parked call in full, with a `shape`: each offered tool (name, description, argument schema, a skeleton answer that passes validation), a text skeleton, and the `max_tokens` limit if the app set one. |
+| `POST /api/v1/pending/claim` | Hold the oldest unclaimed parked call for a lease and return it in full (as `GET` does, plus `claim`), or `{"pending": null}`. Body, all optional: `project`, `lease_seconds` (default 300, at most 3600), `worker`. |
 | `POST /api/v1/pending/{pending_id}/answer` | Answer it. The body is the answer. Releases the held call. |
 | `GET /api/v1/candidates` | The review queue. |
 | `GET /api/v1/candidates/{candidate_id}` | One candidate next to its entry. |
