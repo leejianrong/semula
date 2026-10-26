@@ -68,6 +68,7 @@ from .schema import upstream_usage as UU
 from .schema import workspace as WS
 from .schema import workspace_usage as U
 from .scope import Principal, Scope
+from .skeleton import answer_shape
 from .upstream import Upstream
 
 log = logging.getLogger("semula.service")
@@ -3537,4 +3538,5 @@ def _pending_view(row: Any, *, full: bool) -> dict[str, Any]:
     }
     if full:
         view["request"] = {"messages": req.messages, "tools": req.tools}
+        view["shape"] = answer_shape(req.tools, req.params)
     return view

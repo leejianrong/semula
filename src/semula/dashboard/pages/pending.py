@@ -112,6 +112,23 @@ def pending_page(tab: Tab) -> indah.Component:
         for i, t in enumerate(d["request"].get("tools") or []):
             fn = t.get("function", t)
             out.append({"id": f"t{i}", "role": "tool you may call", "content": _text(fn)})
+        shape = d.get("shape") or {}
+        for i, t in enumerate(shape.get("tools") or []):
+            out.append(
+                {
+                    "id": f"s{i}",
+                    "role": f"answer skeleton ({t['name']})",
+                    "content": _text(t["skeleton"]),
+                }
+            )
+        if shape.get("max_tokens"):
+            out.append(
+                {
+                    "id": "limit",
+                    "role": "free-text limit",
+                    "content": f"max_tokens {shape['max_tokens']}",
+                }
+            )
         return out
 
     heading = indah.computed(

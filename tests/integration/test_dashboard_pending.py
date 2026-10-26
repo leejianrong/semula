@@ -182,3 +182,16 @@ def test_the_nav_counts_parked_calls_live(server: str) -> None:
         held["thread"].join(10)
     finally:
         tab.close()
+
+
+def test_the_skeleton_and_the_free_text_limit_are_shown(server: str) -> None:
+    tab = Tab(server, "/projects/default/pending")
+    try:
+        park(server, "Weather in Ipoh?", tools=TOOLS, max_tokens=33)
+        tab.wait_for(saw_rows("Weather in Ipoh?"), 3)
+        mark = tab.mark()
+        tab.send(tab.find("table", label="Parked calls"), "select", {"key": pending_id(server)})
+        tab.wait_for(lambda m: "answer skeleton (get_weather)" in str(m), 3, mark)
+        tab.wait_for(lambda m: "max_tokens 33" in str(m), 3, mark)
+    finally:
+        tab.close()

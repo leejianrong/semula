@@ -15,7 +15,7 @@ Arguments marked `?` are optional. The tool descriptions the agent sees are long
 | `update_project_settings` | `id` `settings` | Patch settings; `null` resets one. Changing a matching setting re-keys existing entries. |
 | `list_pending` | `project`? `include_answered`? | Parked requests waiting for an answer, oldest first. |
 | `wait_for_pending` | `project`? `timeout_seconds`? | Block until a call is parked (or return what already waits); empty at the timeout, 60 s at most. |
-| `get_pending` | `id` | One parked request in full: messages and offered tools. |
+| `get_pending` | `id` | One parked request in full: messages, offered tools, and a `shape` with each tool's argument schema, a valid skeleton answer and the free-text limit. |
 | `answer_pending` | `id` `answer` | Answer a parked request. This releases the app's held call. A rejected answer leaves it held. |
 | `list_entries` | `project` `q`? `limit`? `offset`? `pinned`? `has_alias`? `tool_calls`? `never_hit`? `sort`? `order`? | A project's entries without bodies, filtered and sorted. |
 | `get_entry` | `id` | One entry in full, including its `version`. |
