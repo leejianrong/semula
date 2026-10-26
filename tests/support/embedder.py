@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import threading
 import time
 from collections.abc import Sequence
 
@@ -26,14 +27,19 @@ DIM = 64
 class FakeEmbedder:
     model_id = "fake-synonyms"
 
-    def __init__(self, *, delay: float = 0.0, fail: bool = False) -> None:
+    def __init__(
+        self, *, delay: float = 0.0, fail: bool = False, gate: threading.Event | None = None
+    ) -> None:
         self.delay = delay
         self.fail = fail
+        self.gate = gate  # when given, embedding waits here until the test sets it
         self.seen: list[str] = []  # every text it was asked to embed
 
     def embed(self, texts: Sequence[str]) -> np.ndarray:
         if self.fail:
             raise RuntimeError("the model fell over")
+        if self.gate is not None:
+            self.gate.wait(30)
         time.sleep(self.delay)
         self.seen.extend(texts)
         out = np.zeros((len(texts), DIM), dtype=np.float32)
