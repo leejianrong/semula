@@ -253,6 +253,23 @@ async def list_pending(
     return {"pending": rows}
 
 
+@router.get("/conversations")
+async def conversations(
+    request: Request,
+    project: str | None = None,
+    source: str = "pending",
+    min_size: int = 1,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Calls grouped by conversation (each call whose messages extend an earlier call's joins
+    its group and shows what it added). ``source`` is ``pending`` or ``log``; ``min_size=2``
+    leaves out calls that continue nothing."""
+    found = await offload(
+        partial(_service(request).list_conversations, project, source, min_size, limit)
+    )
+    return {"conversations": found}
+
+
 @router.post("/pending/claim")
 async def claim_pending(request: Request) -> dict[str, Any]:
     """Hold the oldest unclaimed parked call for a lease and return it in full, or

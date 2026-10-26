@@ -161,6 +161,31 @@ def _show(args: argparse.Namespace) -> int:
     return _ok(args, resp.json(), json.dumps(resp.json(), indent=2))
 
 
+def _conversations(args: argparse.Namespace) -> int:
+    params = {"source": "log" if args.log else "pending", "min_size": str(args.min_size)}
+    if args.project:
+        params["project"] = args.project
+    resp = _call(args, "GET", "/api/v1/conversations", params=params)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    groups = resp.json()["conversations"]
+    lines: list[str] = []
+    for group in groups:
+        lines.append(f"{group['id']}\t{group['project']}\t{group['size']} calls")
+        for call in group["calls"]:
+            added = "; ".join(
+                f"{m.get('role', '')}: {_one_line(m.get('content'))}" for m in call["added"][-3:]
+            )
+            mark = "=" if call["repeat"] else "+"
+            lines.append(f"  {'  ' * (call['depth'] - 1)}{call['id']}\t{mark}{added[:100]}")
+    return _ok(args, groups, "\n".join(lines) if lines else "no conversations")
+
+
+def _one_line(content: Any) -> str:
+    text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+    return text.replace("\n", " ")[:60]
+
+
 def _claim(args: argparse.Namespace) -> int:
     body: dict[str, Any] = {"lease_seconds": args.lease}
     if args.project:
@@ -897,6 +922,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     add(sub, "show", _show, "Show one pending request in full").add_argument("id")
+
+    conv = add(
+        sub,
+        "conversations",
+        _conversations,
+        "Group parked or logged calls whose messages extend an earlier call's",
+    )
+    conv.add_argument("--project", default=None)
+    conv.add_argument("--log", action="store_true", help="group logged calls, not parked ones")
+    conv.add_argument(
+        "--min-size", type=int, default=2, help="leave out groups smaller than this (default 2)"
+    )
 
     claim = add(
         sub, "claim", _claim, "Claim the oldest unclaimed parked request and print it in full"

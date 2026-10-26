@@ -37,6 +37,7 @@ from .canonical import (
     shape,
 )
 from .config import Settings
+from .conversation import thread
 from .db import Database
 from .embeddings import Embedder, Indexer, VectorStore, load_embedder
 from .errors import SemulaError
@@ -81,6 +82,7 @@ SELECTIONS = ("first", "sequence", "cycle")
 LEXICAL_POOL = 10  # entries the lexical index proposes before they are scored
 MAX_CANDIDATES = 3  # weak matches queued for review per missed request
 PRUNE_EVERY = 200  # call-log rows between retention sweeps
+CONVERSATION_WINDOW = 500  # how many recent calls are looked at to place one in a conversation
 MAX_LEASE = 3600.0  # the longest a claim_next lease may be, in seconds
 SETTINGS_TTL = 1.0  # seconds a project's settings are reused between reads
 
@@ -2917,7 +2919,134 @@ class Service:
             self.require_project(project)
             conditions.append(Q.c.project_id == project)
         rows = self.db.rows(sa.select(Q).where(*conditions).order_by(Q.c.id))
-        return [_pending_view(r, full=False) for r in rows]
+        views = [_pending_view(r, full=False) for r in rows]
+        placed = {p: self._pending_thread(p) for p in {v["project"] for v in views}}
+        for view in views:
+            view["conversation"] = _conversation_ref(placed[view["project"]], view["id"])
+        return views
+
+    def _pending_thread(self, project: str) -> dict[str, Any]:
+        """Where each of a project's recent parked calls (any status) sits in its conversation.
+        Looks at the newest ``CONVERSATION_WINDOW``; a call older than that has no parent."""
+        rows = self.db.rows(
+            sa.select(Q.c.id, Q.c.canonical_request)
+            .where(Q.c.workspace_id == self.workspace_id, Q.c.project_id == project)
+            .order_by(Q.c.id.desc())
+            .limit(CONVERSATION_WINDOW)
+        )
+        calls = []
+        for r in rows:
+            req = CanonicalRequest.from_json(r["canonical_request"])
+            calls.append((r["id"], req.messages, req.tools))
+        return thread(calls)
+
+    @needs("viewer")
+    def list_conversations(
+        self,
+        project: str | None = None,
+        source: str = "pending",
+        min_size: int = 1,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Calls grouped by conversation: each call whose messages extend an earlier call's joins
+        that call's group, and shows the messages it added. ``source`` is ``pending`` (parked
+        calls of any status) or ``log`` (logged calls whose request is known: the ones that parked,
+        and exact hits). Newest conversation first; calls oldest first."""
+        if source not in ("pending", "log"):
+            raise SemulaError(
+                422, "invalid_request", "'source' must be 'pending' or 'log'.", param="source"
+            )
+        project = self._narrow(project)
+        if project:
+            self.require_project(project)
+        projects = [project] if project else [p["id"] for p in self.list_projects()]
+        nodes: list[dict[str, Any]] = []
+        for slug in projects:
+            nodes += self._pending_nodes(slug) if source == "pending" else self._log_nodes(slug)
+        groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for node in nodes:
+            groups.setdefault((node["project"], node["root"]), []).append(node)
+        out: list[dict[str, Any]] = []
+        for (slug, root), members in groups.items():
+            if len(members) < max(1, min_size):
+                continue
+            members.sort(key=lambda n: n["id"])
+            out.append({"id": root, "project": slug, "size": len(members), "calls": members})
+        out.sort(key=lambda g: g["calls"][-1]["id"], reverse=True)
+        return out[: max(1, min(limit, 200))]
+
+    def _pending_nodes(self, project: str) -> list[dict[str, Any]]:
+        rows = self.db.rows(
+            sa.select(Q.c.id, Q.c.status, Q.c.created_at, Q.c.canonical_request)
+            .where(Q.c.workspace_id == self.workspace_id, Q.c.project_id == project)
+            .order_by(Q.c.id.desc())
+            .limit(CONVERSATION_WINDOW)
+        )
+        calls = []
+        info = {}
+        for r in rows:
+            req = CanonicalRequest.from_json(r["canonical_request"])
+            calls.append((r["id"], req.messages, req.tools))
+            info[r["id"]] = {
+                "kind": "pending",
+                "status": r["status"],
+                "ts": r["created_at"],
+                "message_count": len(req.messages),
+            }
+        placed = thread(calls)
+        return [{"id": i, "project": project, **info[i], **placed[i]} for i in placed]
+
+    def _log_nodes(self, project: str) -> list[dict[str, Any]]:
+        """Logged calls as conversation nodes. The log keeps only a preview of each call, so a
+        call is placed by the request it points at: the parked call, or the entry an exact hit
+        served. Other calls (near matches, misses that failed fast) cannot be placed and are
+        left out."""
+        rows = self.db.rows(
+            sa.select(L.c.ts, L.c.outcome, L.c.tier, L.c.pending_id, L.c.entry_id, L.c.preview)
+            .where(L.c.workspace_id == self.workspace_id, L.c.project_id == project)
+            .order_by(L.c.id.desc())
+            .limit(CONVERSATION_WINDOW)
+        )
+        pending_ids = {r["pending_id"] for r in rows if r["pending_id"]}
+        entry_ids = {r["entry_id"] for r in rows if r["entry_id"] and r["tier"] == "exact"}
+        requests: dict[str, str] = {}
+        if pending_ids:
+            for r in self.db.rows(
+                sa.select(Q.c.id, Q.c.canonical_request).where(
+                    Q.c.workspace_id == self.workspace_id, Q.c.id.in_(pending_ids)
+                )
+            ):
+                requests[f"p:{r['id']}"] = r["canonical_request"]
+        if entry_ids:
+            for r in self.db.rows(
+                sa.select(E.c.id, E.c.canonical_request).where(
+                    E.c.workspace_id == self.workspace_id, E.c.id.in_(entry_ids)
+                )
+            ):
+                requests[f"e:{r['id']}"] = r["canonical_request"]
+        seen: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            key = (
+                f"p:{r['pending_id']}"
+                if r["pending_id"]
+                else (f"e:{r['entry_id']}" if r["entry_id"] and r["tier"] == "exact" else None)
+            )
+            if key is None or key not in requests:
+                continue
+            node = seen.setdefault(
+                key,
+                {"kind": "log", "ts": r["ts"], "calls": 0, "outcomes": {}, "first_ts": r["ts"]},
+            )
+            node["calls"] += 1
+            node["outcomes"][r["outcome"]] = node["outcomes"].get(r["outcome"], 0) + 1
+            node["first_ts"] = min(node["first_ts"], r["ts"])
+        calls = []
+        for key in seen:
+            req = CanonicalRequest.from_json(requests[key])
+            calls.append((key, req.messages, req.tools))
+            seen[key]["message_count"] = len(req.messages)
+        placed = thread(calls)
+        return [{"id": i, "project": project, **seen[i], **placed[i]} for i in placed]
 
     @needs("editor")
     def claim_next(
@@ -3014,7 +3143,10 @@ class Service:
         if not row:
             raise SemulaError(404, "pending_not_found", f"No pending request {pending_id}.")
         self._own(row["project_id"], "pending_not_found", f"No pending request {pending_id}.")
-        return _pending_view(row, full=True)
+        view = _pending_view(row, full=True)
+        placed = self._pending_thread(row["project_id"])
+        view["conversation"] = _conversation_ref(placed, pending_id, with_added=True)
+        return view
 
     @needs("editor")
     def answer_pending(self, pending_id: str, payload: Any, *, actor: str = "agent") -> str:
@@ -3578,6 +3710,26 @@ def _candidate_view(row: Any, *, full: bool) -> dict[str, Any]:
     if full:
         view["request"] = {"messages": req.messages, "tools": req.tools}
     return view
+
+
+def _conversation_ref(
+    placed: dict[str, Any], pending_id: str, *, with_added: bool = False
+) -> dict[str, Any]:
+    """What a parked call says about its conversation: the group (named by its first call), how
+    deep it is, how many calls the group holds, the call it continues, and, when asked, the
+    messages it added to that call."""
+    node = placed.get(pending_id)
+    if node is None:  # older than the window looked at
+        return {"id": pending_id, "depth": 1, "size": 1, "parent": None}
+    ref = {
+        "id": node["root"],
+        "depth": node["depth"],
+        "size": sum(1 for n in placed.values() if n["root"] == node["root"]),
+        "parent": node["parent"],
+    }
+    if with_added:
+        ref["added"] = node["added"] if node["parent"] else []
+    return ref
 
 
 def _pending_view(row: Any, *, full: bool) -> dict[str, Any]:

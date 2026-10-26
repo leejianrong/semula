@@ -34,8 +34,9 @@ Two APIs share the port. `/v1` is the OpenAI-compatible surface your app calls. 
 | `POST /api/v1/projects/{project_id}/test-match` | What would happen to a request, tier by tier. |
 | `GET /api/v1/mode` | The server default and each project's mode. |
 | `PUT /api/v1/mode` | Set the mode: `{"mode": "record", "project"?: id}`. |
-| `GET /api/v1/pending` | Parked calls. `?project=`, `?status=all`, and `?wait=SECONDS` (up to 60) to hold until one is parked. |
+| `GET /api/v1/pending` | Parked calls, each with a `conversation` (its group, depth and size). `?project=`, `?status=all`, and `?wait=SECONDS` (up to 60) to hold until one is parked. |
 | `GET /api/v1/pending/{pending_id}` | One parked call in full, with a `shape`: each offered tool (name, description, argument schema, a skeleton answer that passes validation), a text skeleton, and the `max_tokens` limit if the app set one. |
+| `GET /api/v1/conversations` | Calls grouped by conversation: a call whose messages extend an earlier call's joins its group and lists the messages it `added`. `?source=pending` (default) or `log`, `?project=`, `?min_size=2` to leave out calls that continue nothing, `?limit=`. |
 | `POST /api/v1/pending/claim` | Hold the oldest unclaimed parked call for a lease and return it in full (as `GET` does, plus `claim`), or `{"pending": null}`. Body, all optional: `project`, `lease_seconds` (default 300, at most 3600), `worker`. |
 | `POST /api/v1/pending/{pending_id}/answer` | Answer it. The body is the answer. Releases the held call. |
 | `GET /api/v1/candidates` | The review queue. |

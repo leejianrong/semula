@@ -184,6 +184,39 @@ def test_the_nav_counts_parked_calls_live(server: str) -> None:
         tab.close()
 
 
+def test_a_continued_call_shows_what_it_added_since_the_previous_one(server: str) -> None:
+    tab = Tab(server, "/projects/default/pending")
+    try:
+        first = [{"role": "user", "content": "begin"}]
+        park(server, "begin")
+        tab.wait_for(saw_rows("begin"), 3)
+        key = pending_id(server)
+        httpx.post(f"{server}/api/v1/pending/{key}/answer", json={"content": "ok"})
+        history = [
+            *first,
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": "next"},
+        ]
+        out: dict[str, Any] = {}
+        threading.Thread(
+            target=lambda: out.update(
+                r=httpx.post(
+                    server + "/v1/chat/completions",
+                    json={"model": "m", "messages": history},
+                    timeout=25,
+                )
+            ),
+            daemon=True,
+        ).start()
+        tab.wait_for(saw_rows("next"), 3)
+        tab.wait_for(saw_rows("2 of 2"), 3)  # the Conversation column
+        mark = tab.mark()
+        tab.send(tab.find("table", label="Parked calls"), "select", {"key": pending_id(server)})
+        tab.wait_for(lambda m: "added since the previous call" in str(m), 3, mark)
+    finally:
+        tab.close()
+
+
 def test_the_skeleton_and_the_free_text_limit_are_shown(server: str) -> None:
     tab = Tab(server, "/projects/default/pending")
     try:

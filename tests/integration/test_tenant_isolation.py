@@ -130,6 +130,11 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
         nothing_of_b(w.a.list_pending("pending")),
         nothing_of_b(w.a.list_pending(None)),
     ),
+    "list_conversations": lambda w: (
+        missing(lambda: w.a.list_conversations("shop"), "project_not_found"),
+        nothing_of_b(w.a.list_conversations()),
+        nothing_of_b(w.a.list_conversations(source="log")),
+    ),
     "claim_next": lambda w: (
         missing(lambda: w.a.claim_next("shop"), "project_not_found"),
         _equal(w.a.claim_next(), None),  # b's parked call is not a's to claim
