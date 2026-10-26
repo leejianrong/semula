@@ -11,6 +11,11 @@ from typing import Any
 
 import httpx
 
+# A transport timeout for the dashboard's HTTP calls. The first request builds the dashboard (an
+# import of indah), which is slow on a loaded machine; a test that fails on setup under load tells
+# us nothing. What a test asserts about latency is measured by ``wait_for``, not by this.
+HTTP_TIMEOUT = 30.0
+
 
 class Tab:
     """One open tab: an SSE connection to ``/ui/api/stream`` and the events it would post."""
@@ -23,7 +28,11 @@ class Tab:
         self.sid = uuid.uuid4().hex
         if self.cookies:  # a hosted dashboard: trade the sign-in for a signed session id
             resp = httpx.post(
-                url + "/ui/api/session", json={}, cookies=self.cookies, headers={"Origin": url}
+                url + "/ui/api/session",
+                json={},
+                cookies=self.cookies,
+                headers={"Origin": url},
+                timeout=HTTP_TIMEOUT,
             )
             assert resp.status_code == 200, resp.text
             self.sid = resp.json()["token"]
@@ -33,7 +42,7 @@ class Tab:
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._read, args=(path,), daemon=True)
         self._thread.start()
-        self.init = self.wait_for(lambda m: m["type"] == "init", 10)[0]
+        self.init = self.wait_for(lambda m: m["type"] == "init", HTTP_TIMEOUT)[0]
 
     def _read(self, path: str) -> None:
         params = {"sid": self.sid, "path": path}
@@ -43,7 +52,7 @@ class Tab:
                 self.url + "/ui/api/stream",
                 params=params,
                 cookies=self.cookies,
-                timeout=httpx.Timeout(5, read=60),
+                timeout=httpx.Timeout(HTTP_TIMEOUT, read=60),
             ) as resp:
                 for line in resp.iter_lines():
                     if self._stop.is_set():
@@ -121,7 +130,7 @@ class Tab:
             json=body,
             cookies=self.cookies,
             headers={"Origin": self.url} if self.cookies else {},
-            timeout=5,
+            timeout=HTTP_TIMEOUT,
         )
         assert resp.status_code == 200, resp.text
 
