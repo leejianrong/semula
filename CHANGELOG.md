@@ -8,6 +8,24 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-27
+
+This release is for answering at scale: a ceiling on runaway misses, a way to read what an answer
+must look like, several workers sharing one queue, long games read as conversations, and an
+answerer that runs your command once per parked call. Everything new is off by default or only
+adds fields, so nothing changes for anyone who does not use it.
+
+**Before you upgrade, back up your data** (see [Upgrade and back up](docs/guide/upgrade-and-backup.md)).
+Migration 0019 runs on start; it adds two nullable columns to `pending` and cannot be undone by
+installing 0.3.0 again.
+
+### Changed
+
+- A parked call in `GET /api/v1/pending` gains `claimed_by`, `claimed_until` and `conversation`;
+  `GET /api/v1/pending/{id}` (and `semula show`, MCP `get_pending`) gains `shape` and a fuller
+  `conversation`. Nothing was removed. A project's settings gain `max_misses`, `misses_since` and
+  `answerer`; none is exported.
+
 ### Added
 
 - The answerer hook (ADR-0014): set `SEMULA_ANSWERER_COMMAND` (a JSON argv, for example `claude -p ...`) or `SEMULA_ANSWERER_URL`, then turn on the project setting `answerer`. Each parked call is answered by one fresh process (or one webhook POST) with the request on stdin as JSON, in an empty directory with a stripped environment, a timeout, an output cap and a concurrency cap. A rejected answer is sent back once with the reason; a failure or timeout leaves the call parked. Off by default, admin-only and audited, and refused on a hosted server. `semula claim` skips a call the hook holds. No migration.
