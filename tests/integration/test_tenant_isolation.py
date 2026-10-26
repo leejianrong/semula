@@ -130,6 +130,15 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
         nothing_of_b(w.a.list_pending("pending")),
         nothing_of_b(w.a.list_pending(None)),
     ),
+    "claim_pending": lambda w: (
+        _equal(w.a.claim_pending(w.pending, 60, "x"), False),  # b's call is invisible to a
+        _equal(w.b.list_pending()[0]["claimed_until"], None),
+    ),
+    "release_claim": lambda w: (
+        w.b.claim_pending(w.pending, 60, "w"),
+        w.a.release_claim(w.pending, "w"),  # a cannot give b's call back
+        _equal(w.b.list_pending()[0]["claimed_by"], "w"),
+    ),
     "list_conversations": lambda w: (
         missing(lambda: w.a.list_conversations("shop"), "project_not_found"),
         nothing_of_b(w.a.list_conversations()),

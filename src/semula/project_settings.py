@@ -35,6 +35,7 @@ OPERATOR_FIELDS = (
     "upstream_dry_run",
     "max_misses",
     "misses_since",
+    "answerer",
 )
 
 
@@ -133,6 +134,16 @@ class ProjectSettings(BaseModel):
     misses_since: str | None = Field(
         default=None,
         description="Where the current run of max_misses began. Set by semula; do not edit.",
+    )
+
+    answerer: bool = Field(
+        default=False,
+        description=(
+            "Have the server's answerer (SEMULA_ANSWERER_COMMAND or SEMULA_ANSWERER_URL) answer "
+            "this project's parked calls, one fresh process per call. Needs the admin role, is "
+            "audited, and is refused when the server has no answerer and on a hosted server. A "
+            "failure leaves the call parked. Never exported."
+        ),
     )
 
     bm25_serve_threshold: float = Field(

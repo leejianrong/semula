@@ -30,6 +30,12 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_UPSTREAM_KEY` | none | The API key of a real provider that projects with `record_through` forward misses to. Never stored, logged or exported. See [Record through a real model](../guide/service.md#record-through-a-real-model). |
 | `SEMULA_UPSTREAM_URL` | `https://api.openai.com/v1` | The provider's OpenAI-compatible base URL, no trailing slash. |
 | `SEMULA_UPSTREAM_TIMEOUT` | `120` | Seconds to wait for the provider. |
+| `SEMULA_ANSWERER_COMMAND` | none | The command that answers parked calls, as a JSON array of strings (an argv, never a shell line), for projects with `answerer` on. Run once per call, with the request on stdin. Never shown, logged or exported. See [Let a command answer each call](../guide/service.md#let-a-command-answer-each-call). |
+| `SEMULA_ANSWERER_URL` | none | A webhook instead of a command (`http` or `https`; not both). The request is POSTed as JSON, redirects are not followed. Never shown or logged. |
+| `SEMULA_ANSWERER_BEARER` | none | Sent as `Authorization: Bearer ...` to the webhook. Never logged. |
+| `SEMULA_ANSWERER_TIMEOUT` | `120` | Seconds a run may take before the process group is killed and the call stays parked. |
+| `SEMULA_ANSWERER_CONCURRENCY` | `2` | Most runs at once. |
+| `SEMULA_ANSWERER_ENV` | none | Comma list of variable names the command may inherit besides `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR` and `USER`, for example `ANTHROPIC_API_KEY`. A `SEMULA_` name is refused. |
 | `SEMULA_UPSTREAM_TENANTS` | `off` | Hosted only: `on` lets a workspace admin turn `record_through` on with the operator's key. |
 | `SEMULA_URL` | `http://127.0.0.1:8080` | For the CLI: which server to talk to. |
 
@@ -71,6 +77,8 @@ Matching and recording are tuned per project, not globally. Show them with `semu
 | `upstream_max_tokens` | none | Most prompt plus completion tokens the project may spend upstream. Known only after a call, so one call can overshoot. Never exported. |
 | `upstream_dry_run` | `false` | With `record_through` on, forward nothing: a miss fails with `semula_upstream_dry_run` and is listed by `semula project upstream`. Never exported. |
 | `max_misses` | none | Most distinct misses (parked or answered) the project takes in a run; after that a miss fails with `semula_miss_ceiling` and is not parked. Replay hits are never counted. Setting it to a new value starts a new run. Never exported. |
+
+| `answerer` | `false` | Have the server's answerer answer this project's parked calls. Needs the admin role, is audited (`project.answerer`), is refused when the server has no answerer and on a hosted server. Never exported. |
 
 Changing a matching setting (`tail_n`, `scrub_patterns`, `include_params`) re-keys the project's existing entries. Nothing has to be re-recorded.
 

@@ -127,6 +127,15 @@ S: dict[str, Callable[[World], None]] = {
         only_shop(w.bound.list_pending(None)),
         missing(lambda: w.bound.list_pending("pending", "other")),
     ),
+    "claim_pending": lambda w: (
+        missing(lambda: w.bound.claim_pending(w.theirs["pending"], 60, "x")),
+        _equal(w.bound.claim_pending(w.mine["pending"], 60, "x"), True),
+    ),
+    "release_claim": lambda w: (
+        w.admin.claim_pending(w.theirs["pending"], 60, "w"),
+        missing(lambda: w.bound.release_claim(w.theirs["pending"], "w")),
+        _equal(w.admin.list_pending("pending", "other")[0]["claimed_by"], "w"),
+    ),
     "list_conversations": lambda w: (
         missing(lambda: w.bound.list_conversations("other")),
         only_shop(w.bound.list_conversations()),
