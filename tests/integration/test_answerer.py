@@ -65,7 +65,10 @@ def ask(url: str, text: str, **extra: Any) -> dict[str, Any]:
 
     def call() -> None:
         body = {"model": "m", "messages": [{"role": "user", "content": text}], **extra}
-        out["response"] = httpx.post(url + "/v1/chat/completions", json=body, timeout=30)
+        try:
+            out["response"] = httpx.post(url + "/v1/chat/completions", json=body, timeout=30)
+        except httpx.HTTPError:  # a call left held when its test ends dies with the server
+            out["error"] = True
 
     thread = threading.Thread(target=call, daemon=True)
     thread.start()
