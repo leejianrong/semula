@@ -184,7 +184,16 @@ def pending_row(item: dict[str, Any], tz: tzinfo | None = None) -> dict[str, Any
         "project": item["project"],
         "since": clock(moment, tz),
         "prompt": short(prompt),
+        "thread": _thread_label(item.get("conversation")),
     }
+
+
+def _thread_label(conversation: dict[str, Any] | None) -> str:
+    """Where a parked call sits in its conversation, e.g. ``#4F2A · 3 of 5``; blank when it
+    continues nothing and nothing continues it."""
+    if not conversation or conversation["size"] < 2:
+        return ""
+    return f"#{conversation['id'][-4:]} · {conversation['depth']} of {conversation['size']}"
 
 
 def answer_from_text(text: str) -> Any:

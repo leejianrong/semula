@@ -127,6 +127,11 @@ S: dict[str, Callable[[World], None]] = {
         only_shop(w.bound.list_pending(None)),
         missing(lambda: w.bound.list_pending("pending", "other")),
     ),
+    "list_conversations": lambda w: (
+        missing(lambda: w.bound.list_conversations("other")),
+        only_shop(w.bound.list_conversations()),
+        only_shop(w.bound.list_conversations(source="log", min_size=1) or [{"project": "shop"}]),
+    ),
     "claim_next": lambda w: (
         missing(lambda: w.bound.claim_next("other")),
         _equal((w.bound.claim_next() or {}).get("project"), "shop"),

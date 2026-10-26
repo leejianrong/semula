@@ -134,6 +134,22 @@ def test_a_long_prompt_is_cut_for_the_table_but_kept_whole_for_the_detail() -> N
     assert short("x" * 65) == "x" * 63 + "…"
 
 
+def test_a_pending_row_says_where_the_call_sits_in_its_conversation() -> None:
+    from semula.dashboard.rows import pending_row
+
+    item = {
+        "id": "p",
+        "project": "d",
+        "created_at": "2026-10-20T10:00:00.000Z",
+        "last_message": "x",
+    }
+    alone = {"id": "01ABCD", "depth": 1, "size": 1, "parent": None}
+    third = {"id": "01ABCD", "depth": 3, "size": 5, "parent": "q"}
+    assert pending_row({**item, "conversation": alone})["thread"] == ""
+    assert pending_row({**item, "conversation": third})["thread"] == "#ABCD · 3 of 5"
+    assert pending_row(item)["thread"] == ""
+
+
 def test_a_parked_call_becomes_a_pending_row() -> None:
     from semula.dashboard.rows import pending_row
 
@@ -141,7 +157,7 @@ def test_a_parked_call_becomes_a_pending_row() -> None:
             "last_message": "Line one\nLine two"}  # fmt: skip
     row = pending_row(item, UTC)
     assert row == {"id": "P1", "project": "triage", "since": "09:14:22.318",
-                   "prompt": "Line one Line two"}  # fmt: skip
+                   "prompt": "Line one Line two", "thread": ""}  # fmt: skip
 
 
 def test_typed_answers_are_text_unless_they_start_like_json() -> None:

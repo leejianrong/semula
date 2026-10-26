@@ -112,6 +112,17 @@ def pending_page(tab: Tab) -> indah.Component:
         for i, t in enumerate(d["request"].get("tools") or []):
             fn = t.get("function", t)
             out.append({"id": f"t{i}", "role": "tool you may call", "content": _text(fn)})
+        added = (d.get("conversation") or {}).get("added") or []
+        if added:
+            out.append(
+                {
+                    "id": "added",
+                    "role": "added since the previous call",
+                    "content": "\n\n".join(
+                        f"{m.get('role', '')}: {_text(m.get('content'))}" for m in added
+                    ),
+                }
+            )
         shape = d.get("shape") or {}
         for i, t in enumerate(shape.get("tools") or []):
             out.append(
@@ -148,6 +159,7 @@ def pending_page(tab: Tab) -> indah.Component:
         label="Parked calls",
         columns=[
             indah.Col("since", title="Parked at", kind="mono", width="15ch", sortable=False),
+            indah.Col("thread", title="Conversation", kind="mono", width="16ch", sortable=False),
             indah.Col("prompt", title="Prompt", sortable=False),
         ],
     )

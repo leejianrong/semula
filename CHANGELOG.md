@@ -10,6 +10,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- Group calls by conversation (`semula conversations`, `GET /api/v1/conversations`, MCP `list_conversations`, a Conversation column and an "added since the previous call" row on the dashboard's pending page). A call whose messages extend an earlier call's joins its group and shows the messages it added; `semula show` and `get_pending` carry the same under `conversation`. Prefix only, no semantic grouping. No migration.
 - `claim_next` (`semula claim`, `POST /api/v1/pending/claim`, MCP `claim_next`): take the oldest unclaimed parked call, in full, held for a lease so several workers never answer the same one. An expired lease frees the call. The pending list shows `claimed_by` and `claimed_until`. Migration 0019 adds two nullable columns to `pending`; it runs on start and cannot be undone by installing an older version.
 - A parked call now shows the shape of the answer it allows (`shape` on `GET /api/v1/pending/{id}`, `semula show`, the MCP `get_pending` and the dashboard): each offered tool with its argument schema and a skeleton answer that passes validation, and the `max_tokens` limit when the app set one.
 - `max_misses`, a project setting: the most distinct misses (parked or answered) a project takes in a run. After that a miss fails with 429 `semula_miss_ceiling` and is not parked, so a loop in the app cannot park hundreds of calls. Replay hits are never counted. Setting it to a new value starts a new run. No migration.

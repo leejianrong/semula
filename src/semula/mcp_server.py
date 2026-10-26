@@ -49,7 +49,7 @@ TOOL_SCOPES = {
     "get_status": "record", "list_projects": "record", "get_project_settings": "record",
     "get_upstream_usage": "record",
     "list_pending": "record", "wait_for_pending": "record", "get_pending": "record",
-    "claim_next": "record",
+    "claim_next": "record", "list_conversations": "record",
     "answer_pending": "record", "list_entries": "record", "get_entry": "record",
     "entry_history": "record", "upsert_entry": "record", "update_entry": "record",
     "test_match": "record", "list_calls": "record", "log_stats": "record",
@@ -243,6 +243,19 @@ def build_mcp(base: Service) -> FastMCP:
                 )
             )
         return await service.wait_for_pending(project, timeout_seconds)
+
+    @tool
+    def list_conversations(
+        project: str | None = None,
+        source: str = "pending",
+        min_size: int = 2,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Group parked calls (source 'pending') or logged ones (source 'log') into conversations:
+        a call whose messages extend an earlier call's joins its group, and 'added' lists the
+        messages it brought. Read a group oldest first to answer a long game in order. A group of
+        one is a call that continues nothing (min_size 1 shows those too)."""
+        return service.list_conversations(project, source, min_size, limit)
 
     @tool
     def claim_next(

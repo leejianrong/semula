@@ -16,6 +16,7 @@ Arguments marked `?` are optional. The tool descriptions the agent sees are long
 | `list_pending` | `project`? `include_answered`? | Parked requests waiting for an answer, oldest first. |
 | `wait_for_pending` | `project`? `timeout_seconds`? | Block until a call is parked (or return what already waits); empty at the timeout, 60 s at most. |
 | `get_pending` | `id` | One parked request in full: messages, offered tools, and a `shape` with each tool's argument schema, a valid skeleton answer and the free-text limit. |
+| `list_conversations` | `project`? `source`? `min_size`? `limit`? | Parked (or logged) calls grouped by conversation, each showing the messages it added to the call before it. |
 | `claim_next` | `project`? `lease_seconds`? `worker`? | The oldest parked request nobody holds, in full, held for you for the lease (default 300 s, at most 3600); `null` when none. Other claims skip it until the lease ends. |
 | `answer_pending` | `id` `answer` | Answer a parked request. This releases the app's held call. A rejected answer leaves it held. |
 | `list_entries` | `project` `q`? `limit`? `offset`? `pinned`? `has_alias`? `tool_calls`? `never_hit`? `sort`? `order`? | A project's entries without bodies, filtered and sorted. |
