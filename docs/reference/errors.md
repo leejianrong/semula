@@ -40,6 +40,7 @@ The CLI exits `4` for 400, 409 and 422 and prints `error: <code>: <message> (at 
 | 400 | `version_required` | An edit needs the entry's current `version`. |
 | 400 | `invalid_json`, `invalid_request`, `nothing_to_update` | The request body is not what the route expects. |
 | 422 | `invalid_mode`, `invalid_selection`, `invalid_pinned`, `invalid_settings`, `invalid_project_id`, `invalid_param`, `invalid_bundle` | A value is out of range or malformed. `param` names it. |
+| 422 | `answerer_not_configured` | `answerer` was turned on but the server has no `SEMULA_ANSWERER_COMMAND` or `SEMULA_ANSWERER_URL`. |
 | 422 | `upstream_not_configured` | `record_through` was turned on but the server has no `SEMULA_UPSTREAM_KEY`. |
 | 503 | `mcp_unavailable` | The MCP endpoint could not start. |
 | 500 | `internal_error` | A bug. Please report it with the log line. |

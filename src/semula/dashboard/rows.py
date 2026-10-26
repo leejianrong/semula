@@ -503,7 +503,7 @@ AUDIT_ACTIONS = (
     "entry.forced_write", "invitation.accept", "invitation.create", "invitation.revoke",
     "member.remove", "member.role", "project.create", "project.delete", "project.import",
     "project.mode", "project.rename", "project.settings", "project.upstream_reset",
-    "token.create", "token.revoke",
+    "project.answerer", "token.create", "token.revoke",
     "token.rotate", "workspace.create", "workspace.delete", "workspace.purge",
     "workspace.restore",
 )  # fmt: skip

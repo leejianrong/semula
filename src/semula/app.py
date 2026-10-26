@@ -16,6 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
 from . import __version__, api_admin, api_auth, api_openai, oidc
+from .answerer import Answerer
 from .auth import ApiKeyMiddleware, TokenAuthMiddleware
 from .config import Settings
 from .dashboard.mount import LazyDashboard, Locked
@@ -116,11 +117,18 @@ def create_app(
     @asynccontextmanager
     async def lifespan(parent: FastAPI) -> AsyncIterator[None]:
         task = asyncio.create_task(mcp.run(parent))
+        stop_answerer = asyncio.Event()
+        answerer: asyncio.Task[None] | None = None
+        if settings.answerer_configured and not settings.hosted:  # never for tenants (ADR-0014)
+            answerer = asyncio.create_task(Answerer(settings).run(service, stop_answerer))
         if db.dialect == "postgresql":  # replicas share events and wake-ups (ADR-0011 section 8)
             await asyncio.to_thread(service.start_cluster, settings.resolved_database_url)
         try:
             yield
         finally:
+            stop_answerer.set()
+            if answerer is not None:
+                await answerer
             await asyncio.to_thread(service.stop_cluster)
             await mcp.stop()
             await task

@@ -1408,6 +1408,24 @@ class Service:
                         err_type="authentication_error",
                         param="settings.record_through",
                     )
+            if after.answerer and not before.answerer:
+                if self.settings.hosted:
+                    raise SemulaError(
+                        403,
+                        "forbidden",
+                        "The answerer hook runs the operator's command, so it is not available "
+                        "to a hosted workspace (ADR-0014).",
+                        err_type="authentication_error",
+                        param="settings.answerer",
+                    )
+                if not self.settings.answerer_configured:
+                    raise SemulaError(
+                        422,
+                        "answerer_not_configured",
+                        "This server has no answerer (SEMULA_ANSWERER_COMMAND or "
+                        "SEMULA_ANSWERER_URL), so a project cannot use one.",
+                        param="settings.answerer",
+                    )
             longest = self.settings.quotas.record_timeout_max
             if longest is not None and after.record_timeout and after.record_timeout > longest:
                 raise SemulaError(
@@ -1434,6 +1452,8 @@ class Service:
                     self._audit("project.settings", slug, {"changed": changed}, conn)
                 if "mode" in settings and settings["mode"] != before.mode:
                     self._audit("project.mode", slug, {"mode": after.mode}, conn)
+                if after.answerer != before.answerer:
+                    self._audit("project.answerer", slug, {"enabled": after.answerer}, conn)
         self._settings_cache.pop((self.workspace_id, slug), None)
         if settings and "mode" in settings and settings["mode"] != before.mode:
             self._publish({"type": "mode", "project": slug, "mode": self.mode_of(slug)})
@@ -2924,6 +2944,42 @@ class Service:
         for view in views:
             view["conversation"] = _conversation_ref(placed[view["project"]], view["id"])
         return views
+
+    @needs("editor")
+    def claim_pending(self, pending_id: str, lease_seconds: float, worker: str) -> bool:
+        """Hold one named parked call under the same guard as ``claim_next``. False if it is
+        gone, answered or already held. Used by the answerer hook (ADR-0014)."""
+        row = self.db.one(sa.select(Q.c.project_id).where(*self._pk(Q, pending_id)))
+        if row is None:
+            return False
+        self._own(row["project_id"], "pending_not_found", f"No pending request {pending_id}.")
+        now = now_iso()
+        won = self.db.execute(
+            sa.update(Q)
+            .where(
+                *self._pk(Q, pending_id),
+                Q.c.status == "pending",
+                sa.or_(Q.c.claim_expires_at.is_(None), Q.c.claim_expires_at <= now),
+            )
+            .values(
+                claimed_by=worker[:100],
+                claim_expires_at=iso(datetime.now(UTC) + timedelta(seconds=lease_seconds)),
+            )
+        )
+        return won == 1
+
+    @needs("editor")
+    def release_claim(self, pending_id: str, worker: str) -> None:
+        """Give a call back before its lease ends, if ``worker`` still holds it."""
+        row = self.db.one(sa.select(Q.c.project_id).where(*self._pk(Q, pending_id)))
+        if row is None:
+            return
+        self._own(row["project_id"], "pending_not_found", f"No pending request {pending_id}.")
+        self.db.execute(
+            sa.update(Q)
+            .where(*self._pk(Q, pending_id), Q.c.claimed_by == worker[:100])
+            .values(claimed_by=None, claim_expires_at=None)
+        )
 
     def _pending_thread(self, project: str) -> dict[str, Any]:
         """Where each of a project's recent parked calls (any status) sits in its conversation.

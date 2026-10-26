@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
@@ -47,6 +48,43 @@ HOSTED_QUOTAS = Quotas(
     rate=20.0,
     burst=100,
 )
+
+
+def _answerer_from_env() -> dict[str, object]:
+    """The answerer hook's settings. A command is a JSON array of strings (an argv, never a shell
+    line); a URL is http(s); not both. Names to pass through may not be ours."""
+    raw = os.environ.get("SEMULA_ANSWERER_COMMAND", "").strip()
+    url = os.environ.get("SEMULA_ANSWERER_URL", "").strip() or None
+    command: tuple[str, ...] = ()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError(
+                'SEMULA_ANSWERER_COMMAND must be a JSON array of strings, like ["claude", "-p"]'
+            ) from exc
+        if not (
+            isinstance(parsed, list) and parsed and all(isinstance(a, str) and a for a in parsed)
+        ):
+            raise ValueError("SEMULA_ANSWERER_COMMAND must be a non-empty JSON array of strings")
+        command = tuple(parsed)
+    if command and url:
+        raise ValueError("Set SEMULA_ANSWERER_COMMAND or SEMULA_ANSWERER_URL, not both")
+    if url and not url.startswith(("http://", "https://")):
+        raise ValueError("SEMULA_ANSWERER_URL must start with http:// or https://")
+    names = tuple(
+        n.strip() for n in os.environ.get("SEMULA_ANSWERER_ENV", "").split(",") if n.strip()
+    )
+    if any(n.upper().startswith("SEMULA_") for n in names):
+        raise ValueError("SEMULA_ANSWERER_ENV cannot pass on a SEMULA_ variable")
+    return {
+        "answerer_command": command,
+        "answerer_url": url,
+        "answerer_bearer": os.environ.get("SEMULA_ANSWERER_BEARER") or None,
+        "answerer_timeout": float(os.environ.get("SEMULA_ANSWERER_TIMEOUT", "120")),
+        "answerer_concurrency": max(1, int(os.environ.get("SEMULA_ANSWERER_CONCURRENCY", "2"))),
+        "answerer_env": names,
+    }
 
 
 def _quotas_from_env(hosted: bool) -> Quotas:
@@ -97,6 +135,20 @@ class Settings:
     upstream_key: str | None = field(default=None, repr=False)
     upstream_timeout: float = 120.0
     upstream_tenants: bool = False  # hosted: may a workspace admin turn forwarding on?
+    # The answerer hook (ADR-0014): the operator's command (an argv list) or webhook that answers
+    # parked calls. Server configuration only, never a project setting, never shown anywhere.
+    answerer_command: tuple[str, ...] = field(default=(), repr=False)
+    answerer_url: str | None = field(default=None, repr=False)
+    answerer_bearer: str | None = field(default=None, repr=False)
+    answerer_timeout: float = 120.0
+    answerer_concurrency: int = 2
+    answerer_env: tuple[
+        str, ...
+    ] = ()  # names of variables the child may inherit, besides the basics
+
+    @property
+    def answerer_configured(self) -> bool:
+        return bool(self.answerer_command or self.answerer_url)
 
     @property
     def db_path(self) -> Path:
@@ -145,6 +197,7 @@ class Settings:
             upstream_key=os.environ.get("SEMULA_UPSTREAM_KEY") or None,
             upstream_timeout=float(os.environ.get("SEMULA_UPSTREAM_TIMEOUT", "120")),
             upstream_tenants=_flag(os.environ.get("SEMULA_UPSTREAM_TENANTS", "off")),
+            **_answerer_from_env(),  # type: ignore[arg-type]
             models=tuple(
                 m.strip() for m in os.environ.get("SEMULA_MODELS", "semula").split(",") if m.strip()
             ),
