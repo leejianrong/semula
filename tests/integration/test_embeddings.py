@@ -1,6 +1,7 @@
 """The optional embedding tier (SEM-E8, ADR-0003), against a fake model."""
 
 import asyncio
+import threading
 from pathlib import Path
 
 import httpx
@@ -208,11 +209,18 @@ async def test_an_existing_database_is_backfilled_at_startup(tmp_path: Path) -> 
 
 
 async def test_writing_an_entry_does_not_wait_for_the_model(tmp_path: Path) -> None:
-    slow = FakeEmbedder(delay=1.0)
-    async with make_client(tmp_path, mode="replay", embedder=slow) as client:
-        started = asyncio.get_running_loop().time()
-        await seed(client)
-        assert asyncio.get_running_loop().time() - started < 0.8  # the model takes 1 s
+    # No clock: the model is stuck until the test lets it go, and the write must finish anyway.
+    # (A wall-clock limit on a write failed on a slow CI runner.)
+    gate = threading.Event()
+    stuck = FakeEmbedder(gate=gate)
+    async with make_client(tmp_path, mode="replay", embedder=stuck) as client:
+        try:
+            await asyncio.wait_for(seed(client), 10)  # a write that waited on the model hangs here
+            assert stuck.seen == []  # and the model had still not produced anything
+        finally:
+            gate.set()
+        indexed(client)  # released, the vector arrives in the background
+        assert stuck.seen
 
 
 async def test_hits_never_touch_the_model(tmp_path: Path) -> None:
