@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.integration.conftest import chat, make_client
+from tests.integration.conftest import chat, make_client, parked, slow_parking
 from tests.integration.test_replay import record_answer
 
 pytestmark = pytest.mark.integration
@@ -15,12 +15,13 @@ async def test_a_held_call_is_released_by_an_answer(record: httpx.AsyncClient) -
     assert body["choices"][0]["message"]["content"] == "released"
 
 
+@pytest.mark.parametrize("park_delay", [0.0, 0.4])
 async def test_pending_detail_shows_the_request_the_agent_must_answer(
-    record: httpx.AsyncClient,
+    record: httpx.AsyncClient, park_delay: float
 ) -> None:
+    slow_parking(record, park_delay)  # a slow runner or database: the call parks late
     call = asyncio.create_task(record.post("/v1/chat/completions", json=chat("detail please")))
-    await asyncio.sleep(0.05)
-    listed = (await record.get("/api/v1/pending")).json()["pending"]
+    listed = await parked(record)
     detail = (await record.get(f"/api/v1/pending/{listed[0]['id']}")).json()
     assert detail["request"]["messages"][-1]["content"] == "detail please"
     await record.post(f"/api/v1/pending/{listed[0]['id']}/answer", json={"content": "x"})
