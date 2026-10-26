@@ -3,7 +3,7 @@ import asyncio
 import httpx
 import pytest
 
-from tests.integration.conftest import chat
+from tests.integration.conftest import chat, parked, slow_parking
 from tests.integration.test_replay import record_answer
 
 pytestmark = pytest.mark.integration
@@ -48,15 +48,19 @@ async def test_deleting_a_project_removes_its_entries_and_log(record: httpx.Asyn
     assert db.query("SELECT 1 FROM call_log WHERE project_id='doomed'") == []
 
 
-async def test_project_counts_reflect_entries_and_pending(record: httpx.AsyncClient) -> None:
+@pytest.mark.parametrize("park_delay", [0.0, 0.4])
+async def test_project_counts_reflect_entries_and_pending(
+    record: httpx.AsyncClient, park_delay: float
+) -> None:
     await record.post("/api/v1/projects", json={"id": "counted"})
     await record_answer(record, chat("one"), {"content": "1"}, project="counted")
+    slow_parking(record, park_delay)  # a slow runner or database: the call parks late
     call = asyncio.create_task(
         record.post(
             "/v1/chat/completions", json=chat("two"), headers={"X-Semula-Project": "counted"}
         )
     )
-    await asyncio.sleep(0.05)
+    await parked(record, "counted")
     row = (await record.get("/api/v1/projects/counted")).json()
     assert row["entries"] == 1 and row["pending"] == 1
     pid = (await record.get("/api/v1/pending", params={"project": "counted", "wait": 10})).json()[
