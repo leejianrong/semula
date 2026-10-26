@@ -127,6 +127,11 @@ S: dict[str, Callable[[World], None]] = {
         only_shop(w.bound.list_pending(None)),
         missing(lambda: w.bound.list_pending("pending", "other")),
     ),
+    "claim_next": lambda w: (
+        missing(lambda: w.bound.claim_next("other")),
+        _equal((w.bound.claim_next() or {}).get("project"), "shop"),
+        _equal(w.admin.list_pending("pending", "other")[0]["claimed_until"], None),
+    ),
     "wait_for_pending": lambda w: (
         only_shop(asyncio.run(w.bound.wait_for_pending(None, 0.2))),
         missing(lambda: asyncio.run(w.bound.wait_for_pending("other", 0.2))),

@@ -31,6 +31,7 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula mcp` |  | Run an MCP server on stdio that talks to --url |
 | `semula pending` | `--all` `--project` `--wait` | List parked requests waiting for an answer |
 | `semula show` | `<id>` | Show one pending request in full |
+| `semula claim` | `--project` `--lease` `--worker` | Claim the oldest unclaimed parked request and print it in full |
 | `semula answer` | `<id>` `--text` `--file` `--stdin` | Answer a pending request, releasing the held call |
 | `semula project list` |  | List projects |
 | `semula project create` | `<id>` `--name` | Create a project |

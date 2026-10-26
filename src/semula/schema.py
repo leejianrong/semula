@@ -134,6 +134,10 @@ pending = sa.Table(
     sa.Column("entry_id", sa.Text),
     _ts("created_at"),
     sa.Column("answered_at", sa.Text),
+    # A worker's lease on the call (SEM-95): who holds it and until when. Advisory for
+    # claim_next only; anyone may still answer. An expired lease is no lease.
+    sa.Column("claimed_by", sa.Text),
+    sa.Column("claim_expires_at", sa.Text),
     sa.PrimaryKeyConstraint("workspace_id", "id", name="pk_pending"),
     _project_fk("pending"),
     sa.Index("idx_pending_status", "workspace_id", "project_id", "status"),

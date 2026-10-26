@@ -49,6 +49,7 @@ TOOL_SCOPES = {
     "get_status": "record", "list_projects": "record", "get_project_settings": "record",
     "get_upstream_usage": "record",
     "list_pending": "record", "wait_for_pending": "record", "get_pending": "record",
+    "claim_next": "record",
     "answer_pending": "record", "list_entries": "record", "get_entry": "record",
     "entry_history": "record", "upsert_entry": "record", "update_entry": "record",
     "test_match": "record", "list_calls": "record", "log_stats": "record",
@@ -242,6 +243,17 @@ def build_mcp(base: Service) -> FastMCP:
                 )
             )
         return await service.wait_for_pending(project, timeout_seconds)
+
+    @tool
+    def claim_next(
+        project: str | None = None, lease_seconds: float = 300, worker: str | None = None
+    ) -> dict[str, Any] | None:
+        """Take the oldest parked request nobody holds and read it in one call: the same view
+        get_pending gives (messages, tools, 'shape'), plus 'claim' with when your hold ends. Other
+        claim_next calls skip it until then, so several workers can share a queue. Returns null
+        when nothing is claimable. Answer with answer_pending before the lease ends; a lease that
+        runs out frees the call for someone else (lease_seconds up to 3600)."""
+        return service.claim_next(project, lease_seconds, worker)
 
     @tool
     def get_pending(id: str) -> dict[str, Any]:
