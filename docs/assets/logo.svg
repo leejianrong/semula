@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" role="img" aria-label="semula">
+  <title>semula</title>
+  <!-- Option D, "again from the start": a loop that returns to where it began, starting at the record dot. -->
+  <path d="M32 11A21 21 0 1 1 11 32" fill="none" stroke="#14201B" stroke-width="6.5" stroke-linecap="round"/>
+  <path d="M11 22L4 33H18z" fill="#14201B" stroke="#14201B" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="32" cy="11" r="8.5" fill="#C8271F"/>
+</svg>

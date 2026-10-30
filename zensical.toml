@@ -17,10 +17,12 @@ INDAH-*.md
 initial-chat.md
 design/
 indah/
-adr/README.md
+adr/
+RELEASING.md
 """
 nav = [
   { "Home" = "index.md" },
+  { "Concepts" = "concepts.md" },
   { "Tutorial" = [
     { "Your first recording" = "tutorial/first-recording.md" },
     { "Replay without a recorder" = "tutorial/replay.md" },
@@ -45,28 +47,15 @@ nav = [
     { "Configuration" = "reference/configuration.md" },
     { "Errors" = "reference/errors.md" },
   ] },
-  { "Agents" = ["agents/PLAYBOOK.md"] },
-  { "Decisions" = [
-    { "Python, FastAPI, one process" = "adr/0001-python-fastapi-single-process.md" },
-    { "The record queue" = "adr/0002-record-mode-park-and-answer-queue.md" },
-    { "Tiered matching" = "adr/0003-tiered-matching-safe-by-default.md" },
-    { "SQLite and workspaces" = "adr/0004-sqlite-with-workspace-id-from-day-one.md" },
-    { "One service layer" = "adr/0005-one-service-layer-optimistic-concurrency.md" },
-    { "Headless first, dashboard on indah" = "adr/0006-headless-first-dashboard-on-indah.md" },
-    { "Request fingerprint" = "adr/0007-request-fingerprint-and-canonical-request.md" },
-    { "Streaming storage" = "adr/0008-streaming-storage-and-replay.md" },
-    { "SQLAlchemy and Postgres" = "adr/0009-sqlalchemy-core-alembic-postgres-path.md" },
-    { "Hosted auth and tokens" = "adr/0010-hosted-auth-and-tokens.md" },
-    { "Tenancy and mode per project" = "adr/0011-workspace-tenancy-and-per-project-mode.md" },
-    { "Hosted dashboard stays on indah" = "adr/0012-hosted-dashboard-stays-on-indah.md" },
-    { "Record-through and its budget" = "adr/0013-record-through-and-its-budget.md" },
-    { "The answerer hook" = "adr/0014-answerer-hook-runs-the-operators-command.md" },
-  ] },
-  { "Contributing" = ["RELEASING.md"] },
+  { "For your agent" = ["agents/PLAYBOOK.md"] },
 ]
+
+extra_css = ["assets/extra.css"]
 
 [project.theme]
 language = "en"
+logo = "assets/logo.svg"
+favicon = "assets/favicon.svg"
 features = [
   "content.code.copy",
   "content.tabs.link",

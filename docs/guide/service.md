@@ -9,7 +9,7 @@ curl localhost:8731/health
 ```
 
 ```json
-{"status":"ok","version":"0.2.0","mode":"replay"}
+{"status":"ok","version":"0.4.0","mode":"replay"}
 ```
 
 It runs the published image, keeps recordings in a Docker volume, and starts again after a reboot. The port is fixed at `8731` on loopback (change it with `SEMULA_PORT`).
