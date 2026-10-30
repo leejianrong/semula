@@ -13,10 +13,10 @@ flowchart LR
 ```
 
 **Project**
-:   A namespace for recordings, usually one per app. Each project has its own entries, aliases and mode. See [One project per app](tutorial/projects.md).
+:   A namespace for recordings, usually one per app. Each project has its own entries, aliases and mode. See [Give each app its own project](tutorial/projects.md).
 
 **Entry**
-:   One stored prompt with its answer (or answers). Calls are matched against entries. You can edit, pin and template them: [Edit, pin and template](tutorial/editing.md).
+:   One stored prompt with its answer (or answers). Calls are matched against entries. You can edit, pin and template them: [Edit and protect a recording](tutorial/editing.md).
 
 **Mode**
 :   `record` answers unknown prompts by holding them for an agent. `replay` only serves what is stored and returns an error for anything else. Set it per project.
@@ -28,7 +28,7 @@ flowchart LR
 :   A call that matched nothing. In record mode it parks; in replay mode it returns an error ([Errors](reference/errors.md)).
 
 **Tier**
-:   One way of matching a call to an entry, tried cheapest first: exact, normalised, alias, words, meaning. A weak match is never served silently. It goes to review instead. See [Near misses and review](tutorial/near-misses.md).
+:   One way of matching a call to an entry, tried cheapest first: exact, normalised, alias, words, meaning. A weak match is never served silently. It goes to review instead. See [Handle near misses](tutorial/near-misses.md).
 
 **Alias**
 :   A human-approved link saying "this prompt may be answered by that entry".
@@ -47,4 +47,6 @@ The docs use one word per idea.
 | A stored prompt and its answer | entry | recording (the act of saving), cassette (the exported files) |
 | What a person or agent supplies, or semula replays | answer | response, reply |
 
-Advanced terms (answerer hook, record-through, claim and lease) are explained where they are used, in [Run it as a service](guide/service.md).
+The reasoning behind these is in [Why calls park](explanation/why-calls-park.md) and [How matching works](explanation/how-matching-works.md).
+
+Advanced terms (answerer hook, record-through, claim and lease) are explained where they are used, in [record through a real model](guide/record-through.md), [let a command answer each call](guide/answerer.md) and [manage a busy queue](guide/busy-queue.md).

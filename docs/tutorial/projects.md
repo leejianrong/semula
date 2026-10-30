@@ -1,6 +1,6 @@
-# One project per app
+# Give each app its own project
 
-Recordings are grouped into projects, so two apps with the same prompt can have different answers. The project `default` always exists.
+In this tutorial we create two projects, so two apps with the same prompt can have different answers. The project `default` always exists.
 
 ```bash
 docker exec semula semula project create support-bot --name "Support bot"
@@ -61,5 +61,14 @@ docker exec semula semula entry list support-bot
 01M5HH1FQC65G543SK7JAABCJV	v1	-	hits=0	-	aliases=0	Classify: my screen is cracked
 (1 of 1)
 ```
+
+
+## Recap
+
+- Pick a project per call with the URL or the `X-Semula-Project` header.
+- Keep each project's mode separate.
+- Author an entry before any call has been made.
+
+For running one shared server for all your projects, see [Run it on your laptop](../guide/service.md).
 
 Next: [edit, pin and template](editing.md).

@@ -1,5 +1,7 @@
 # Your first recording
 
+In this tutorial we start semula, send it a prompt, answer it by hand, and watch the same prompt replay for free.
+
 You need Docker. Everything on this page runs against the published image.
 
 ## Start semula
@@ -97,5 +99,15 @@ The first was `recorded` and took as long as you took to answer. The second was 
 
 !!! tip "Different model name, same hit"
     The model name your app sends is not part of what semula matches on, so switching from `gpt-4o` to another name still hits. Settings that change the answer, like `temperature`, can be made to count per project. See [Near misses](near-misses.md).
+
+
+## Recap
+
+- Start semula in record mode with `docker run`.
+- Point a client at `http://127.0.0.1:8080/v1` and send a prompt.
+- Answer the parked call with `semula answer`.
+- Send the prompt again to get the stored answer.
+
+To install another way, see [Install](../guide/install.md).
 
 Next: [replay without a recorder](replay.md).

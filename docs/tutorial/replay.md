@@ -1,6 +1,8 @@
 # Replay without a recorder
 
-Record mode is for the first run. Once you have the recordings, you want the opposite: no waiting, and an error for anything unknown, so a test never silently invents an answer.
+In this tutorial we switch a project to replay mode, so a test serves recordings and fails fast on anything unknown.
+
+Assumes the recording from [Your first recording](first-recording.md).
 
 ## Switch a project to replay
 
@@ -57,5 +59,12 @@ The *server default* starts from `SEMULA_MODE` and is forgotten on restart. A pr
 
 !!! warning "Imports never turn recording on"
     A project's mode is not exported, and importing a bundle cannot switch recording on. A cassette from a colleague cannot make your server start parking calls.
+
+
+## Recap
+
+- Run `semula mode replay` to stop parking unknown prompts.
+- Expect `424` for a prompt nobody recorded; see [Errors](../reference/errors.md).
+- Set mode per project when apps need different behaviour.
 
 Next: [let an agent do the answering](agent.md).

@@ -1,6 +1,8 @@
-# Let an agent answer
+# Record with a coding agent
 
-Typing answers gets old. semula is built so a coding agent (Claude Code or Codex, on the subscription you already have) does it for you. The agent talks to semula over MCP, or through the same CLI you just used.
+In this tutorial we connect Claude Code or Codex, so an agent answers parked calls and nobody types answers by hand. The agent talks to semula over MCP, or through the same CLI you just used.
+
+Assumes a server in record mode, as in [Your first recording](first-recording.md).
 
 ## Connect the agent
 
@@ -48,7 +50,7 @@ claude -p "You are the recorder for semula. Call wait_for_pending, then get_pend
   --allowedTools "mcp__semula__wait_for_pending,mcp__semula__get_pending,mcp__semula__answer_pending"
 ```
 
-In a test of this page, an app asked *"Capital of Malaysia?"* with a system prompt demanding one word. The agent waited, read the request, answered `Kuala Lumpur`, and the app's parked call returned it. Codex did the same for a colour question and answered `BLUE`.
+Say an app asks *"Capital of Malaysia?"* with a system prompt demanding one word. The agent waits, reads the request, answers `Kuala Lumpur`, and the app's parked call returns it. Codex does the same for any other prompt.
 
 !!! tip "Give the agent the playbook"
     The [agent playbook](../agents/PLAYBOOK.md) covers answer formats, error handling and the rules that keep answers replayable. A ready-made Claude Code skill lives in the repository under `docs/agents/claude-code-skill/`.
@@ -72,5 +74,14 @@ error: invalid_answer: Unknown tool 'get_forecast'. The request offered: ['get_w
 ```
 
 The agent fixes that field and sends it again. The next page shows this with a real tool call.
+
+
+## Recap
+
+- Connect the agent over MCP, or use the CLI.
+- Let the agent loop: wait for a parked call, read it, answer it.
+- Read the rejection message when an answer is wrong; the agent fixes it and sends again.
+
+For the full rules an agent should follow, see the [agent playbook](../agents/PLAYBOOK.md).
 
 Next: [tool calls and streaming](tools-and-streaming.md).

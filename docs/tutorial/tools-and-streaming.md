@@ -1,6 +1,8 @@
-# Tool calls and streaming
+# Record a tool call and a stream
 
-Real apps ask for tool calls and stream tokens. semula records both.
+In this tutorial we record a tool call and a streamed reply, then replay both. Real apps ask for tool calls and stream tokens, and semula records both.
+
+Assumes a server in record mode.
 
 ## A tool call
 
@@ -88,5 +90,12 @@ data: [DONE]
 ```
 
 A plain text answer to a streaming request is split into chunks for you. Either kind of recording serves both streaming and non-streaming requests.
+
+
+## Recap
+
+- Answer a tool-calling request with a JSON tool call.
+- Expect a wrong tool name to be rejected before it is saved.
+- Replay a recording as a stream or as one reply; either kind of recording serves both.
 
 Next: [one project per app](projects.md).

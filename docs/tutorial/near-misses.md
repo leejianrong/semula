@@ -1,6 +1,8 @@
-# Near misses and the review queue
+# Handle near misses
 
-An exact match is easy. Real prompts drift: an extra word, a new timestamp, a path that changed. semula checks several *tiers*, cheapest first, and stops at the first that answers.
+In this tutorial we ask why a prompt did not match, then approve or reject the near match in the review queue. Real prompts drift: an extra word, a new timestamp, a path that changed. semula checks several *tiers*, cheapest first, and stops at the first that answers.
+
+Assumes the project is in record mode: `semula mode record`.
 
 | Tier | Matches when | Served? |
 |---|---|---|
@@ -86,5 +88,12 @@ docker exec semula semula project settings support-bot --set '{"tail_n": 2}'
 ```
 
 Changing a matching setting re-keys the project's existing entries, so nothing has to be re-recorded.
+
+
+## Recap
+
+- Run `semula test-match` to see each tier's verdict.
+- Approve a near match to create an alias, or reject it for good.
+- Tune matching per project; the settings are listed in [Configuration](../reference/configuration.md).
 
 Next: [keep recordings in git](cassettes.md).

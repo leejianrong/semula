@@ -1,4 +1,14 @@
-# Host semula for a team
+# How to host semula for a team
+
+!!! note "Is this for you?"
+    Most people never need hosted mode. If you work alone or share one laptop-sized server, the [local setup](service.md) is enough. Read on if several teams or apps must share one server with sign-in, roles and per-token limits. This page is for the person who runs that server.
+
+```mermaid
+flowchart LR
+    W[Workspace] --> P1[Project]
+    W --> P2[Project]
+    T[API token] -- scope and optional project --> W
+```
 
 Locally, semula trusts whoever can reach its port. To share one server between teams or projects, turn on hosted mode: every call then carries an **API token**, and the token decides which workspace, which project and what it may do. This page is the operator's view, and the list of [what is missing](#what-is-not-there-yet) is worth a read.
 
@@ -44,7 +54,7 @@ SEMULA_AUTH_GITHUB_CLIENT_ID=...   SEMULA_AUTH_GITHUB_CLIENT_SECRET=...
 A sign-in is a server-side row and an opaque cookie (`HttpOnly`, `SameSite=Lax`, and `Secure` with the `__Host-` prefix on https). It ends after 12 idle hours or 7 days, whichever is first, a new one is made at each sign-in (the old one ends), and signing out needs the session's CSRF token. Behind plain `http://` the cookie is not `Secure` and has no prefix; that is for trying it out only.
 
 !!! note "Checked against a stand-in"
-    The sign-in flow is tested end to end against a provider written for the tests, which speaks the real protocol and is made to misbehave in ten ways (a wrong state, nonce, audience, issuer or signature, an expired or unsigned token, a reused code, an unverified email). It has not been run against Google's or GitHub's own servers, so check your first real sign-in, and the redirect URI in particular.
+    The sign-in flow is tested end to end against a provider written for the tests. It speaks the real protocol and is made to misbehave in ten ways (a wrong state, nonce, audience, issuer or signature, an expired or unsigned token, a reused code, an unverified email). The flow has not been run against Google's or GitHub's own servers, so check your first real sign-in, and the redirect URI in particular.
 
 ## Members and roles
 
@@ -75,7 +85,7 @@ The link asks the person to sign in (with any provider), then to confirm, and it
 
 ## Scopes
 
-A token has one of three scopes, `replay`, `record` and `admin`, each including the ones before it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist, and listings (projects, pending, the log) hold only its own. It cannot create projects.
+A token has one of three scopes, `replay`, `record` and `admin`, each including the ones before it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist. Listings (projects, pending, the log) hold only its own. It cannot create projects.
 
 ## MCP
 
@@ -188,7 +198,7 @@ Hosting wants Postgres. Every tenant table has a [row-level-security](../referen
 
 ## The dashboard
 
-With a sign-in provider configured, `/ui` is the same dashboard as locally, behind sign-in. A page load without a sign-in goes to `/auth/login`; the dashboard's own calls get a 401. It shows one workspace, the one the person is working in, and what it offers follows their role: a **viewer** can read the log, entries, review and pending, an **editor** also answers, edits, approves and turns recording on, and controls a role may not use are not sent to the browser at all. The role is read again on every action, so an admin who demotes or removes someone is obeyed at that person's next click, with no wait for them to sign in again. A person who belongs to no workspace sees only a page saying so. A person who belongs to several has a *Workspace* menu above the project switcher: picking one is remembered by their sign-in, ends the open tab, and a reload opens the dashboard in the new workspace with the role they hold there. Picking one they do not belong to is refused.
+With a sign-in provider configured, `/ui` is the same dashboard as locally, behind sign-in. A page load without a sign-in goes to `/auth/login`; the dashboard's own calls get a 401. It shows one workspace, the one the person is working in, and what it offers follows their role. A **viewer** can read the log, entries, review and pending. An **editor** also answers, edits, approves and turns recording on. Controls a role may not use are not sent to the browser at all. The role is read again on every action, so an admin who demotes or removes someone is obeyed at that person's next click. A person who belongs to no workspace sees only a page saying so. A person who belongs to several has a *Workspace* menu above the project switcher: picking one is remembered by their sign-in and ends the open tab. A reload opens the dashboard in the new workspace with the role they hold there. Picking one they do not belong to is refused.
 
 An **admin** also gets a *Workspace* section in the sidebar:
 

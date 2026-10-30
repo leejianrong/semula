@@ -61,7 +61,7 @@ New words? [Concepts](concepts.md) defines them in one page.
 <div class="grid cards" markdown>
 
 - **[Tutorial](tutorial/first-recording.md)**: learn by doing. Nine short pages, each one idea, each one runnable.
-- **[Let an agent answer](tutorial/agent.md)**: connect Claude Code or Codex so nobody types answers by hand.
+- **[Record with a coding agent](tutorial/agent.md)**: connect Claude Code or Codex so nobody types answers by hand.
 - **[Guide](guide/install.md)**: tasks. Install options, running it as a service, upgrades and backups.
 - **[Reference](reference/cli.md)**: lookups. Every command, MCP tool, endpoint and setting.
 - **[Agent playbook](agents/PLAYBOOK.md)**: paste this into your coding agent's context.

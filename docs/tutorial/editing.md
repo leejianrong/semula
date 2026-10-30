@@ -1,6 +1,8 @@
-# Edit, pin and template
+# Edit and protect a recording
 
-A recording is not set in stone. You can change an answer, protect it from agents, and make parts of it change on every replay.
+In this tutorial we change an answer, protect it from agents, and make parts of it change on every replay.
+
+Assumes an entry from the earlier pages. The commands use `<entry-id>`: replace it with an id from `semula entry list <project>`.
 
 ## Templates
 
@@ -78,5 +80,13 @@ docker exec semula semula entry set <entry-id> --version 3 --text "second answer
 ```
 
 `first` always returns the first, `sequence` walks the list and stays on the last, `cycle` wraps around. This is how you test a retry: first call fails, second succeeds.
+
+
+## Recap
+
+- Use templates for values that change on every replay.
+- Read an entry's change history with `semula entry history <id>`.
+- Pin an entry so an agent cannot overwrite it.
+- Give one prompt several answers and choose how semula picks.
 
 Next: [near misses and the review queue](near-misses.md).
