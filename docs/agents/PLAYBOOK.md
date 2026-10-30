@@ -1,5 +1,8 @@
 # Agent playbook: recording with semula
 
+!!! tip "For humans"
+    This page is written to your coding agent. Paste it, or its URL, into the agent's context and it will know how to answer parked calls.
+
 You are a coding agent (Claude Code, Codex, or similar). A developer's app is calling an OpenAI-compatible endpoint that is really **semula**. When semula has no recorded answer it **parks** the call and waits for you. Your answer is saved, the app's call completes, and every later identical call replays your answer for free. You are standing in for the paid model, so answer the way it would.
 
 ## 1. Connect

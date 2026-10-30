@@ -1,0 +1,5 @@
+/* The mark is dark ink on light; swap to the light-ink variant in the dark scheme. */
+[data-md-color-scheme="slate"] .md-header__button.md-logo img,
+[data-md-color-scheme="slate"] .md-nav__button.md-logo img {
+  content: url("logo-dark.svg");
+}

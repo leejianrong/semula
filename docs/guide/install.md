@@ -39,7 +39,7 @@ semula runs three ways. Pick the one that fits.
 
 === "Python package"
 
-    From a clone, with [uv](https://docs.astral.sh/uv/). semula is not on PyPI yet.
+    From a clone, with [uv](https://docs.astral.sh/uv/). semula is not on PyPI yet, so pip users install from a clone.
 
     ```bash
     git clone https://github.com/leejianrong/semula && cd semula
@@ -59,7 +59,7 @@ curl http://127.0.0.1:8080/health
 ```
 
 ```json
-{"status":"ok","version":"0.2.0","mode":"record"}
+{"status":"ok","version":"0.4.0","mode":"record"}
 ```
 
 Then follow the [tutorial](../tutorial/first-recording.md).

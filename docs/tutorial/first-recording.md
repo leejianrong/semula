@@ -18,7 +18,7 @@ curl http://127.0.0.1:8080/health
 ```
 
 ```json
-{"status":"ok","version":"0.2.0","mode":"record"}
+{"status":"ok","version":"0.4.0","mode":"record"}
 ```
 
 ## Call it like OpenAI
