@@ -1,6 +1,8 @@
 # Replay without a recorder
 
-Record mode is for the first run. Once you have the recordings, you want the opposite: no waiting, and an error for anything unknown, so a test never silently invents an answer.
+In this tutorial we switch a project to replay mode, so a test serves recordings and fails fast on anything unknown.
+
+Assumes the recording from [Your first recording](first-recording.md).
 
 ## Switch a project to replay
 
@@ -10,7 +12,7 @@ Mode is a setting of each project, and semula keeps it across restarts:
 docker exec semula semula mode replay --project default
 ```
 
-```
+```text
 default: replay (kept across restarts)
 ```
 
@@ -22,7 +24,7 @@ curl -i http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Name a vegetable."}]}'
 ```
 
-```
+```text
 HTTP/1.1 424 Failed Dependency
 
 {"nearest":{"entry_id":"01M5HGZ4Y2JJHS5HCTKW5E12GT","score":0.667,"last_message":"Name a fruit."},"error":{"message":"No recorded answer matches this request, and semula is in replay mode.","type":"semula_error","param":null,"code":"semula_no_match"}}
@@ -47,7 +49,7 @@ docker exec semula semula mode record --project default
 docker exec semula semula mode
 ```
 
-```
+```text
 default: record (kept across restarts)
 server default   record
 project default  record
@@ -57,5 +59,12 @@ The *server default* starts from `SEMULA_MODE` and is forgotten on restart. A pr
 
 !!! warning "Imports never turn recording on"
     A project's mode is not exported, and importing a bundle cannot switch recording on. A cassette from a colleague cannot make your server start parking calls.
+
+
+## Recap
+
+- Run `semula mode replay` to stop parking unknown prompts.
+- Expect `424` for a prompt nobody recorded; see [Errors](../reference/errors.md).
+- Set mode per project when apps need different behaviour.
 
 Next: [let an agent do the answering](agent.md).

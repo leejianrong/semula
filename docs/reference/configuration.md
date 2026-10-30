@@ -27,10 +27,10 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_EMBEDDINGS` | `off` | `on` turns on meaning-based matching. Needs the `embeddings` extra. |
 | `SEMULA_EMBEDDINGS_OFFLINE` | `off` | `on` forbids downloading the model; start fails if it is not cached. |
 | `SEMULA_MODEL_DIR` | `<data dir>/models` | Where the embedding model is stored. |
-| `SEMULA_UPSTREAM_KEY` | none | The API key of a real provider that projects with `record_through` forward misses to. Never stored, logged or exported. See [Record through a real model](../guide/service.md#record-through-a-real-model). |
+| `SEMULA_UPSTREAM_KEY` | none | The API key of a real provider that projects with `record_through` forward misses to. Never stored, logged or exported. See [Record through a real model](../guide/record-through.md). |
 | `SEMULA_UPSTREAM_URL` | `https://api.openai.com/v1` | The provider's OpenAI-compatible base URL, no trailing slash. |
 | `SEMULA_UPSTREAM_TIMEOUT` | `120` | Seconds to wait for the provider. |
-| `SEMULA_ANSWERER_COMMAND` | none | The command that answers parked calls, as a JSON array of strings (an argv, never a shell line), for projects with `answerer` on. Run once per call, with the request on stdin. Never shown, logged or exported. See [Let a command answer each call](../guide/service.md#let-a-command-answer-each-call). |
+| `SEMULA_ANSWERER_COMMAND` | none | The command that answers parked calls, as a JSON array of strings (an argv, never a shell line), for projects with `answerer` on. Run once per call, with the request on stdin. Never shown, logged or exported. See [Let a command answer each call](../guide/answerer.md). |
 | `SEMULA_ANSWERER_URL` | none | A webhook instead of a command (`http` or `https`; not both). The request is POSTed as JSON, redirects are not followed. Never shown or logged. |
 | `SEMULA_ANSWERER_BEARER` | none | Sent as `Authorization: Bearer ...` to the webhook. Never logged. |
 | `SEMULA_ANSWERER_TIMEOUT` | `120` | Seconds a run may take before the process group is killed and the call stays parked. |

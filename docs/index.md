@@ -4,7 +4,7 @@ semula is a fake OpenAI-compatible server for development and tests. The first t
 
 **For:** developers whose app or tests call an OpenAI-compatible API (OpenAI, Azure, Ollama, LiteLLM and the like).
 **You get:** no API bill in tests, the same answer every run, tests that work offline, and no weak guesses served silently.
-**You need:** Docker and two terminals. The demo below takes about two minutes.
+**You need:** Docker and two terminals. The demo that follows takes about two minutes.
 
 Start it in record mode (terminal 1):
 
@@ -61,7 +61,7 @@ New words? [Concepts](concepts.md) defines them in one page.
 <div class="grid cards" markdown>
 
 - **[Tutorial](tutorial/first-recording.md)**: learn by doing. Nine short pages, each one idea, each one runnable.
-- **[Let an agent answer](tutorial/agent.md)**: connect Claude Code or Codex so nobody types answers by hand.
+- **[Record with a coding agent](tutorial/agent.md)**: connect Claude Code or Codex so nobody types answers by hand.
 - **[Guide](guide/install.md)**: tasks. Install options, running it as a service, upgrades and backups.
 - **[Reference](reference/cli.md)**: lookups. Every command, MCP tool, endpoint and setting.
 - **[Agent playbook](agents/PLAYBOOK.md)**: paste this into your coding agent's context.

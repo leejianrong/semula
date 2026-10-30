@@ -117,7 +117,7 @@ Rules that keep answers replayable:
 
 ## 5. Matching and settings
 
-`test_match` explains a hit or a miss without side effects: the tier (`exact`, `normalised`, `alias` or `bm25`), the entry and its score, and on a miss the weak `candidates` that would go to review plus the nearest recorded entry. `tiers` gives a verdict for each of exact, normalised, alias, words and meaning (`no`, `match`, `candidate` = queued for review, `skipped` = an earlier tier answered, `off` = embeddings disabled), so you can see why a near prompt missed. If near-identical prompts keep missing, adjust the project's settings (`update_project_settings`): `scrub_patterns` (regexes to ignore, e.g. `ticket-\d+`), `tail_n` (match only the last N messages), `include_params` (request params that count). Changing these re-keys existing entries.
+`test_match` explains a hit or a miss without side effects. It returns the tier (`exact`, `normalised`, `alias` or `bm25`), the entry and its score. On a miss it returns the weak `candidates` that would go to review plus the nearest recorded entry. `tiers` gives a verdict for each of exact, normalised, alias, words and meaning (`no`, `match`, `candidate` = queued for review, `skipped` = an earlier tier answered, `off` = embeddings disabled), so you can see why a near prompt missed. If near-identical prompts keep missing, adjust the project's settings (`update_project_settings`): `scrub_patterns` (regexes to ignore, e.g. `ticket-\d+`), `tail_n` (match only the last N messages), `include_params` (request params that count). Changing these re-keys existing entries.
 
 ### Secrets
 

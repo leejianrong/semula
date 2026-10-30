@@ -18,9 +18,9 @@ docker run -d --name semula -p 127.0.0.1:8080:8080 \
 Three things to know:
 
 - **Recordings made with one release open in the next.** The 0.x promise is that a release may change behaviour, and the [changelog](https://github.com/leejianrong/semula/blob/main/CHANGELOG.md) lists each change under "Changed".
-- **There is no downgrade.** After an upgrade the database is migrated and an older release cannot read it. Back up first (below) if you might want to go back. Starting a release that is too old for the database stops with a message instead of a traceback:
+- **There is no downgrade.** After an upgrade the database is migrated and an older release cannot read it. Back up first ([Back up](#back-up)) if you might want to go back. Starting a release that is too old for the database stops with a message instead of a traceback:
 
-    ```
+    ```text
     error: This database was made by a newer semula (revision 0009) and cannot be downgraded. Run a release at least as new as the one that wrote it, or restore a backup taken before the upgrade.
     ```
 - **Pin a version in anything shared.** `ghcr.io/leejianrong/semula:latest` moves. Use `:0.4.0`, or `:0.4` to follow patch releases.

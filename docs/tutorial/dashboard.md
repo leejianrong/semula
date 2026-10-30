@@ -1,6 +1,6 @@
 # Watch it in the dashboard
 
-semula has a small web dashboard at `/ui`. Open `http://127.0.0.1:8080/ui/` and it lands on the live log of the project with the latest call.
+In this tutorial we open the dashboard and use it to watch calls, answer parked ones and review near matches. It lives at `/ui`: open `http://127.0.0.1:8080/ui/` and it lands on the live log of the project with the latest call.
 
 ## The live log
 
@@ -14,7 +14,7 @@ When a project is recording, parked calls are listed on the **Pending** screen, 
 
 ![The Pending screen: two parked calls, one selected, with an answer typed in](../assets/dashboard-pending.png)
 
-Select a call to read the whole request: the system prompt, the messages and any tools offered. Type the answer and press **Send answer**. The held call is released at once.
+Select a call to read the whole request: the system prompt, the messages and any tools offered. Type the answer and press **Send answer**. The parked call is released at once.
 
 - Plain text is sent as the reply.
 - Anything that starts with `{` or `[` is sent as JSON, so you can write a tool call or `{"chunks": [...]}`.
@@ -44,7 +44,7 @@ The **Review** screen lists near misses (the badge in the sidebar counts them). 
 
 ## Playground
 
-The **Playground** asks what semula would do with a prompt in the project you are looking at, without sending it: the verdict of each tier, the answer it would serve, or the nearest recorded prompt when nothing matches. It also says whether the call would be parked (the project is recording) or fail with 424 (it is replaying). Nothing is logged and no hit is counted.
+The **Playground** asks what semula would do with a prompt in the project you are looking at, without sending it. It shows the verdict of each tier and the answer it would serve, or the nearest recorded prompt when nothing matches. It also says whether the call would be parked (the project is recording) or fail with 424 (it is replaying). Nothing is logged and no hit is counted.
 
 ## Good to know
 
@@ -52,5 +52,12 @@ The dashboard is built on the first visit to `/ui`, so the server starts as fast
 
 !!! warning "No dashboard behind an API key"
     A browser cannot send an `Authorization` header on a page load. When `SEMULA_API_KEY` is set, the dashboard switches itself off. Use the CLI, MCP or REST there, or leave the key off and keep the port on loopback.
+
+
+## Recap
+
+- Watch calls appear in the live log.
+- Answer a parked call from the Pending screen.
+- Fix an entry, review candidates and try prompts in the Playground.
 
 That is the tutorial. For installing differently, running semula as a standing service, and keeping your recordings safe, see the [guide](../guide/install.md).

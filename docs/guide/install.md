@@ -1,6 +1,6 @@
 # Install
 
-semula runs three ways. Pick the one that fits.
+semula runs three ways. Pick Docker unless you are developing semula itself or have no Docker; the Python package is for working from a clone.
 
 === "Docker"
 

@@ -1,6 +1,8 @@
-# Near misses and the review queue
+# Handle near misses
 
-An exact match is easy. Real prompts drift: an extra word, a new timestamp, a path that changed. semula checks several *tiers*, cheapest first, and stops at the first that answers.
+In this tutorial we ask why a prompt did not match, then approve or reject the near match in the review queue. Real prompts drift: an extra word, a new timestamp, a path that changed. semula checks several *tiers*, cheapest first, and stops at the first that answers.
+
+Assumes the project is in record mode: `semula mode record`.
 
 | Tier | Matches when | Served? |
 |---|---|---|
@@ -20,7 +22,7 @@ The rule that matters: **a weak guess is never served by default.** A prompt tha
 docker exec semula semula test-match --project support-bot --prompt "Classify: my screen is cracked  "
 ```
 
-```
+```text
 match: normalised (1.00) -> entry 01M5HH1FQC65G543SK7JAABCJV (would serve)
 tiers: exact no, normalised match 1.00, alias skipped, words skipped, meaning off
 ```
@@ -31,7 +33,7 @@ Now one with an extra word:
 docker exec semula semula test-match --project support-bot --prompt "Classify: my screen is badly cracked"
 ```
 
-```
+```text
 no match (would park); nearest 01M5HH1FQC65G543SK7JAABCJV score 0.909; 1 weak candidate(s) would go to review
 tiers: exact no, normalised no, alias no, words candidate 0.91, meaning off
 ```
@@ -48,7 +50,7 @@ Send that prompt for real, with the project in record mode. The call parks as us
 docker exec semula semula review list
 ```
 
-```
+```text
 01M5HH2EBM7AV0TKB5H9MCBNDC	open	0.91	support-bot	Classify: my screen is badly cracked  ~  Classify: my screen is cracked
 ```
 
@@ -58,7 +60,7 @@ docker exec semula semula review list
 docker exec semula semula review approve 01M5HH2EBM7AV0TKB5H9MCBNDC
 ```
 
-```
+```text
 approved candidate 01M5HH2EBM7AV0TKB5H9MCBNDC
 ```
 
@@ -86,5 +88,12 @@ docker exec semula semula project settings support-bot --set '{"tail_n": 2}'
 ```
 
 Changing a matching setting re-keys the project's existing entries, so nothing has to be re-recorded.
+
+
+## Recap
+
+- Run `semula test-match` to see each tier's verdict.
+- Approve a near match to create an alias, or reject it for good.
+- Tune matching per project; the settings are listed in [Configuration](../reference/configuration.md).
 
 Next: [keep recordings in git](cassettes.md).
