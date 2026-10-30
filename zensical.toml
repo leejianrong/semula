@@ -1,7 +1,7 @@
 # The documentation site (https://leejianrong.github.io/semula/). Build: `make docs`.
 [project]
 site_name = "semula"
-site_description = "A fake OpenAI-compatible server that learns its answers from your coding agent."
+site_description = "A mock LLM server powered by your AI subscription: an OpenAI-compatible endpoint your coding agent answers, recorded and replayed for free."
 site_url = "https://leejianrong.github.io/semula/"
 repo_url = "https://github.com/leejianrong/semula"
 repo_name = "leejianrong/semula"

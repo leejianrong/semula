@@ -1,9 +1,9 @@
 # semula
 
-semula is a fake OpenAI-compatible server for development and tests. The first time your app sends a prompt it has never seen, semula holds the call and waits for your coding agent to write the answer. Every run after that replays the answer instantly, offline and for free.
+semula is a mock LLM server powered by your AI subscription. Instead of paying for an expensive LLM API, point your app at semula and let the Claude Code or Codex subscription you already have write the answers. semula serves an OpenAI-compatible endpoint, and your coding agent is the model behind it. The first time your app sends a prompt semula has never seen, it holds the call until your agent answers. As a bonus, every answer is recorded and replays instantly, offline and for free.
 
-**For:** developers whose app or tests call an OpenAI-compatible API (OpenAI, Azure, Ollama, LiteLLM and the like).
-**You get:** no API bill in tests, the same answer every run, tests that work offline, and no weak guesses served silently.
+**For:** developers whose app or tests call an OpenAI-compatible API (OpenAI, Azure, Ollama, LiteLLM and the like) and who have a coding-agent subscription.
+**You get:** an LLM API endpoint answered by your subscription, so no per-token bill. On top: the same answer every run, tests that work offline, and no weak guesses served silently.
 **You need:** Docker and two terminals. The demo that follows takes about two minutes.
 
 Start it in record mode (terminal 1):
@@ -52,7 +52,9 @@ sequenceDiagram
 
 ## Why bother
 
-Test runs call the same prompts again and again, and a paid API bills for every one. Hand-written mocks break the moment a framework adds a timestamp or reorders a tool list. semula normalises that noise, matches tolerantly, and never serves a weak guess in silence: near misses wait in a review queue for you. For example, if a prompt differs from a recorded one by one word, semula parks it for review rather than answering with the old recording.
+A paid API bills for every call, and dev and test runs make many. Your AI subscription is a flat fee you already pay. semula lets your app use it as an LLM API.
+
+Recording is the cherry on top. Each answer is saved, so later runs cost nothing and take milliseconds. Hand-written mocks break the moment a framework adds a timestamp or reorders a tool list. semula normalises that noise and matches tolerantly, and it never serves a weak guess in silence: near misses wait in a review queue for you. For example, if a prompt differs from a recorded one by one word, semula parks it for review rather than answering with the old recording.
 
 ## Where to go next
 

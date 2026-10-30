@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "semula"
 version = "0.4.0"
-description = "A record-replay fake LLM server: OpenAI-compatible, answered once by your coding agent, replayed for free."
+description = "A mock LLM server powered by your AI subscription: an OpenAI-compatible endpoint answered by your coding agent, recorded once and replayed for free."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
