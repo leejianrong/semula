@@ -1,6 +1,6 @@
 # semula
 
-**A fake LLM server that learns from your coding agent.** Point your OpenAI-compatible app at it. The first time a prompt is new, your Claude Code or Codex subscription writes the answer. Every run after that replays it instantly, offline, for free.
+**A mock LLM server powered by your AI subscription.** Instead of paying for an expensive LLM API, point your app at semula and let the Claude Code or Codex subscription you already have write the answers. semula serves an OpenAI-compatible endpoint, and your coding agent is the model behind it. As a bonus it records each answer and replays it instantly, offline, for free.
 
 ![The Pending screen: parked calls, one selected, an answer typed in](docs/assets/dashboard-pending.png)
 
@@ -8,7 +8,9 @@
 
 ## Why
 
-Development and test runs call the same prompts over and over, and a paid API bills every one. Hand-written mocks break the moment a framework adds a timestamp or reorders a tool list. semula normalises that noise, matches tolerantly, and never serves a weak guess silently: near misses go to a review queue for you.
+A paid LLM API bills every call, and development and test runs make a lot of them. You may already pay a monthly fee for an AI subscription that is barely used while your tests run. semula turns that subscription into an LLM API endpoint for your app: when a prompt arrives, your coding agent answers it over MCP or the CLI.
+
+The rest is the cherry on top. Every answer is recorded, so the same prompt replays in milliseconds with no agent in the loop. semula normalises noise such as timestamps and reordered tool lists, matches tolerantly, and never serves a weak guess silently: near misses go to a review queue for you. Hand-written mocks break the moment a framework changes a prompt; recordings do not.
 
 ## Quick start
 

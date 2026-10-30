@@ -1,4 +1,4 @@
-"""semula: a record-replay fake LLM server."""
+"""semula: a mock LLM server powered by your AI subscription."""
 
 from importlib.metadata import PackageNotFoundError, version
 

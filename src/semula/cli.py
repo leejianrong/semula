@@ -883,7 +883,7 @@ def _mcp(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="semula",
-        description="Record-replay fake LLM server.",
+        description="Mock LLM server powered by your AI subscription.",
         epilog=(__doc__ or "").split("Exit codes", 1)[-1].strip(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
