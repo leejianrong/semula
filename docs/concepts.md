@@ -36,4 +36,15 @@ flowchart LR
 **Cassette**
 :   A project exported to a directory of JSON files, so recordings can live in git and be imported in CI. See [Keep recordings in git](tutorial/cassettes.md).
 
+## Which word for what
+
+The docs use one word per idea.
+
+| Idea | Word | Not |
+|---|---|---|
+| A call semula has no answer for and is holding open | parked call | held, waiting, stuck |
+| The list of parked calls | pending (`semula pending`) | queue, backlog |
+| A stored prompt and its answer | entry | recording (the act of saving), cassette (the exported files) |
+| What a person or agent supplies, or semula replays | answer | response, reply |
+
 Advanced terms (answerer hook, record-through, claim and lease) are explained where they are used, in [Run it as a service](guide/service.md).

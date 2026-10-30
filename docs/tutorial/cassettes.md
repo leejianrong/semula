@@ -6,13 +6,13 @@ Recordings are most useful when the whole team and CI share them. Export a proje
 docker exec semula semula export support-bot --dir /tmp/cassettes
 ```
 
-```
+```text
 exported 2 entries and 1 aliases to /tmp/cassettes
 ```
 
 The layout is built for clean diffs: sorted keys, one file per entry, ids that never change.
 
-```
+```text
 cassettes/semula.json
 cassettes/entries/01M5HH1FQC65G543SK7JAABCJV.json
 cassettes/entries/01M5HH2TWZ5DCG5P6T7JJG3NP6.json
@@ -27,7 +27,7 @@ cassettes/aliases/01M5HH2PQQ46C7Y9H0ZGVA9E6S.json
 docker exec semula semula import /tmp/cassettes
 ```
 
-```
+```text
 imported into 'support-bot': entries +0 ~0 =2, aliases +0 ~0 =1
 ```
 

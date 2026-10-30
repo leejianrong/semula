@@ -14,7 +14,7 @@ When a project is recording, parked calls are listed on the **Pending** screen, 
 
 ![The Pending screen: two parked calls, one selected, with an answer typed in](../assets/dashboard-pending.png)
 
-Select a call to read the whole request: the system prompt, the messages and any tools offered. Type the answer and press **Send answer**. The held call is released at once.
+Select a call to read the whole request: the system prompt, the messages and any tools offered. Type the answer and press **Send answer**. The parked call is released at once.
 
 - Plain text is sent as the reply.
 - Anything that starts with `{` or `[` is sent as JSON, so you can write a tool call or `{"chunks": [...]}`.

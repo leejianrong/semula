@@ -56,7 +56,7 @@ In a second terminal:
 docker exec semula semula pending
 ```
 
-```
+```text
 01M5HGVZ3RCV5X9QWZKTDG9D7Z	pending	default	Name a fruit.
 ```
 
@@ -66,7 +66,7 @@ The columns are the id, the status, the project and the last message. Answer it 
 docker exec semula semula answer 01M5HGVZ3RCV5X9QWZKTDG9D7Z --text "Mango"
 ```
 
-```
+```text
 answered 01M5HGVZ3RCV5X9QWZKTDG9D7Z -> entry 01M5HGZ4Y2JJHS5HCTKW5E12GT
 ```
 
@@ -88,7 +88,7 @@ You can see both calls in the log:
 docker exec semula semula log --limit 5
 ```
 
-```
+```text
 10:02:07.793  default      hit            exact 1.00  3ms  01M5HGZ4Y2JJHS5HCTKW5E12GT  "Name a fruit."
 10:02:07.703  default      recorded       -  104305ms  01M5HGVZ3RCV5X9QWZKTDG9D7Z  "Name a fruit."
 ```

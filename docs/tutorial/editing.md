@@ -21,7 +21,7 @@ docker exec semula semula entry set <entry-id> --version 1 \
 
 Call it twice. The label stays, the time and id change:
 
-```
+```text
 {"label": "hardware", "at": "2026-10-22T10:03:42.137Z", "id": "577a37ec-1103-488d-9ad4-f6e6e39234a5"}
 {"label": "hardware", "at": "2026-10-22T10:03:43.260Z", "id": "daef7665-2b56-48c0-98e1-76aadef82881"}
 ```
@@ -35,7 +35,7 @@ docker exec semula semula entry add support-bot \
   --prompt "Classify: my screen is cracked" --text "x"
 ```
 
-```
+```text
 error: entry_exists: An entry already matches this request (01M5HH1FQC65G543SK7JAABCJV). Pass its current 'version' to replace its response. (at version)
 entry 01M5HH1FQC65G543SK7JAABCJV is at version 1: pass --version 1 to replace its answer
 ```
@@ -51,7 +51,7 @@ docker exec semula semula entry set 01M5HH1FQC65G543SK7JAABCJV --version 1 --tex
 docker exec semula semula entry set 01M5HH1FQC65G543SK7JAABCJV --version 2 --text "oops"
 ```
 
-```
+```text
 updated 01M5HH1FQC65G543SK7JAABCJV -> version 2
 error: entry_pinned: Entry 01M5HH1FQC65G543SK7JAABCJV is pinned by a human. Agents cannot change it unless forced; ask a human, or pass force=true if you were told to.
 ```
@@ -63,7 +63,7 @@ docker exec semula semula entry set 01M5HH1FQC65G543SK7JAABCJV --version 2 --tex
 docker exec semula semula entry history 01M5HH1FQC65G543SK7JAABCJV
 ```
 
-```
+```text
 v3	2026-10-22T10:03:34.075Z	human	answer replaced
 v2	2026-10-22T10:03:31.081Z	agent	answer replaced, pinned
 v1	2026-10-22T10:03:24.271Z	agent	created
@@ -71,7 +71,7 @@ v1	2026-10-22T10:03:24.271Z	agent	created
 
 ## Several answers for one prompt
 
-An entry can hold more than one response and pick between them by call order. Add a response with `--add`, then choose how semula picks:
+An entry can hold more than one answer and pick between them by call order. Add an answer with `--add`, then choose how semula picks:
 
 ```bash
 docker exec semula semula entry set <entry-id> --version 3 --text "second answer" --add --selection sequence

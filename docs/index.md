@@ -4,7 +4,7 @@ semula is a fake OpenAI-compatible server for development and tests. The first t
 
 **For:** developers whose app or tests call an OpenAI-compatible API (OpenAI, Azure, Ollama, LiteLLM and the like).
 **You get:** no API bill in tests, the same answer every run, tests that work offline, and no weak guesses served silently.
-**You need:** Docker and two terminals. The demo below takes about two minutes.
+**You need:** Docker and two terminals. The demo that follows takes about two minutes.
 
 Start it in record mode (terminal 1):
 

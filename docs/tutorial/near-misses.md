@@ -20,7 +20,7 @@ The rule that matters: **a weak guess is never served by default.** A prompt tha
 docker exec semula semula test-match --project support-bot --prompt "Classify: my screen is cracked  "
 ```
 
-```
+```text
 match: normalised (1.00) -> entry 01M5HH1FQC65G543SK7JAABCJV (would serve)
 tiers: exact no, normalised match 1.00, alias skipped, words skipped, meaning off
 ```
@@ -31,7 +31,7 @@ Now one with an extra word:
 docker exec semula semula test-match --project support-bot --prompt "Classify: my screen is badly cracked"
 ```
 
-```
+```text
 no match (would park); nearest 01M5HH1FQC65G543SK7JAABCJV score 0.909; 1 weak candidate(s) would go to review
 tiers: exact no, normalised no, alias no, words candidate 0.91, meaning off
 ```
@@ -48,7 +48,7 @@ Send that prompt for real, with the project in record mode. The call parks as us
 docker exec semula semula review list
 ```
 
-```
+```text
 01M5HH2EBM7AV0TKB5H9MCBNDC	open	0.91	support-bot	Classify: my screen is badly cracked  ~  Classify: my screen is cracked
 ```
 
@@ -58,7 +58,7 @@ docker exec semula semula review list
 docker exec semula semula review approve 01M5HH2EBM7AV0TKB5H9MCBNDC
 ```
 
-```
+```text
 approved candidate 01M5HH2EBM7AV0TKB5H9MCBNDC
 ```
 

@@ -40,7 +40,7 @@ Answer with a tool call. `arguments` can be an object; semula stores it as the J
 
 That answer calls `get_forecast`, a tool the request never offered. semula says so and keeps the call held:
 
-```
+```text
 error: invalid_answer: Unknown tool 'get_forecast'. The request offered: ['get_weather']. (at message.tool_calls[0].function.name)
 ```
 
@@ -73,7 +73,7 @@ echo '{"chunks": ["Hel", "lo ", "there"]}' | docker exec -i semula semula answer
 
 On replay the app receives one server-sent event per chunk, then `[DONE]`:
 
-```
+```text
 data: {"id":"chatcmpl-34df…","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
 
 data: {"id":"chatcmpl-34df…","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Hel"},"finish_reason":null}]}

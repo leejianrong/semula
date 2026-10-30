@@ -17,7 +17,7 @@ semula admin workspace-create acme --name "Acme"
 semula admin token-create --workspace acme --name ci-replay --scope replay
 ```
 
-```
+```text
 created token 01M5HYWQZQMM2EA9YRS2WEHM07 (replay, ci-replay)
 smla_live_…
 This is the only time the token is shown.
@@ -65,7 +65,7 @@ Membership comes from an **invitation**: by email and role, good for seven days 
 semula admin invite --workspace acme --email boss@example.com --role admin
 ```
 
-```
+```text
 invited boss@example.com as admin until 2026-10-30T12:00:00.000Z
 https://semula.example.com/auth/invite/smla_inv_…
 Send them the link; it works once, for them, after they sign in.
@@ -75,7 +75,7 @@ The link asks the person to sign in (with any provider), then to confirm, and it
 
 ## Scopes
 
-A token has one of three scopes, each including the ones above it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist, and listings (projects, pending, the log) hold only its own. It cannot create projects.
+A token has one of three scopes, `replay`, `record` and `admin`, each including the ones before it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist, and listings (projects, pending, the log) hold only its own. It cannot create projects.
 
 ## MCP
 
@@ -136,7 +136,7 @@ Failed attempts are rate limited per client address (20 a minute), and a blocked
 
 ## Several replicas
 
-Run as many replicas as you like against one Postgres. They share live events (the call log, the pending count) and wake a call held on one replica when another replica answers it, over Postgres `LISTEN/NOTIFY`. Publishing never waits for the network, and a held call and a `wait_for_pending` also look again every second, so a notification that gets lost costs a second, not a hang. Put sticky sessions in front of the dashboard when it has sign-in.
+Run as many replicas as you like against one Postgres. They share live events (the call log, the pending count) and wake a parked call on one replica when another replica answers it, over Postgres `LISTEN/NOTIFY`. Publishing never waits for the network, and a parked call and a `wait_for_pending` also look again every second, so a notification that gets lost costs a second, not a hang. Put sticky sessions in front of the dashboard when it has sign-in.
 
 Migrate once before a rollout, not on every start:
 
@@ -201,4 +201,4 @@ Every one of these calls the same service as the REST API and the CLI, so the ru
 
 ## What is not there yet
 
-- **Reloading by itself after a switch.** See the workspace switcher above: the tab ends and asks for a reload, because the dashboard framework cannot reload a page from the server.
+- **Reloading by itself after a switch.** The workspace switcher ends the tab and asks for a reload: because the dashboard framework cannot reload a page from the server.

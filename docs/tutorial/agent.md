@@ -13,7 +13,7 @@ semula serves MCP at `/mcp/` over streamable HTTP. Register that URL once.
     claude mcp list
     ```
 
-    ```
+    ```text
     semula: http://127.0.0.1:8080/mcp/ (HTTP) - ✔ Connected
     ```
 
@@ -48,7 +48,7 @@ claude -p "You are the recorder for semula. Call wait_for_pending, then get_pend
   --allowedTools "mcp__semula__wait_for_pending,mcp__semula__get_pending,mcp__semula__answer_pending"
 ```
 
-In a test of this page, an app asked *"Capital of Malaysia?"* with a system prompt demanding one word. The agent waited, read the request, answered `Kuala Lumpur`, and the app's held call returned it. Codex did the same for a colour question and answered `BLUE`.
+In a test of this page, an app asked *"Capital of Malaysia?"* with a system prompt demanding one word. The agent waited, read the request, answered `Kuala Lumpur`, and the app's parked call returned it. Codex did the same for a colour question and answered `BLUE`.
 
 !!! tip "Give the agent the playbook"
     The [agent playbook](../agents/PLAYBOOK.md) covers answer formats, error handling and the rules that keep answers replayable. A ready-made Claude Code skill lives in the repository under `docs/agents/claude-code-skill/`.
@@ -67,7 +67,7 @@ When nothing arrives the output is `[]` and the exit code is `0`.
 
 An answer is checked before it is saved. If it is malformed, the call stays held and the error says where:
 
-```
+```text
 error: invalid_answer: Unknown tool 'get_forecast'. The request offered: ['get_weather']. (at message.tool_calls[0].function.name)
 ```
 

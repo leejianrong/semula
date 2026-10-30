@@ -10,7 +10,7 @@ Mode is a setting of each project, and semula keeps it across restarts:
 docker exec semula semula mode replay --project default
 ```
 
-```
+```text
 default: replay (kept across restarts)
 ```
 
@@ -22,7 +22,7 @@ curl -i http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Name a vegetable."}]}'
 ```
 
-```
+```text
 HTTP/1.1 424 Failed Dependency
 
 {"nearest":{"entry_id":"01M5HGZ4Y2JJHS5HCTKW5E12GT","score":0.667,"last_message":"Name a fruit."},"error":{"message":"No recorded answer matches this request, and semula is in replay mode.","type":"semula_error","param":null,"code":"semula_no_match"}}
@@ -47,7 +47,7 @@ docker exec semula semula mode record --project default
 docker exec semula semula mode
 ```
 
-```
+```text
 default: record (kept across restarts)
 server default   record
 project default  record

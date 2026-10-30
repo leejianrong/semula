@@ -7,7 +7,7 @@ docker exec semula semula project create support-bot --name "Support bot"
 docker exec semula semula mode record --project support-bot
 ```
 
-```
+```text
 created project support-bot
 support-bot: record (kept across restarts)
 ```
@@ -45,7 +45,7 @@ docker exec semula semula entry add support-bot \
   --text '{"label": "hardware"}'
 ```
 
-```
+```text
 created entry 01M5HH1FQC65G543SK7JAABCJV (version 1)
 ```
 
@@ -57,7 +57,7 @@ The entry is there now, with no hits yet:
 docker exec semula semula entry list support-bot
 ```
 
-```
+```text
 01M5HH1FQC65G543SK7JAABCJV	v1	-	hits=0	-	aliases=0	Classify: my screen is cracked
 (1 of 1)
 ```
