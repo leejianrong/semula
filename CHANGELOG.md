@@ -8,6 +8,14 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Added
+
+- `SEMULA_TRUSTED_PROXIES`: behind a reverse proxy, the failed-token limit, a token's last-used network and the audit log use the real client from `X-Forwarded-For` instead of the proxy's address, believed only from the proxies you name.
+
+### Changed
+
+- `semula serve` no longer lets uvicorn rewrite the client address from `X-Forwarded-For` for a peer on loopback. Set `SEMULA_TRUSTED_PROXIES` if a proxy on the same host should be believed.
+
 ## [0.4.0] - 2026-10-27
 
 This release is for answering at scale: a ceiling on runaway misses, a way to read what an answer

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 from dataclasses import dataclass, field, fields, replace
@@ -87,6 +88,23 @@ def _answerer_from_env() -> dict[str, object]:
     }
 
 
+def _networks_from_env(raw: str) -> tuple[str, ...]:
+    """``SEMULA_TRUSTED_PROXIES``: comma-separated addresses or CIDR ranges. A wildcard is
+    refused, because trusting every peer lets anyone choose the address the limits see."""
+    out: list[str] = []
+    for item in (part.strip() for part in raw.split(",")):
+        if not item:
+            continue
+        try:
+            ipaddress.ip_network(item, strict=False)
+        except ValueError as exc:
+            raise ValueError(
+                f"SEMULA_TRUSTED_PROXIES: {item!r} is not an address or a CIDR range"
+            ) from exc
+        out.append(item)
+    return tuple(out)
+
+
 def _quotas_from_env(hosted: bool) -> Quotas:
     """Hosted defaults, each changeable with ``SEMULA_QUOTA_<NAME>`` (``none`` removes a limit)."""
     base = HOSTED_QUOTAS if hosted else Quotas()
@@ -116,6 +134,9 @@ class Settings:
     log_max_rows: int = 50_000
     models: tuple[str, ...] = ("semula",)
     ui: bool = True  # SEMULA_UI=off hides the dashboard at /ui
+    # Reverse proxies (addresses or CIDR ranges) whose X-Forwarded-For is believed. Empty: the
+    # header is ignored and the socket peer is the client.
+    trusted_proxies: tuple[str, ...] = ()
     api_key: str | None = field(default=None, repr=False)
     # Hosted mode: every call needs an API token, which names the workspace (ADR-0010). Off
     # locally, where whoever can reach the port is trusted (or the shared key above).
@@ -183,6 +204,7 @@ class Settings:
             log_retention_days=int(os.environ.get("SEMULA_LOG_RETENTION_DAYS", "30")),
             log_max_rows=int(os.environ.get("SEMULA_LOG_MAX_ROWS", "50000")),
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
+            trusted_proxies=_networks_from_env(os.environ.get("SEMULA_TRUSTED_PROXIES", "")),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
             hosted=_flag(os.environ.get("SEMULA_HOSTED", "off")),
             migrate=_flag(os.environ.get("SEMULA_MIGRATE", "on")),
