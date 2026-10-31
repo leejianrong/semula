@@ -47,13 +47,17 @@ class Tab:
         self.init = self.wait_for(lambda m: m["type"] == "init", HTTP_TIMEOUT)[0]
 
     def _read(self, path: str) -> None:
-        params = {"sid": self.sid, "path": path}
+        # the session id travels in a per-tab cookie, as the shell sends it (indah 0.11), so it
+        # stays out of access logs; ``k`` only names the cookie
+        key = "tab" + self.sid[:16].replace(".", "_")
+        params = {"k": key, "path": path}
+        cookies = {**self.cookies, f"indah_sid_{key}": self.sid}
         try:
             with httpx.stream(
                 "GET",
                 self.url + "/ui/api/stream",
                 params=params,
-                cookies=self.cookies,
+                cookies=cookies,
                 timeout=httpx.Timeout(HTTP_TIMEOUT, read=60),
             ) as resp:
                 self._resp = resp
