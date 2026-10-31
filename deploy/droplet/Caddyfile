@@ -6,6 +6,9 @@
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
 		-Server
 	}
 
@@ -24,8 +27,15 @@
 		health_interval 15s
 	}
 
+	# The log keeps the address of every request, so it must not keep what is a secret in one:
+	# the sign-in code and state, the dashboard stream's session id, an invitation token.
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "((?:/auth/invite/)|(?:[?&](?:code|state|sid)=))[^/?&#]+" "${1}REDACTED"
+			}
+		}
 	}
 }

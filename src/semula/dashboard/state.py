@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from functools import partial
 from typing import Any, TypeVar
 
 import indah
 
+from ..errors import SemulaError
 from ..service import Service
 from .rows import call_row
 
@@ -58,13 +59,29 @@ async def blocking(fn: Callable[..., T], *args: Any) -> T:
     return await asyncio.to_thread(fn, *args)
 
 
+async def _quietly(coro: Awaitable[None]) -> None:
+    """An address that names a project that is not there is a normal thing to type: its loads
+    end without an error in the log (which would also hold the text that was typed)."""
+    try:
+        await coro
+    except SemulaError as exc:
+        if exc.code != "project_not_found":
+            raise
+
+
+def spawn(ctx: indah.Context, coro: Coroutine[Any, Any, None]) -> None:
+    """Run ``coro`` for as long as the tab is open."""
+    task = asyncio.get_running_loop().create_task(_quietly(coro))
+    ctx.on_close(partial(cancel, task))
+
+
 def every(ctx: indah.Context, seconds: float, fn: Callable[[], Awaitable[None]]) -> None:
     """Run ``fn`` now and then every ``seconds`` for as long as the tab is open."""
 
     async def loop() -> None:
         while True:
             try:
-                await fn()
+                await _quietly(fn())
             except Exception:  # a failed refresh must not end the loop
                 import logging
 

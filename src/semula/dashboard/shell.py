@@ -9,7 +9,7 @@ from typing import Any
 
 import indah
 
-from ..service import Service
+from ..service import SLUG, Service
 from .pages.entries import entries_page
 from .pages.entry import entry_page
 from .pages.log import log_page
@@ -44,7 +44,8 @@ class Tab:
         self.service = service  # as the person acting (hosted), else the server itself
         self.who = who  # the signed-in person when hosted; None locally, where all is allowed
         self.public_url = public_url  # for links an admin sends (an invitation)
-        self.project = indah.computed(lambda: ctx.params.value.get("project") or "default")
+        # an address that cannot be a project name (indah refuses it as a link) opens the default
+        self.project = indah.computed(lambda: _project_in(ctx.params.value.get("project")))
         self.projects: list[str] = dash.project_ids()
         self.counts: indah.Signal[dict[str, int]] = indah.Signal({"pending": 0, "review": 0})
         # Bumped when this project's pending or review queue moves, for screens that list it.
@@ -131,6 +132,10 @@ class Tab:
         self.recording.set(mode == "record")
         self.counts.set(await blocking(self.service.queue_counts, project))
         self.stats.set(await blocking(self.service.log_stats, project, "30m"))
+
+
+def _project_in(address: str | None) -> str:
+    return address if address and SLUG.fullmatch(address) else "default"
 
 
 def nav(tab: Tab) -> indah.Component:
@@ -246,7 +251,9 @@ def account(tab: Tab, who: indah.Principal) -> indah.Component:
 
     return indah.Column(
         children=[
-            indah.Text(f"**{who.name or who.email}**", markdown=True, size="body"),
+            # plain text: a name is chosen at the sign-in provider, so it is never markdown (a link
+            # in it would be a live link in this person's sidebar on every screen)
+            indah.Text(who.name or who.email, size="body"),
             indah.Text(f"{role} in {who.workspace}", size="body"),
             *workspace_switcher(tab, who),
             indah.Button("Sign out", sign_out, variant="outlined"),

@@ -13,6 +13,18 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 - `deploy/droplet`: the hosted server on one machine as a compose project: Caddy with automatic TLS and HSTS, semula on the hosted image, Postgres with a separate owner and app role (so row-level security applies), a migrate step before the app, a daily workspace purge and an `admin` service for operator commands. Only ports 80 and 443 are published. `make droplet-smoke` runs the whole stack and checks it.
 - `SEMULA_TRUSTED_PROXIES`: behind a reverse proxy, the failed-token limit, a token's last-used network and the audit log use the real client from `X-Forwarded-For` instead of the proxy's address, believed only from the proxies you name.
 
+### Fixed
+
+- A malformed or unknown project in a dashboard address no longer gives a 500 or an error, with the text typed, in the server log: it opens the default project.
+- A signed-in person's display name is shown as plain text. It was markdown, so a link in it was live in their own sidebar.
+- A sign-in provider that is down no longer gives a bare 500: the person gets a page that says so (502).
+
+### Security
+
+- The sign-in and invitation pages send a strict content security policy (no script), refuse to be framed, are not cached and set `Permissions-Policy`. Every API response carries `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+- A hosted server keeps the sign-in `code` and `state`, the dashboard stream's session id and an invitation token out of uvicorn's access log; `deploy/droplet` does the same for Caddy's and adds `Permissions-Policy`, `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy`.
+- `make test-browser` (a CI job, Chromium and Firefox) opens every dashboard screen with attacker text in every field a person or an app controls and fails if any of it runs, builds an element, or links off-site. The evaluation is the amendment to ADR-0012.
+
 ### Changed
 
 - A hosted server no longer prints the "no SEMULA_API_KEY" warning when it listens beyond loopback: tokens protect it.

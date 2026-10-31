@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -10,7 +9,8 @@ import indah
 
 from ...errors import SemulaError
 from ..rows import candidate_row, request_text
-from ..state import blocking, cancel
+from ..state import blocking
+from ..state import spawn as spawn_task
 from .entry import _answer_text
 
 if TYPE_CHECKING:
@@ -34,9 +34,7 @@ def review_page(tab: Tab) -> indah.Component:
     problem: indah.Signal[str] = indah.Signal("")
     loads = 0
 
-    def spawn(coro: Any) -> None:
-        task = asyncio.get_running_loop().create_task(coro)
-        ctx.on_close(partial(cancel, task))
+    spawn = partial(spawn_task, ctx)
 
     async def reload(project: str) -> None:
         nonlocal loads

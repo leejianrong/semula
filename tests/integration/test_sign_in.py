@@ -157,7 +157,7 @@ async def test_every_way_the_provider_response_can_be_wrong_is_refused(
 async def test_a_provider_whose_issuer_is_not_the_configured_one_is_not_trusted(site: Site) -> None:
     site.idp.tamper = "discovery_issuer"
     start = await site.client.get("/auth/login/google")
-    assert start.status_code == 502 and start.json()["error"]["code"] == "provider_mismatch"
+    assert start.status_code == 502 and "provider_mismatch" in start.text  # the sign-in page
 
 
 async def test_an_unverified_email_does_not_sign_in(site: Site) -> None:

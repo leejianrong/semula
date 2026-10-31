@@ -34,10 +34,24 @@ compose up -d --wait --wait-timeout 180 >/dev/null || fail "the stack did not co
 for _ in $(seq 1 60); do curl -ksf "$base/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -ksf "$base/health" | grep -q '"status":"ok"' || fail "/health over https"
 curl -ksI "$base/health" | grep -qi '^strict-transport-security: max-age=' || fail "no HSTS header"
+for header in permissions-policy cross-origin-opener-policy cross-origin-resource-policy; do
+  curl -ksI "$base/health" | grep -qi "^$header:" || fail "no $header header"
+done
 
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$HTTP_PORT/health")
 case "$code" in 301|302|307|308) ;; *) fail "http answered $code, not a redirect to https" ;; esac
 [ "$(curl -ks -o /dev/null -w '%{http_code}' "$base/v1/models")" = 401 ] || fail "no token was not 401"
+
+# Secrets in an address stay out of Caddy's log (and the app's).
+curl -ks -o /dev/null "$base/auth/callback/google?code=SECRETCODE123&state=SECRETSTATE123"
+curl -ks -o /dev/null "$base/auth/invite/smla_inv_SECRETINVITE123"
+curl -ks -o /dev/null "$base/ui/api/stream?sid=SECRETSID123&path=%2F"
+sleep 1
+logs=$(compose logs --no-color caddy semula 2>&1)
+for secret in SECRETCODE123 SECRETSTATE123 SECRETINVITE123 SECRETSID123; do
+  echo "$logs" | grep -q "$secret" && fail "$secret is in the logs"
+done
+echo "$logs" | grep -q '/auth/callback/google' || fail "the callback request is not in the log at all"
 
 # Only Caddy publishes anything.
 published=$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}} {{.Ports}}' |
