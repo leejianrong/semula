@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard runs on indah 0.11 (was 0.4). A tab's session id now travels in a per-tab cookie instead of the stream URL, so it stays out of access and proxy logs; a malformed route in the address no longer errors; the page's image policy lists no map host (semula has no map).
+
 ### Added
 
 - Invite codes for signing up: `semula admin signup-code-create` (and `-list`, `-revoke`) makes a code; a person who has signed in enters it at `/auth/signup` and gets a workspace of their own, as its admin. A code works for a set number of people, once each, for a set time, and says the same thing whatever is wrong with it. `SEMULA_SIGNUP` (`code`) is the setting a later open signup would change. Migration 0020 adds two tables.

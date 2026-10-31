@@ -56,6 +56,9 @@ def server(tmp_path: Path, **limits: object) -> Iterator[tuple[str, dict[str, di
         yield url, sessions
 
 
+TAB = "tab12345678"  # the cookie's name suffix: indah 0.11 keeps the session id out of the URL
+
+
 def test_the_dashboard_gets_limits_from_the_settings(tmp_path: Path) -> None:
     limits = dashboard_limits(Settings(data_dir=tmp_path, ui_streams_per_address=7, ui_sessions=99))
     assert limits.max_streams_per_ip == 7 and limits.max_sessions == 99
@@ -79,8 +82,8 @@ def test_one_address_cannot_hold_open_more_streams_than_the_cap(tmp_path: Path) 
                     httpx.stream(
                         "GET",
                         url + "/ui/api/stream",
-                        params={"sid": sid, "path": "/"},
-                        cookies=sessions["ada"],
+                        params={"k": TAB, "path": "/"},
+                        cookies={**sessions["ada"], f"indah_sid_{TAB}": sid},
                         timeout=30,
                     )  # fmt: skip
                 )
@@ -96,8 +99,8 @@ def open_stream(url: str, cookies: dict[str, str], stack: ExitStack) -> int:
         httpx.stream(
             "GET",
             url + "/ui/api/stream",
-            params={"sid": sid, "path": "/"},
-            cookies=cookies,
+            params={"k": TAB, "path": "/"},
+            cookies={**cookies, f"indah_sid_{TAB}": sid},
             timeout=30,
         )  # fmt: skip
     )
@@ -131,5 +134,10 @@ def test_a_person_who_is_not_signed_in_is_answered_by_the_dashboard_not_the_cap(
     tmp_path: Path,
 ) -> None:
     for url, _ in server(tmp_path, ui_tabs_per_person=1, ui_streams_per_address=None):
-        resp = httpx.get(url + "/ui/api/stream", params={"sid": "x", "path": "/"}, timeout=30)
+        resp = httpx.get(
+            url + "/ui/api/stream",
+            params={"k": TAB, "path": "/"},
+            cookies={f"indah_sid_{TAB}": "x"},
+            timeout=30,
+        )
         assert resp.status_code in (401, 403)  # not 429, whatever was open
