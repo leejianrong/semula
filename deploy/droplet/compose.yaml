@@ -98,7 +98,11 @@ services:
     <<: *hardening
     restart: unless-stopped
     command: ["sh", "-c", "while true; do semula admin workspace-purge; sleep 86400; done"]
-    healthcheck: {disable: true} # the image's check asks a web server this one does not run
+    healthcheck: # the image's own check asks a web server this one does not run
+      test: ["CMD-SHELL", "kill -0 1"] # the loop's shell is alive
+      interval: 30s
+      timeout: 3s
+      retries: 3
     environment:
       SEMULA_HOSTED: "on"
       <<: *owner_url
