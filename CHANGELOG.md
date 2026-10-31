@@ -10,6 +10,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- A hosted server limits the sign-in routes per client address (`SEMULA_AUTH_RATE`, 30 a minute) and the dashboard per address and per person (`SEMULA_UI_STREAMS_PER_ADDRESS`, `SEMULA_UI_TABS_PER_PERSON`, `SEMULA_UI_SESSIONS`), and passes indah's per-address rates on the dashboard's event, stream and upload routes. The dashboard had none of these before.
+
+### Added
+
 - `deploy/droplet`: the hosted server on one machine as a compose project: Caddy with automatic TLS and HSTS, semula on the hosted image, Postgres with a separate owner and app role (so row-level security applies), a migrate step before the app, a daily workspace purge and an `admin` service for operator commands. Only ports 80 and 443 are published. `make droplet-smoke` runs the whole stack and checks it.
 - `SEMULA_TRUSTED_PROXIES`: behind a reverse proxy, the failed-token limit, a token's last-used network and the audit log use the real client from `X-Forwarded-For` instead of the proxy's address, believed only from the proxies you name.
 

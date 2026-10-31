@@ -184,6 +184,8 @@ A hosted workspace has limits so that one tenant cannot use up the server. Defau
 | A project's `record_timeout` | 15 minutes | `422` when setting a longer one |
 | Request rate per token | 20 a second, bursts of 100 | `429 rate_limited` with `Retry-After` |
 
+Beyond the workspace limits, one address and one person are held back too: sign-in routes allow 30 requests a minute for an address (`SEMULA_AUTH_RATE`), and the dashboard allows 40 open tabs for an address and 10 for a person (`SEMULA_UI_STREAMS_PER_ADDRESS`, `SEMULA_UI_TABS_PER_PERSON`). Behind a proxy these see the real client only if you set [`SEMULA_TRUSTED_PROXIES`](#behind-a-reverse-proxy); without it every user shares the proxy's one address.
+
 The error body names the limit: `{"quota": {"name": "entries", "limit": 50000, "used": 50000}}`. Counters are kept as writes happen, in the same transaction, so a replay hit never counts anything and stays fast; `semula usage` shows them, and `semula admin recount` rebuilds them if they ever drift. A local server has no limits.
 
 ## Deleting a workspace

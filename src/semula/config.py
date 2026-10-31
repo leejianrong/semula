@@ -105,6 +105,18 @@ def _networks_from_env(raw: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _limit_from_env(name: str, default: int) -> int | None:
+    """A whole number of at least 1, or ``none`` to remove the limit."""
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw == "none":
+        return None
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError(f"{name} must be a whole number of at least 1, or 'none', got {raw!r}")
+    return int(raw)
+
+
 def _quotas_from_env(hosted: bool) -> Quotas:
     """Hosted defaults, each changeable with ``SEMULA_QUOTA_<NAME>`` (``none`` removes a limit)."""
     base = HOSTED_QUOTAS if hosted else Quotas()
@@ -137,6 +149,11 @@ class Settings:
     # Reverse proxies (addresses or CIDR ranges) whose X-Forwarded-For is believed. Empty: the
     # header is ignored and the socket peer is the client.
     trusted_proxies: tuple[str, ...] = ()
+    # Hosted only (a local server has no one to hold back). ``None`` removes a limit.
+    auth_rate: int | None = 30  # /auth/* requests a minute for one address
+    ui_streams_per_address: int | None = 40  # open dashboard streams from one address
+    ui_sessions: int | None = 2000  # open dashboard tabs on this process, in all
+    ui_tabs_per_person: int | None = 10  # open dashboard tabs of one signed-in person
     api_key: str | None = field(default=None, repr=False)
     # Hosted mode: every call needs an API token, which names the workspace (ADR-0010). Off
     # locally, where whoever can reach the port is trusted (or the shared key above).
@@ -205,6 +222,10 @@ class Settings:
             log_max_rows=int(os.environ.get("SEMULA_LOG_MAX_ROWS", "50000")),
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
             trusted_proxies=_networks_from_env(os.environ.get("SEMULA_TRUSTED_PROXIES", "")),
+            auth_rate=_limit_from_env("SEMULA_AUTH_RATE", 30),
+            ui_streams_per_address=_limit_from_env("SEMULA_UI_STREAMS_PER_ADDRESS", 40),
+            ui_sessions=_limit_from_env("SEMULA_UI_SESSIONS", 2000),
+            ui_tabs_per_person=_limit_from_env("SEMULA_UI_TABS_PER_PERSON", 10),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
             hosted=_flag(os.environ.get("SEMULA_HOSTED", "off")),
             migrate=_flag(os.environ.get("SEMULA_MIGRATE", "on")),

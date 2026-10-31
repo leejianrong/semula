@@ -19,6 +19,7 @@ from . import __version__, api_admin, api_auth, api_openai, oidc
 from .answerer import Answerer
 from .auth import ApiKeyMiddleware, TokenAuthMiddleware
 from .config import Settings
+from .dashboard.caps import StreamCap
 from .dashboard.mount import LazyDashboard, Locked
 from .db import Database
 from .embeddings import Embedder
@@ -26,6 +27,7 @@ from .errors import SemulaError
 from .headers import ResponseHeaders
 from .logs import install_access_scrub
 from .proxy import ForwardedClient
+from .ratelimit import AuthRateLimit
 from .service import Service
 
 MCP_READY_TIMEOUT = 30.0
@@ -206,6 +208,15 @@ def create_app(
     app.add_middleware(ResponseHeaders)
     if settings.hosted:
         install_access_scrub()  # sign-in codes and invitation tokens travel in the address
+    if settings.hosted and settings.ui_tabs_per_person:
+        app.add_middleware(
+            StreamCap,
+            service=service,
+            cookie=api_auth.Cookies(settings.public_url).session,
+            cap=settings.ui_tabs_per_person,
+        )
+    if settings.hosted and settings.auth_rate:
+        app.add_middleware(AuthRateLimit, per_minute=settings.auth_rate)
     if settings.trusted_proxies:  # outermost: every layer below sees the real client address
         app.add_middleware(ForwardedClient, trusted=settings.trusted_proxies)
     return app
