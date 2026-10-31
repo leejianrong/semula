@@ -134,6 +134,15 @@ jobs:
       - uses: actions/checkout@v7
       - run: scripts/check_image.sh semula:ci
 
+  # The public deployment (deploy/droplet): the whole compose stack, behind Caddy, on Postgres with
+  # a non-owner role, checked by scripts/smoke_droplet.sh.
+  droplet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build --build-arg UV_EXTRAS="--extra hosted --extra postgres" -t semula:droplet-ci .
+      - run: scripts/smoke_droplet.sh semula:droplet-ci
+
   # Heavy layer: the real app over loopback driven by the OpenAI SDK, network blocked.
   e2e:
     runs-on: ubuntu-latest

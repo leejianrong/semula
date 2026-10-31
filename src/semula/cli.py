@@ -118,7 +118,8 @@ def _serve(args: argparse.Namespace) -> int:
 
     settings = Settings.from_env()
     host = args.host or settings.host
-    if not settings.api_key and host not in ("127.0.0.1", "localhost", "::1"):
+    loopback = host in ("127.0.0.1", "localhost", "::1")
+    if not settings.api_key and not settings.hosted and not loopback:
         print(
             f"warning: listening on {host} with no SEMULA_API_KEY; anyone who can reach this "
             "port can read and change recordings.",

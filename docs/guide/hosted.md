@@ -154,6 +154,8 @@ SEMULA_TRUSTED_PROXIES=172.18.0.0/16     # the network the proxy connects from
 
 The header is believed only when the connection comes from one of these addresses, and is read from the right: each of your proxies adds the address it received the request from, so the first address that is not one of yours is the client. Anything the client wrote further left is ignored. Without the setting the header is ignored altogether, so a client cannot choose its own address. Use the narrowest range that covers the proxy; `*` is refused.
 
+A complete example for one machine is in the repository under `deploy/droplet`: Caddy for TLS, semula, Postgres with the two roles set up, and a daily purge, as one compose project.
+
 ## Several replicas
 
 Run as many replicas as you like against one Postgres. They share live events (the call log, the pending count) and wake a parked call on one replica when another replica answers it, over Postgres `LISTEN/NOTIFY`. Publishing never waits for the network, and a parked call and a `wait_for_pending` also look again every second, so a notification that gets lost costs a second, not a hang. Put sticky sessions in front of the dashboard when it has sign-in.
