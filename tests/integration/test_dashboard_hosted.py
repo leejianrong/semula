@@ -236,6 +236,7 @@ def test_a_person_with_no_workspace_sees_only_the_waiting_page(server: str, worl
         tab.wait_for(lambda m: m["type"] == "init", 5)
         text = str(list(tab.nodes()))
         assert "No workspace yet" in text or tab.saw("No workspace yet")
+        assert "/auth/signup" in text or tab.saw("/auth/signup")  # where an invite code goes
         assert "held for a person" not in str(tab.messages) and "Send answer" not in text
     finally:
         tab.close()

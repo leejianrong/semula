@@ -105,6 +105,15 @@ def _networks_from_env(raw: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _signup_from_env() -> Literal["code"]:
+    raw = os.environ.get("SEMULA_SIGNUP", "code").strip().lower()
+    if raw != "code":
+        raise ValueError(
+            f"SEMULA_SIGNUP: only 'code' is available (a person needs an invite code), got {raw!r}"
+        )
+    return "code"
+
+
 def _limit_from_env(name: str, default: int) -> int | None:
     """A whole number of at least 1, or ``none`` to remove the limit."""
     raw = os.environ.get(name, "").strip().lower()
@@ -149,6 +158,8 @@ class Settings:
     # Reverse proxies (addresses or CIDR ranges) whose X-Forwarded-For is believed. Empty: the
     # header is ignored and the socket peer is the client.
     trusted_proxies: tuple[str, ...] = ()
+    # How a person gets a workspace of their own: with an invite code the operator made.
+    signup: Literal["code"] = "code"
     # Hosted only (a local server has no one to hold back). ``None`` removes a limit.
     auth_rate: int | None = 30  # /auth/* requests a minute for one address
     ui_streams_per_address: int | None = 40  # open dashboard streams from one address
@@ -222,6 +233,7 @@ class Settings:
             log_max_rows=int(os.environ.get("SEMULA_LOG_MAX_ROWS", "50000")),
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
             trusted_proxies=_networks_from_env(os.environ.get("SEMULA_TRUSTED_PROXIES", "")),
+            signup=_signup_from_env(),
             auth_rate=_limit_from_env("SEMULA_AUTH_RATE", 30),
             ui_streams_per_address=_limit_from_env("SEMULA_UI_STREAMS_PER_ADDRESS", 40),
             ui_sessions=_limit_from_env("SEMULA_UI_SESSIONS", 2000),

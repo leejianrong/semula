@@ -376,6 +376,39 @@ membership = sa.Table(
     sa.Index("idx_membership_person", "person_id"),
 )
 
+# Invite codes for signing up (SEM-117): the operator makes one, a signed-in person with no
+# workspace redeems it and gets a workspace of their own. Global, like ``person``. Only a hash of
+# the code is kept. ``signup_redemption`` holds one row per person, so a person redeems once.
+signup_code = sa.Table(
+    "signup_code",
+    metadata,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("token_hash", sa.Text, nullable=False),
+    sa.Column("note", sa.Text, nullable=False, default=""),
+    sa.Column("max_uses", sa.Integer, nullable=False),
+    sa.Column("uses", sa.Integer, nullable=False, default=0),
+    _ts("created_at"),
+    sa.Column("expires_at", sa.Text, nullable=False),
+    sa.Column("revoked_at", sa.Text),
+    sa.Index("uq_signup_code_hash", "token_hash", unique=True),
+)
+
+signup_redemption = sa.Table(
+    "signup_redemption",
+    metadata,
+    sa.Column("person_id", sa.Text, primary_key=True),
+    sa.Column("code_id", sa.Text, nullable=False),
+    sa.Column("granted_workspace", sa.Text, nullable=False),  # not a key: it may be purged
+    _ts("created_at"),
+    sa.ForeignKeyConstraint(
+        ["person_id"], ["person.id"], ondelete="CASCADE", name="fk_signup_redemption_person"
+    ),
+    sa.ForeignKeyConstraint(
+        ["code_id"], ["signup_code.id"], ondelete="CASCADE", name="fk_signup_redemption_code"
+    ),
+    sa.Index("idx_signup_redemption_code", "code_id"),
+)
+
 # An offer to join, by email and role. Single use, seven days. Only a hash of its token is kept.
 # Accepting needs a signed-in person whose *verified* email matches: an invitation is never a way
 # to sign in.

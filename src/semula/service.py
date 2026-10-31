@@ -65,6 +65,8 @@ from .schema import pending as Q
 from .schema import person as PE
 from .schema import person_session as SE
 from .schema import project as P
+from .schema import signup_code as SC
+from .schema import signup_redemption as SR
 from .schema import upstream_usage as UU
 from .schema import workspace as WS
 from .schema import workspace_usage as U
@@ -132,6 +134,7 @@ class MatchResult:
     nearest: dict[str, Any] | None = None
 
 
+SIGNUP_CODE_PREFIX = "smla_code_"
 INVITATION_DAYS = 7  # an invitation can be accepted for this long, once
 IDLE_SESSION_SECONDS = 12 * 3600  # a sign-in ends after twelve idle hours ...
 SESSION_SECONDS = 7 * 86400  # ... or seven days, however active
@@ -654,17 +657,149 @@ class Service:
         """Add a workspace (a tenant). Local use has only ``default``; this is for hosting."""
         if self.db.one(sa.select(WS.c.id).where(WS.c.id == workspace_id)):
             raise SemulaError(409, "workspace_exists", f"Workspace '{workspace_id}' exists.")
-        with self.db.begin() as conn:  # a workspace starts with the project calls fall back to
-            self.db.execute(sa.insert(WS).values(id=workspace_id, name=name or workspace_id), conn)
-            self.db.for_workspace(workspace_id).execute(
-                sa.insert(P).values(workspace_id=workspace_id, id=DEFAULT_PROJECT, name="Default"),
-                conn,
+        with self.db.begin() as conn:
+            self._create_workspace(conn, workspace_id, name)
+
+    def _create_workspace(self, conn: Connection, workspace_id: str, name: str | None) -> None:
+        """A workspace starts with the project calls fall back to."""
+        self.db.execute(sa.insert(WS).values(id=workspace_id, name=name or workspace_id), conn)
+        self.db.for_workspace(workspace_id).execute(
+            sa.insert(P).values(workspace_id=workspace_id, id=DEFAULT_PROJECT, name="Default"),
+            conn,
+        )
+        fresh = self.for_scope(Scope(workspace_id, self.principal, self.request_id, self.client))
+        fresh._reserve(conn, projects=1)  # the default project
+        fresh._audit("workspace.create", workspace_id, conn=conn)
+
+    # --- signing up with an invite code (SEM-117) ----------------------------------------------
+    def _operator_only(self) -> None:
+        if self.principal is not None:
+            raise SemulaError(
+                403, "forbidden", "Only the operator makes signup codes.",
+                err_type="authentication_error",
+            )  # fmt: skip
+
+    def create_signup_code(self, uses: int = 1, days: int = 14, note: str = "") -> dict[str, Any]:
+        """An invite code for signing up. The code is in the result once; only its hash is kept.
+        It works for ``uses`` people, each once, for ``days``."""
+        self._operator_only()
+        if not 1 <= uses <= 10_000:
+            raise SemulaError(422, "invalid_uses", "uses is 1 to 10000.", param="uses")
+        if not 1 <= days <= 365:
+            raise SemulaError(422, "invalid_days", "days is 1 to 365.", param="days")
+        note = note.strip()
+        if len(note) > 200:
+            raise SemulaError(
+                422, "invalid_note", "A note is at most 200 characters.", param="note"
             )
-            fresh = self.for_scope(
-                Scope(workspace_id, self.principal, self.request_id, self.client)
-            )
-            fresh._reserve(conn, projects=1)  # the default project
-            fresh._audit("workspace.create", workspace_id, conn=conn)
+        secret = SIGNUP_CODE_PREFIX + secrets.token_urlsafe(24)
+        code_id = new_ulid()
+        expires = iso(self._now() + timedelta(days=days))
+        self.db.for_workspace(None).execute(
+            sa.insert(SC).values(
+                id=code_id,
+                token_hash=tok.digest(secret),
+                note=note,
+                max_uses=uses,
+                uses=0,
+                expires_at=expires,
+            )  # fmt: skip
+        )
+        return {"id": code_id, "code": secret, "uses": uses, "note": note, "expires_at": expires}
+
+    def list_signup_codes(self) -> list[dict[str, Any]]:
+        self._operator_only()
+        now = iso(self._now())
+        rows = self.db.for_workspace(None).rows(
+            sa.select(SC).order_by(SC.c.created_at.desc(), SC.c.id)
+        )
+        return [
+            {
+                "id": r["id"],
+                "note": r["note"],
+                "uses": r["max_uses"],
+                "used": r["uses"],
+                "created_at": r["created_at"],
+                "expires_at": r["expires_at"],
+                "revoked": r["revoked_at"] is not None,
+                "open": r["revoked_at"] is None
+                and r["expires_at"] > now
+                and r["uses"] < r["max_uses"],
+            }  # fmt: skip
+            for r in rows
+        ]
+
+    def revoke_signup_code(self, code_id: str) -> None:
+        self._operator_only()
+        db = self.db.for_workspace(None)
+        if not db.one(sa.select(SC.c.id).where(SC.c.id == code_id)):
+            raise SemulaError(404, "signup_code_not_found", f"No signup code {code_id}.")
+        db.execute(
+            sa.update(SC)
+            .where(SC.c.id == code_id, SC.c.revoked_at.is_(None))
+            .values(revoked_at=now_iso())
+        )
+
+    def redeem_signup_code(self, secret: str, person_id: str) -> dict[str, Any]:
+        """Spend one use of a code to get a workspace of one's own, as its admin. A code that
+        does not work says so in one way whatever is wrong with it (unknown, expired, revoked,
+        used up), so it cannot be used to find out which codes exist. A person redeems once."""
+        invalid = SemulaError(404, "signup_code_invalid", "That code is not valid any more.")
+        secret = (secret or "").strip()
+        if not secret:
+            raise invalid
+        db = self.db.for_workspace(None)
+        who = db.one(sa.select(PE.c.name, PE.c.email).where(PE.c.id == person_id))
+        if who is None:
+            raise invalid
+        label = (who["name"] or who["email"].split("@")[0]).strip()[:60]
+        workspace_id = "w-" + secrets.token_hex(5)
+        try:
+            with self.db.begin() as conn:
+                # A write first: SQLite fails at once when a transaction that has read tries to
+                # write behind another writer, but a write that starts the transaction waits.
+                claimed = db.execute(
+                    sa.update(SC)
+                    .where(
+                        SC.c.token_hash == tok.digest(secret),
+                        SC.c.uses < SC.c.max_uses,
+                        SC.c.revoked_at.is_(None),
+                        SC.c.expires_at > iso(self._now()),
+                    )
+                    .values(uses=SC.c.uses + 1),
+                    conn,
+                )
+                if claimed != 1:  # unknown, expired, revoked, or the last use went to someone else
+                    raise invalid
+                row = db.one(sa.select(SC.c.id).where(SC.c.token_hash == tok.digest(secret)), conn)
+                if row is None or db.one(
+                    sa.select(SR.c.person_id).where(SR.c.person_id == person_id), conn
+                ):
+                    raise SemulaError(  # rolls the use back: this person had their turn already
+                        409, "already_signed_up", "You already have a workspace from a code."
+                    )
+                self._create_workspace(conn, workspace_id, f"{label}'s workspace")
+                db.execute(
+                    sa.insert(MB).values(
+                        workspace_id=workspace_id, person_id=person_id, role="admin"
+                    ),
+                    conn,
+                )
+                db.execute(
+                    sa.insert(SR).values(
+                        person_id=person_id, code_id=row["id"], granted_workspace=workspace_id
+                    ),
+                    conn,
+                )
+                acting = Principal("person", person_id, workspace_id, role="admin", name=label)
+                self.for_scope(Scope(workspace_id, acting, self.request_id, self.client))._audit(
+                    "signup.redeem", row["id"], {"person": person_id}, conn
+                )
+        except sa.exc.IntegrityError as exc:  # the same person, redeeming twice at once
+            raise SemulaError(
+                409, "already_signed_up", "You already have a workspace from a code."
+            ) from exc
+        return {"workspace_id": workspace_id, "workspace": f"{label}'s workspace"}
 
     # --- members and invitations (ADR-0010 section 3) ----------------------------------------
     @needs("admin")
