@@ -65,6 +65,7 @@ def test_the_sign_in_page_cannot_be_framed_and_runs_no_script(hosted) -> None:  
     assert resp.headers["x-frame-options"] == "DENY"
     assert resp.headers["x-content-type-options"] == "nosniff"
     assert resp.headers["referrer-policy"] == "no-referrer"
+    assert "camera=()" in resp.headers["permissions-policy"]
     assert resp.headers["cache-control"] == "no-store"
 
 

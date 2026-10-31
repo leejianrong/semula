@@ -12,9 +12,12 @@ import base64
 import hashlib
 import hmac
 import html
+import json
+import logging
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool as offload
@@ -23,6 +26,7 @@ from . import oidc
 from .errors import SemulaError
 from .service import SESSION_SECONDS, Service
 
+log = logging.getLogger("semula.auth")
 router = APIRouter(prefix="/auth")
 LANDING = "/ui/"
 
@@ -85,6 +89,7 @@ _PAGE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 }
 
 
@@ -125,6 +130,30 @@ def _query(params: dict[str, str]) -> str:
     return urlencode(params)
 
 
+# What a provider that is down, slow or answering rubbish raises inside ``oidc.Client``.
+PROVIDER_FAILURES = (httpx.HTTPError, json.JSONDecodeError)
+
+
+def _sign_in_failed(exc: Exception, provider: str) -> HTMLResponse:
+    """The page for a sign-in that did not work. A provider that cannot be reached says so
+    plainly and logs the kind of failure, never the address, which may hold a secret."""
+    if isinstance(exc, SemulaError):
+        err = exc
+    else:
+        log.warning("sign-in provider %s failed: %s", provider, type(exc).__name__)
+        err = SemulaError(
+            502,
+            "provider_unreachable",
+            "The sign-in provider could not be reached. Try again in a moment.",
+        )
+    return _page(
+        "Sign-in failed",
+        f"<p>{html.escape(err.message)}</p><p><code>{html.escape(err.code)}</code></p>"
+        '<p><a href="/auth/login">Try again</a></p>',
+        err.status if err.status < 500 else 502,
+    )
+
+
 @router.get("/login/{provider}", response_model=None)
 async def start(provider: str, request: Request, next: str | None = None) -> Response:
     service, client, cookies, secret = _state(request)
@@ -133,7 +162,10 @@ async def start(provider: str, request: Request, next: str | None = None) -> Res
         raise SemulaError(404, "provider_not_found", f"No sign-in provider '{provider}'.")
     redirect_uri = f"{cookies.origin}/auth/callback/{provider}"
     flow, challenge = oidc.new_flow(chosen, redirect_uri, safe_next(next))
-    where = await client.authorize_url(chosen, flow, challenge)
+    try:
+        where = await client.authorize_url(chosen, flow, challenge)
+    except (SemulaError, *PROVIDER_FAILURES) as exc:
+        return _sign_in_failed(exc, provider)
     response = RedirectResponse(where, status_code=302)
     cookies.set(response, cookies.flow, oidc.seal(secret, flow), oidc.FLOW_SECONDS)
     return response
@@ -156,13 +188,8 @@ async def callback(provider: str, request: Request) -> Response:
                 replacing=request.cookies.get(cookies.session),
             )
         )
-    except SemulaError as exc:
-        failed = _page(
-            "Sign-in failed",
-            f"<p>{html.escape(exc.message)}</p><p><code>{html.escape(exc.code)}</code></p>"
-            '<p><a href="/auth/login">Try again</a></p>',
-            exc.status if exc.status < 500 else 502,
-        )
+    except (SemulaError, *PROVIDER_FAILURES) as exc:
+        failed = _sign_in_failed(exc, provider)
         cookies.clear(failed, cookies.flow)
         return failed
     response = RedirectResponse(flow["next"], status_code=302)
