@@ -19,6 +19,10 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_UI` | `on` | `off` hides the dashboard at `/ui`. |
 | `SEMULA_TRUSTED_PROXIES` | none | Comma-separated addresses or CIDR ranges of the reverse proxies whose `X-Forwarded-For` is believed, for example `172.18.0.0/16`. The failed-token limiter, a token's last-used network and the audit log then see the real client. Unset, the header is ignored. `*` is refused. See [behind a proxy](../guide/hosted.md#behind-a-reverse-proxy). |
 | `SEMULA_SIGNUP` | `code` | How a person gets a workspace of their own: `code` (an invite code the operator made, see [signing up](../guide/hosted.md#signing-up-with-an-invite-code)). No other value is accepted yet. |
+| `SEMULA_AUTH_RATE` | `30` | Hosted only. Sign-in requests a minute for one client address, on every `/auth/*` route: a burst of this many, then steadily. Over it is `429` with `Retry-After`. An IPv6 address counts as its whole /64. `none` removes the limit. |
+| `SEMULA_UI_STREAMS_PER_ADDRESS` | `40` | Hosted only. Open dashboard streams (tabs) from one client address. Over it is `429`. `none` removes the cap. |
+| `SEMULA_UI_TABS_PER_PERSON` | `10` | Hosted only. Open dashboard tabs of one signed-in person, wherever from. A closed tab gives its place back. `none` removes the cap. |
+| `SEMULA_UI_SESSIONS` | `2000` | Hosted only. Open dashboard sessions on one process; past it the least recently used goes first. `none` removes the cap. |
 | `SEMULA_API_KEY` | none | Require this key. See below. |
 | `SEMULA_PUBLIC_URL` | `http://127.0.0.1:8080` | The address people reach the server at, no trailing slash. Sign-in redirect URIs and cookie names come from it; use `https://...` when hosted. |
 | `SEMULA_SECRET` | none | At least 16 random bytes, to sign sign-in state. Needed once any sign-in provider is set up. |

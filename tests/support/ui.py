@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 import time
@@ -40,6 +41,7 @@ class Tab:
         self.arrived: list[float] = []
         self._lock = threading.Condition()
         self._stop = threading.Event()
+        self._resp: httpx.Response | None = None
         self._thread = threading.Thread(target=self._read, args=(path,), daemon=True)
         self._thread.start()
         self.init = self.wait_for(lambda m: m["type"] == "init", HTTP_TIMEOUT)[0]
@@ -54,6 +56,7 @@ class Tab:
                 cookies=self.cookies,
                 timeout=httpx.Timeout(HTTP_TIMEOUT, read=60),
             ) as resp:
+                self._resp = resp
                 for line in resp.iter_lines():
                     if self._stop.is_set():
                         return
@@ -62,8 +65,8 @@ class Tab:
                             self.messages.append(json.loads(line[5:]))
                             self.arrived.append(time.perf_counter())
                             self._lock.notify_all()
-        except httpx.HTTPError:
-            pass
+        except (httpx.HTTPError, RuntimeError, OSError):
+            pass  # closed on purpose, or the server went away
 
     def wait_for(
         self, found: Callable[[dict[str, Any]], bool], timeout: float = 3.0, after: int = 0
@@ -135,4 +138,9 @@ class Tab:
         assert resp.status_code == 200, resp.text
 
     def close(self) -> None:
+        """Leave, as a closed browser tab does: drop the stream, so the server sees it go."""
         self._stop.set()
+        resp = getattr(self, "_resp", None)
+        if resp is not None:
+            with contextlib.suppress(httpx.HTTPError, RuntimeError, OSError):
+                resp.close()
