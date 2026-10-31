@@ -8,6 +8,12 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-31
+
+A patch for running semula as a public hosted service: a proxy-aware client address, a compose
+project for one machine, and the fixes and headers from a security review of the dashboard. A
+local server is unchanged apart from the two items under "Changed".
+
 ### Added
 
 - `deploy/droplet`: the hosted server on one machine as a compose project: Caddy with automatic TLS and HSTS, semula on the hosted image, Postgres with a separate owner and app role (so row-level security applies), a migrate step before the app, a daily workspace purge and an `admin` service for operator commands. Only ports 80 and 443 are published. `make droplet-smoke` runs the whole stack and checks it.
