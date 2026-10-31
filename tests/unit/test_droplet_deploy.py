@@ -76,6 +76,19 @@ def test_caddy_sets_hsts_and_never_cuts_a_held_call_or_stream() -> None:
     assert "flush_interval -1" in caddyfile
     assert "response_header_timeout 0" in caddyfile and "read_timeout 0" in caddyfile
     assert "{$SEMULA_DOMAIN}" in caddyfile
+    for header in (
+        "Permissions-Policy",
+        "Cross-Origin-Opener-Policy",
+        "Cross-Origin-Resource-Policy",
+    ):
+        assert header in caddyfile
+
+
+def test_the_access_log_redacts_the_secrets_that_travel_in_an_address() -> None:
+    caddyfile = (DIR / "Caddyfile").read_text()
+    assert "format filter" in caddyfile and "request>uri regexp" in caddyfile
+    for part in ("/auth/invite/", "code", "state", "sid", "REDACTED"):
+        assert part in caddyfile.split("request>uri regexp")[1].splitlines()[0], part
 
 
 def test_the_database_role_for_the_app_is_not_a_superuser_and_bypasses_nothing() -> None:
