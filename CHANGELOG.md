@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Added
+
+- A hosted server limits the sign-in routes per client address (`SEMULA_AUTH_RATE`, 30 a minute) and the dashboard per address and per person (`SEMULA_UI_STREAMS_PER_ADDRESS`, `SEMULA_UI_TABS_PER_PERSON`, `SEMULA_UI_SESSIONS`), and passes indah's per-address rates on the dashboard's event, stream and upload routes. The dashboard had none of these before.
+
 ## [0.4.1] - 2026-10-31
 
 A patch for running semula as a public hosted service: a proxy-aware client address, a compose

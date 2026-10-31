@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import indah
+from indah.hardening import Limits, Rate
 
 from ..api_auth import Cookies
 from ..config import Settings
@@ -43,6 +44,20 @@ class Dashes:
             target = self._by_workspace.get(event.get("workspace", DEFAULT_WORKSPACE))
         if target is not None:
             target.publish(event)
+
+
+def dashboard_limits(settings: Settings) -> Limits:
+    """What one address may do to the dashboard (indah's ``hardening``). The rates are generous
+    for a team behind one address and only stop a loop; the caps are the settings."""
+    return Limits(
+        rate={
+            "/api/event": Rate(per_second=50.0, burst=200),
+            "/api/upload": Rate(per_second=1.0, burst=10),
+            "/api/stream": Rate(per_second=2.0, burst=30),
+        },
+        max_streams_per_ip=settings.ui_streams_per_address,
+        max_sessions=settings.ui_sessions,
+    )
 
 
 def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
@@ -87,6 +102,7 @@ def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
             "allowed_origins": (origin,),
             "csp": "strict",
             "security_headers": True,
+            "limits": dashboard_limits(settings),
         }
     app = indah.create_app(
         session_factory=build,
