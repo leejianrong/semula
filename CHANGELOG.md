@@ -10,10 +10,12 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- `deploy/droplet`: the hosted server on one machine as a compose project: Caddy with automatic TLS and HSTS, semula on the hosted image, Postgres with a separate owner and app role (so row-level security applies), a migrate step before the app, a daily workspace purge and an `admin` service for operator commands. Only ports 80 and 443 are published. `make droplet-smoke` runs the whole stack and checks it.
 - `SEMULA_TRUSTED_PROXIES`: behind a reverse proxy, the failed-token limit, a token's last-used network and the audit log use the real client from `X-Forwarded-For` instead of the proxy's address, believed only from the proxies you name.
 
 ### Changed
 
+- A hosted server no longer prints the "no SEMULA_API_KEY" warning when it listens beyond loopback: tokens protect it.
 - `semula serve` no longer lets uvicorn rewrite the client address from `X-Forwarded-For` for a peer on loopback. Set `SEMULA_TRUSTED_PROXIES` if a proxy on the same host should be believed.
 
 ## [0.4.0] - 2026-10-27

@@ -5,7 +5,7 @@
 PORT ?= 8080
 FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted droplet-smoke release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -49,6 +49,9 @@ image-smoke: ## Start IMAGE (default semula:check) and check /health, /v1, a mis
 
 image-smoke-hosted: ## Check a hosted image (IMAGE, default semula:hosted-check, built with the hosted and postgres extras)
 	scripts/smoke_image_hosted.sh $(or $(IMAGE),semula:hosted-check)
+
+droplet-smoke: ## Bring up deploy/droplet (Caddy, app, Postgres) on a throwaway name and check it (IMAGE, default semula:hosted-check; needs Docker)
+	scripts/smoke_droplet.sh $(or $(IMAGE),semula:hosted-check)
 
 release-check: ## Would TAG (like v0.1.0) release? Tag, pyproject, lockfile and CHANGELOG must agree
 	python3 scripts/release.py check $(TAG)
