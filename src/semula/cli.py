@@ -802,6 +802,43 @@ def _admin_invite(args: argparse.Namespace) -> int:
     return _ok(args, {**{k: v for k, v in made.items() if k != "token"}, "link": link}, human)
 
 
+def _admin_signup_code(args: argparse.Namespace) -> int:
+    """Invite codes for signing up: a signed-in person with no workspace redeems one."""
+    try:
+        service = _admin_service(args, None)
+        from .config import Settings
+
+        public = Settings.from_env().public_url
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    from .errors import SemulaError
+
+    try:
+        if args.verb == "create":
+            made = service.create_signup_code(args.uses, args.days, args.note)
+            page = f"{public}/auth/signup"
+            human = (
+                f"code {made['code']}\nworks for {made['uses']} "
+                f"{'person' if made['uses'] == 1 else 'people'} until {made['expires_at']}\n"
+                f"They sign in at {page} and enter it. It is shown only now."
+            )
+            return _ok(args, {**made, "page": page}, human)
+        if args.verb == "revoke":
+            service.revoke_signup_code(args.id)
+            return _ok(args, {"id": args.id, "revoked": True}, f"revoked {args.id}")
+        codes = service.list_signup_codes()
+    except SemulaError as exc:
+        print(f"error: {exc.code}: {exc.message}", file=sys.stderr)
+        return EXIT_REJECTED
+    lines = [
+        f"{c['id']}\t{c['used']}/{c['uses']}\t"
+        f"{'revoked' if c['revoked'] else 'open' if c['open'] else 'spent'}\t"
+        f"{c['expires_at']}\t{c['note']}"
+        for c in codes
+    ]
+    return _ok(args, codes, "\n".join(lines) if lines else "no signup codes")
+
+
 def _admin_members(args: argparse.Namespace) -> int:
     try:
         service = _admin_service(args, args.workspace)
@@ -1103,6 +1140,22 @@ def build_parser() -> argparse.ArgumentParser:
         "Hard-delete every workspace whose 30 days are over",
     )
     purge.set_defaults(verb="purge")
+    code_create = add(
+        asub, "signup-code-create", _admin_signup_code, "Make an invite code for signing up"
+    )
+    code_create.set_defaults(verb="create")
+    code_create.add_argument("--uses", type=int, default=1, help="how many people (default 1)")
+    code_create.add_argument("--days", type=int, default=14, help="how long it works (default 14)")
+    code_create.add_argument("--note", default="", help="who it is for")
+    code_list = add(
+        asub, "signup-code-list", _admin_signup_code, "List invite codes for signing up"
+    )
+    code_list.set_defaults(verb="list")
+    code_revoke = add(
+        asub, "signup-code-revoke", _admin_signup_code, "Revoke an invite code for signing up"
+    )
+    code_revoke.set_defaults(verb="revoke")
+    code_revoke.add_argument("id")
     invite = add(asub, "invite", _admin_invite, "Invite someone to a workspace (prints the link)")
     invite.add_argument("--workspace", required=True)
     invite.add_argument("--email", required=True)

@@ -269,6 +269,10 @@ EXEMPT = {
     "stop_cluster": "process-level: leaves it",
     "owns": "says whether an event belongs to this workspace",
     "create_workspace": "creates the tenant itself",
+    "create_signup_code": "the operator's: codes are global, made on no workspace",
+    "list_signup_codes": "the operator's: codes are global, made on no workspace",
+    "revoke_signup_code": "the operator's: codes are global, made on no workspace",
+    "redeem_signup_code": "a person with no workspace yet makes their own; found by the code",
     "set_mode_default": "",  # placeholder removed below
     "sync_index": "rebuilds the lexical index of this workspace's entries only",
     "sync_embeddings": "maintenance of this workspace's vectors",

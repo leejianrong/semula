@@ -266,6 +266,55 @@ async def invitation(token: str, request: Request) -> Response:
     return _invite_page(preview, token, session["csrf"], session["email"])
 
 
+def _signup_page(csrf: str, email: str) -> HTMLResponse:
+    body = (
+        f"<p>You are signed in as <b>{html.escape(email)}</b>.</p>"
+        "<p>Enter the invite code you were sent to get a workspace of your own.</p>"
+        '<form method=post action="/auth/signup">'
+        f'<input type=hidden name=csrf value="{html.escape(csrf)}">'
+        "<p><input name=code autocomplete=off autofocus required size=36 "
+        'placeholder="smla_code_..."></p>'
+        "<button>Create my workspace</button></form>"
+    )
+    return _page("Create your workspace", body)
+
+
+@router.get("/signup", response_model=None)
+async def signup_page(request: Request) -> Response:
+    """Sign in first (any provider), then enter an invite code."""
+    service, _, cookies, _ = _state(request)
+    session = await offload(service.authenticate_session, request.cookies.get(cookies.session, ""))
+    if session is None:
+        return RedirectResponse(f"/auth/login?{_query({'next': '/auth/signup'})}", status_code=302)
+    return _signup_page(session["csrf"], session["email"])
+
+
+@router.post("/signup", response_model=None)
+async def signup(request: Request) -> Response:
+    service, _, cookies, _ = _state(request)
+    session = await offload(service.authenticate_session, request.cookies.get(cookies.session, ""))
+    form = await request.form()
+    origin = request.headers.get("origin")
+    if (
+        session is None
+        or (origin is not None and origin != cookies.origin)
+        or not hmac.compare_digest(str(form.get("csrf", "")), session["csrf"])
+    ):
+        raise SemulaError(403, "csrf", "Signing up needs the session's CSRF token.")
+    try:
+        made = await offload(
+            service.redeem_signup_code, str(form.get("code", "")), session["person_id"]
+        )
+    except SemulaError as exc:
+        return _page(
+            "Create your workspace",
+            f'<p>{html.escape(exc.message)}</p><p><a href="/auth/signup">Try again</a></p>',
+            exc.status,
+        )
+    await offload(service.switch_session, session["session_id"], made["workspace_id"])
+    return RedirectResponse(LANDING, status_code=303)
+
+
 @router.post("/invite/{token}", response_model=None)
 async def accept(token: str, request: Request) -> Response:
     service, _, cookies, _ = _state(request)

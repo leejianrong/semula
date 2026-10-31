@@ -308,6 +308,11 @@ def build_waiting_session(ctx: indah.Context, who: indah.Principal | None) -> in
                     "admin to invite you, and open the link they send.",
                     size="body",
                 ),
+                indah.Text(
+                    "Or, if you were sent an invite code, [enter it here](/auth/signup).",
+                    markdown=True,
+                    size="body",
+                ),
             ]
         )
     )

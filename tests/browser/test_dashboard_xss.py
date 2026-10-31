@@ -283,6 +283,15 @@ def test_a_screen_never_runs_stored_text(
     audit(page)
 
 
+def test_the_signup_page_is_clean_and_styled_under_its_policy(
+    seeded: Seeded, new_page: Callable[..., Any]
+) -> None:
+    page = open_screen(new_page, seeded, "/auth/signup")
+    settle(page, ["Create your workspace"])
+    assert page.locator("input[name=code]").count() == 1
+    audit(page)  # no blocked style or script, no off-site link
+
+
 def test_the_address_is_not_echoed_as_markup(seeded: Seeded, new_page: Callable[..., Any]) -> None:
     hostile = urllib.parse.quote(VECTORS[1], safe="")
     for path in (f"/ui/projects/{hostile}/log", f"/ui/{hostile}", f"/ui/workspace/{hostile}"):

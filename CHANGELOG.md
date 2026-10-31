@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Added
+
+- Invite codes for signing up: `semula admin signup-code-create` (and `-list`, `-revoke`) makes a code; a person who has signed in enters it at `/auth/signup` and gets a workspace of their own, as its admin. A code works for a set number of people, once each, for a set time, and says the same thing whatever is wrong with it. `SEMULA_SIGNUP` (`code`) is the setting a later open signup would change. Migration 0020 adds two tables.
+
 ## [0.4.1] - 2026-10-31
 
 A patch for running semula as a public hosted service: a proxy-aware client address, a compose

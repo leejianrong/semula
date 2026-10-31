@@ -56,6 +56,22 @@ A sign-in is a server-side row and an opaque cookie (`HttpOnly`, `SameSite=Lax`,
 !!! note "Checked against a stand-in"
     The sign-in flow is tested end to end against a provider written for the tests. It speaks the real protocol and is made to misbehave in ten ways (a wrong state, nonce, audience, issuer or signature, an expired or unsigned token, a reused code, an unverified email). The flow has not been run against Google's or GitHub's own servers, so check your first real sign-in, and the redirect URI in particular.
 
+## Signing up with an invite code
+
+An invitation (below) puts someone in a workspace that already exists. To let someone start with a workspace of their own, make an **invite code**:
+
+```bash
+semula admin signup-code-create --uses 5 --days 14 --note "beta list"
+```
+
+```
+code smla_code_…
+works for 5 people until 2026-11-14T09:30:00.000Z
+They sign in at https://semula.example.com/auth/signup and enter it. It is shown only now.
+```
+
+The person signs in with a provider, opens `/auth/signup`, enters the code and lands in a new workspace where they are the admin, with the same [limits](#limits) as any other. Each person can do this once, and a code works for the number of people you gave it. A code that is unknown, expired, revoked or used up gets the same answer, so it cannot be used to find out which codes exist. Only a hash of a code is stored, like a token. `semula admin signup-code-list` shows how many are used, and `signup-code-revoke <id>` ends one. A person who signs in with no workspace is told where to enter a code.
+
 ## Members and roles
 
 Signing in makes a person; **membership** lets them into a workspace, with one of three roles that apply to every project in it:

@@ -18,6 +18,7 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_MIGRATE` | `on` | `off` stops a start from migrating the database and refuses to start if it is not up to date. For replicas: run `semula admin migrate` once before rollout. |
 | `SEMULA_UI` | `on` | `off` hides the dashboard at `/ui`. |
 | `SEMULA_TRUSTED_PROXIES` | none | Comma-separated addresses or CIDR ranges of the reverse proxies whose `X-Forwarded-For` is believed, for example `172.18.0.0/16`. The failed-token limiter, a token's last-used network and the audit log then see the real client. Unset, the header is ignored. `*` is refused. See [behind a proxy](../guide/hosted.md#behind-a-reverse-proxy). |
+| `SEMULA_SIGNUP` | `code` | How a person gets a workspace of their own: `code` (an invite code the operator made, see [signing up](../guide/hosted.md#signing-up-with-an-invite-code)). No other value is accepted yet. |
 | `SEMULA_API_KEY` | none | Require this key. See below. |
 | `SEMULA_PUBLIC_URL` | `http://127.0.0.1:8080` | The address people reach the server at, no trailing slash. Sign-in redirect URIs and cookie names come from it; use `https://...` when hosted. |
 | `SEMULA_SECRET` | none | At least 16 random bytes, to sign sign-in state. Needed once any sign-in provider is set up. |

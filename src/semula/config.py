@@ -105,6 +105,15 @@ def _networks_from_env(raw: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _signup_from_env() -> Literal["code"]:
+    raw = os.environ.get("SEMULA_SIGNUP", "code").strip().lower()
+    if raw != "code":
+        raise ValueError(
+            f"SEMULA_SIGNUP: only 'code' is available (a person needs an invite code), got {raw!r}"
+        )
+    return "code"
+
+
 def _quotas_from_env(hosted: bool) -> Quotas:
     """Hosted defaults, each changeable with ``SEMULA_QUOTA_<NAME>`` (``none`` removes a limit)."""
     base = HOSTED_QUOTAS if hosted else Quotas()
@@ -137,6 +146,8 @@ class Settings:
     # Reverse proxies (addresses or CIDR ranges) whose X-Forwarded-For is believed. Empty: the
     # header is ignored and the socket peer is the client.
     trusted_proxies: tuple[str, ...] = ()
+    # How a person gets a workspace of their own: with an invite code the operator made.
+    signup: Literal["code"] = "code"
     api_key: str | None = field(default=None, repr=False)
     # Hosted mode: every call needs an API token, which names the workspace (ADR-0010). Off
     # locally, where whoever can reach the port is trusted (or the shared key above).
@@ -205,6 +216,7 @@ class Settings:
             log_max_rows=int(os.environ.get("SEMULA_LOG_MAX_ROWS", "50000")),
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
             trusted_proxies=_networks_from_env(os.environ.get("SEMULA_TRUSTED_PROXIES", "")),
+            signup=_signup_from_env(),
             api_key=os.environ.get("SEMULA_API_KEY") or None,
             hosted=_flag(os.environ.get("SEMULA_HOSTED", "off")),
             migrate=_flag(os.environ.get("SEMULA_MIGRATE", "on")),
