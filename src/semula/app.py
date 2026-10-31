@@ -23,6 +23,8 @@ from .dashboard.mount import LazyDashboard, Locked
 from .db import Database
 from .embeddings import Embedder
 from .errors import SemulaError
+from .headers import ResponseHeaders
+from .logs import install_access_scrub
 from .proxy import ForwardedClient
 from .service import Service
 
@@ -201,6 +203,9 @@ def create_app(
         app.add_middleware(TokenAuthMiddleware, service=service)
     elif settings.api_key:
         app.add_middleware(ApiKeyMiddleware, key=settings.api_key)
+    app.add_middleware(ResponseHeaders)
+    if settings.hosted:
+        install_access_scrub()  # sign-in codes and invitation tokens travel in the address
     if settings.trusted_proxies:  # outermost: every layer below sees the real client address
         app.add_middleware(ForwardedClient, trusted=settings.trusted_proxies)
     return app

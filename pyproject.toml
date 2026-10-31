@@ -76,6 +76,7 @@ markers = [
     "integration: in-process app against a temp SQLite file; no network, no Docker",
     "e2e: the real container driven by real SDK clients (CI, needs Docker)",
     "embeddings: the real embedding model (needs the extra and a one-time download; own CI job)",
+    "browser: a real browser (Chromium through Playwright) against the real dashboard (own CI job, `make test-browser`)",
     "perf: latency budgets on a 1k-entry project (own CI job; `make bench` to print the table)",
 ]
 asyncio_mode = "auto"

@@ -74,7 +74,7 @@ from .upstream import Upstream
 
 log = logging.getLogger("semula.service")
 
-_SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
+SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 
 
 SELECTIONS = ("first", "sequence", "cycle")
@@ -1271,7 +1271,7 @@ class Service:
             raise SemulaError(
                 403, "forbidden", "A token bound to a project cannot create projects."
             )
-        if not _SLUG.fullmatch(slug):
+        if not SLUG.fullmatch(slug):
             raise SemulaError(
                 422,
                 "invalid_project_id",
@@ -2431,7 +2431,7 @@ class Service:
         does not exist is created with the bundle's settings; an existing one keeps its own."""
         manifest, entries, aliases = _parse_bundle(bundle)
         slug = self._allowed(project or str(manifest["project"]["id"]))
-        if not _SLUG.fullmatch(slug):
+        if not SLUG.fullmatch(slug):
             raise SemulaError(
                 422, "invalid_project_id", f"'{slug}' is not a valid project id.", param="project"
             )

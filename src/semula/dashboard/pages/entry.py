@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -10,7 +9,8 @@ import indah
 
 from ...errors import SemulaError
 from ..rows import answers_from_editor, editor_text, revision_row
-from ..state import blocking, cancel
+from ..state import blocking
+from ..state import spawn as spawn_task
 from .log import MESSAGE
 from .pending import _text
 
@@ -57,9 +57,7 @@ def entry_page(tab: Tab) -> indah.Component:
             selection.set(found["selection"])
         clean.set(text)
 
-    def spawn(coro: Any) -> None:
-        task = asyncio.get_running_loop().create_task(coro)
-        ctx.on_close(partial(cancel, task))
+    spawn = partial(spawn_task, ctx)
 
     async def load(entry_id: str) -> None:
         nonlocal loads

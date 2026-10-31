@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -11,7 +10,8 @@ import indah
 
 from ...errors import SemulaError
 from ..rows import answer_from_text, pending_row
-from ..state import blocking, cancel
+from ..state import blocking
+from ..state import spawn as spawn_task
 from .log import MESSAGE
 
 if TYPE_CHECKING:
@@ -39,9 +39,7 @@ def pending_page(tab: Tab) -> indah.Component:
     done: indah.Signal[str] = indah.Signal("")
     loads = 0  # the newest reload wins; an older one that finishes late is dropped
 
-    def spawn(coro: Any) -> None:
-        task = asyncio.get_running_loop().create_task(coro)
-        ctx.on_close(partial(cancel, task))
+    spawn = partial(spawn_task, ctx)
 
     async def reload(project: str) -> None:
         nonlocal loads

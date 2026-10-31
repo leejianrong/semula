@@ -8,6 +8,8 @@ every sign-in and the one it replaces is ended. Signing out needs the session's 
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import hmac
 import html
 from typing import Any
@@ -64,17 +66,35 @@ def safe_next(target: str | None) -> str:
     return target if not parsed.scheme and not parsed.netloc else LANDING
 
 
+_STYLE = (
+    "body{font:16px system-ui;max-width:26rem;margin:4rem auto;padding:0 1rem}"
+    "a.b{display:block;margin:.6rem 0;padding:.7rem 1rem;border:1px solid #888;"
+    "border-radius:8px;"
+    "text-decoration:none;color:inherit}"
+)
+_STYLE_HASH = base64.b64encode(hashlib.sha256(_STYLE.encode()).digest()).decode()
+# These pages run no script and cannot be framed; their one style block is allowed by its hash,
+# and the only thing they submit goes back to this site.
+_PAGE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; "
+        f"style-src 'sha256-{_STYLE_HASH}'; img-src data:; "
+        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+}
+
+
 def _page(title: str, body: str, status: int = 200) -> HTMLResponse:
     page = (
         "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-        f"<title>{html.escape(title)}</title>"
-        "<style>body{font:16px system-ui;max-width:26rem;margin:4rem auto;padding:0 1rem}"
-        "a.b{display:block;margin:.6rem 0;padding:.7rem 1rem;border:1px solid #888;"
-        "border-radius:8px;"
-        "text-decoration:none;color:inherit}</style>"
+        f"<title>{html.escape(title)}</title><link rel=icon href='data:,'><style>{_STYLE}</style>"
         f"<h1>{html.escape(title)}</h1>{body}"
     )
-    return HTMLResponse(page, status_code=status)
+    return HTMLResponse(page, status_code=status, headers=_PAGE_HEADERS)
 
 
 @router.get("/providers")

@@ -10,7 +10,8 @@ import indah
 
 from ...errors import SemulaError
 from ..rows import FILTERS, OUTCOME_TONES, keeps, rail_for
-from ..state import blocking, cancel
+from ..state import blocking
+from ..state import spawn as spawn_task
 
 if TYPE_CHECKING:
     from ..shell import Tab
@@ -117,11 +118,7 @@ def log_page(tab: Tab) -> indah.Component:
         else:
             _spawn(open_call(key))
 
-    def _spawn(coro: Any) -> None:
-        import asyncio
-
-        task = asyncio.get_running_loop().create_task(coro)
-        ctx.on_close(partial(cancel, task))
+    _spawn = partial(spawn_task, ctx)
 
     indah.effect(on_pick)
 

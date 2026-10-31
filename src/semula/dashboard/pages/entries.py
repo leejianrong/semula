@@ -19,7 +19,8 @@ from ..rows import (
     new_entry_request,
     page_text,
 )
-from ..state import blocking, cancel
+from ..state import blocking
+from ..state import spawn as spawn_task
 
 if TYPE_CHECKING:
     from ..shell import Tab
@@ -39,9 +40,7 @@ def entries_page(tab: Tab) -> indah.Component:
     total: indah.Signal[int] = indah.Signal(0)
     loads = 0  # the newest search wins; an older one that finishes late is dropped
 
-    def spawn(coro: Any) -> None:
-        task = asyncio.get_running_loop().create_task(coro)
-        ctx.on_close(partial(cancel, task))
+    spawn = partial(spawn_task, ctx)
 
     async def reload(project: str, text: str, which: str, sort: str, start: int) -> None:
         nonlocal loads
