@@ -23,6 +23,7 @@ from .dashboard.mount import LazyDashboard, Locked
 from .db import Database
 from .embeddings import Embedder
 from .errors import SemulaError
+from .proxy import ForwardedClient
 from .service import Service
 
 MCP_READY_TIMEOUT = 30.0
@@ -200,4 +201,6 @@ def create_app(
         app.add_middleware(TokenAuthMiddleware, service=service)
     elif settings.api_key:
         app.add_middleware(ApiKeyMiddleware, key=settings.api_key)
+    if settings.trusted_proxies:  # outermost: every layer below sees the real client address
+        app.add_middleware(ForwardedClient, trusted=settings.trusted_proxies)
     return app

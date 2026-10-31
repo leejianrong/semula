@@ -144,6 +144,16 @@ Rotating mints a successor with the same name, scope and project, and the old to
 
 Failed attempts are rate limited per client address (20 a minute), and a blocked address waits even with a good token.
 
+## Behind a reverse proxy
+
+Put the server behind a proxy that ends TLS (Caddy, nginx, a cloud load balancer). Then every connection comes from the proxy, so the limit on failed attempts would count all your users as one address: twenty bad guesses from anyone would lock everyone out. Name the proxy so semula reads the real address from `X-Forwarded-For`:
+
+```bash
+SEMULA_TRUSTED_PROXIES=172.18.0.0/16     # the network the proxy connects from
+```
+
+The header is believed only when the connection comes from one of these addresses, and is read from the right: each of your proxies adds the address it received the request from, so the first address that is not one of yours is the client. Anything the client wrote further left is ignored. Without the setting the header is ignored altogether, so a client cannot choose its own address. Use the narrowest range that covers the proxy; `*` is refused.
+
 ## Several replicas
 
 Run as many replicas as you like against one Postgres. They share live events (the call log, the pending count) and wake a parked call on one replica when another replica answers it, over Postgres `LISTEN/NOTIFY`. Publishing never waits for the network, and a parked call and a `wait_for_pending` also look again every second, so a notification that gets lost costs a second, not a hang. Put sticky sessions in front of the dashboard when it has sign-in.

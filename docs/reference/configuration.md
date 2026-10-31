@@ -17,6 +17,7 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_QUOTA_<NAME>` | hosted defaults | Override a [hosted limit](../guide/hosted.md#limits), for example `SEMULA_QUOTA_PROJECTS=50`; `none` removes it. Names: `PROJECTS`, `ENTRIES`, `BYTES`, `PARKED_PER_PROJECT`, `PARKED_PER_WORKSPACE`, `TOKENS`, `MEMBERS`, `BODY_BYTES`, `RECORD_TIMEOUT_MAX`, `RATE`, `BURST`. A local server has none. |
 | `SEMULA_MIGRATE` | `on` | `off` stops a start from migrating the database and refuses to start if it is not up to date. For replicas: run `semula admin migrate` once before rollout. |
 | `SEMULA_UI` | `on` | `off` hides the dashboard at `/ui`. |
+| `SEMULA_TRUSTED_PROXIES` | none | Comma-separated addresses or CIDR ranges of the reverse proxies whose `X-Forwarded-For` is believed, for example `172.18.0.0/16`. The failed-token limiter, a token's last-used network and the audit log then see the real client. Unset, the header is ignored. `*` is refused. See [behind a proxy](../guide/hosted.md#behind-a-reverse-proxy). |
 | `SEMULA_API_KEY` | none | Require this key. See below. |
 | `SEMULA_PUBLIC_URL` | `http://127.0.0.1:8080` | The address people reach the server at, no trailing slash. Sign-in redirect URIs and cookie names come from it; use `https://...` when hosted. |
 | `SEMULA_SECRET` | none | At least 16 random bytes, to sign sign-in state. Needed once any sign-in provider is set up. |

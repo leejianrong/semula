@@ -133,7 +133,9 @@ def _serve(args: argparse.Namespace) -> int:
     except (EmbeddingsUnavailable, DatabaseTooNew) as exc:  # cannot run: say why, not a traceback
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    # proxy_headers off: uvicorn would trust X-Forwarded-For from loopback only; semula decides
+    # for itself, from SEMULA_TRUSTED_PROXIES (proxy.py)
+    uvicorn.run(app, host=host, port=port, log_level="info", proxy_headers=False)
     return EXIT_OK
 
 
