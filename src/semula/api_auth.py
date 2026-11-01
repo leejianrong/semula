@@ -113,6 +113,17 @@ def providers(request: Request) -> dict[str, Any]:
     }
 
 
+def _fine_print(settings: Any) -> str:
+    """The terms link and, when the operator set one, where to report abuse."""
+    contact = html.escape(settings.abuse_contact)
+    report = (
+        f' Report abuse to <a href="mailto:{contact}">{contact}</a>.'
+        if settings.abuse_contact
+        else ""
+    )
+    return f'<p><small>By signing in you accept the <a href="/terms">terms</a>.{report}</small></p>'
+
+
 @router.get("/login", response_model=None)
 def login_page(request: Request, next: str | None = None) -> HTMLResponse:
     found = request.app.state.settings.auth_providers
@@ -122,7 +133,11 @@ def login_page(request: Request, next: str | None = None) -> HTMLResponse:
         f"Continue with {html.escape(p.title)}</a>"
         for p in found.values()
     )
-    return _page("Sign in to semula", buttons or "<p>No sign-in provider is configured.</p>")
+    return _page(
+        "Sign in to semula",
+        (buttons or "<p>No sign-in provider is configured.</p>")
+        + _fine_print(request.app.state.settings),
+    )
 
 
 def _query(params: dict[str, str]) -> str:
@@ -455,3 +470,37 @@ async def accept(token: str, request: Request) -> Response:
     except SemulaError as exc:
         return _page("Invitation", f"<p>{html.escape(exc.message)}</p>", exc.status)
     return RedirectResponse(LANDING, status_code=303)
+
+
+# --- the terms (SEM-122) -------------------------------------------------------------------
+terms_router = APIRouter()
+
+TERMS = (
+    "<p>This is a free service for developers. It is provided as it is, with no promise that it "
+    "will stay up or keep your data, so keep your own copy of anything you need (<code>semula "
+    "export</code> writes one).</p>"
+    "<h2>Acceptable use</h2>"
+    "<ul><li>Store prompts and answers for testing your own software. Do not store secrets, "
+    "passwords or other people's personal data.</li>"
+    "<li>Do not use it to break the law, to harm or harass anyone, or to store or share "
+    "abusive or illegal content.</li>"
+    "<li>Do not attack the service, probe other people's workspaces, or send load meant to "
+    "slow it down. The limits you see are there to keep it up for everyone.</li>"
+    "<li>Do not share one sign-in or token between many people to avoid the limits.</li></ul>"
+    "<h2>What we may do</h2>"
+    "<p>We may suspend a workspace that breaks these terms, or that puts the service at risk, "
+    "without notice. A suspended workspace keeps its data and can be resumed. We may delete "
+    "workspaces that stay unused, and any workspace on request.</p>"
+)
+
+
+@terms_router.get("/terms", response_model=None)
+def terms_page(request: Request) -> HTMLResponse:
+    contact = request.app.state.settings.abuse_contact
+    where = (
+        f'<p>To report abuse, write to <a href="mailto:{html.escape(contact)}">'
+        f"{html.escape(contact)}</a>.</p>"
+        if contact
+        else "<p>To report abuse, contact the operator of this server.</p>"
+    )
+    return _page("Terms and acceptable use", TERMS + "<h2>Reporting abuse</h2>" + where)
