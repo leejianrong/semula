@@ -157,8 +157,8 @@ def test_codes_have_sane_bounds(world: World) -> None:
         assert caught.value.status == 422
 
 
-def test_open_signup_is_not_available_yet(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SEMULA_SIGNUP", "open")
+def test_an_unknown_signup_mode_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SEMULA_SIGNUP", "anyone")
     with pytest.raises(ValueError, match="SEMULA_SIGNUP"):
         Settings.from_env()
     monkeypatch.setenv("SEMULA_SIGNUP", "code")
