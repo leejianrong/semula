@@ -273,6 +273,12 @@ EXEMPT = {
     "list_signup_codes": "the operator's: codes are global, made on no workspace",
     "revoke_signup_code": "the operator's: codes are global, made on no workspace",
     "redeem_signup_code": "a person with no workspace yet makes their own; found by the code",
+    "device_start": "a CLI asks to sign in before any workspace is chosen; global table",
+    "device_preview": "found by the short code a person reads, before a workspace is chosen",
+    "device_decide": "a person approves for a workspace they belong to, which it checks",
+    "device_poll": "found by the CLI's secret code; the token is made in the approved workspace",
+    "whoami": "reports on the calling token, found by its own id in its own workspace",
+    "logout": "a token ends itself, by its own id in its own workspace",
     "set_mode_default": "",  # placeholder removed below
     "sync_index": "rebuilds the lexical index of this workspace's entries only",
     "sync_embeddings": "maintenance of this workspace's vectors",

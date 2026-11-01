@@ -72,6 +72,31 @@ They sign in at https://semula.example.com/auth/signup and enter it. It is shown
 
 The person signs in with a provider, opens `/auth/signup`, enters the code and lands in a new workspace where they are the admin, with the same [limits](#limits) as any other. Each person can do this once, and a code works for the number of people you gave it. A code that is unknown, expired, revoked or used up gets the same answer, so it cannot be used to find out which codes exist. Only a hash of a code is stored, like a token. `semula admin signup-code-list` shows how many are used, and `signup-code-revoke <id>` ends one. A person who signs in with no workspace is told where to enter a code.
 
+## Signing in from the CLI
+
+An agent can run a command but cannot click through a dashboard, and nobody should paste a token by hand. `semula login` signs the CLI in by asking a person to approve it in a browser:
+
+```bash
+semula login --url https://semula.example.com --project myapp
+```
+
+```
+Open this link in a browser where you are signed in, and approve it:
+
+  https://semula.example.com/auth/device?code=KQ7P-3WXD
+
+The page should show the code KQ7P-3WXD. If it does not, deny it.
+Waiting for your approval...
+```
+
+The person opens the link, signs in if they are not, checks that the code matches and the workspace, scope and project are what they expect, and presses Approve. The CLI then keeps a token for that workspace and every command talks to the server with no flags. `semula whoami` shows what the login is and `semula logout` revokes the token on the server and forgets it.
+
+- The token is never more than the person may do: a viewer gets `replay`, an editor at most `record`, an admin up to `admin`. `--scope` asks for less than that (default `record`); `--project` binds it to one project.
+- A code works for ten minutes and once. A denied, expired, unknown or already used code gets no token, and an unknown one gets the same answer as an expired one.
+- The token expires after 90 days. Its secret is made when the CLI collects it and is never stored on the server, only its hash, like any token. It is never printed, only written to `credentials.json` (mode 0600).
+- The person must belong to a workspace already; one who does not is told to join one first. The approval is for the workspace their session is working in.
+- The CLI asks over `POST /auth/device/code` and polls `POST /auth/device/token`; both are covered by `SEMULA_AUTH_RATE`. At most 2000 sign-ins wait at once.
+
 ## Members and roles
 
 Signing in makes a person; **membership** lets them into a workspace, with one of three roles that apply to every project in it:

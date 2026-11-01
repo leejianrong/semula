@@ -43,10 +43,16 @@ def test_the_scopes_include_the_ones_below() -> None:
     assert not allows(None, "replay") and not allows("root", "replay")
 
 
-def test_a_replay_token_reaches_nothing_under_api() -> None:
+# A token may say who it is and end itself, whatever its scope (SEM-118): a login made by a
+# viewer holds a replay token, and it must still be able to log out. Both touch only itself.
+ABOUT_ITSELF = {("GET", "/api/v1/whoami"), ("POST", "/api/v1/logout")}
+
+
+def test_a_replay_token_reaches_nothing_under_api_but_itself() -> None:
     for method, path, scope in RULES:
-        if path.startswith("/api"):
+        if path.startswith("/api") and (method, path) not in ABOUT_ITSELF:
             assert scope != "replay", (method, path)
+    assert {(m, p) for m, p, s in RULES if s == "replay" and p.startswith("/api")} == ABOUT_ITSELF
 
 
 def test_a_record_token_cannot_do_what_a_prompt_injected_agent_must_not() -> None:

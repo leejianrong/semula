@@ -450,6 +450,18 @@ async def list_audit(
     return {"events": events}
 
 
+@router.get("/whoami")
+async def whoami(request: Request) -> dict[str, Any]:
+    """What the credential on this call is (a token's name, scope and project)."""
+    return await offload(_service(request).whoami)
+
+
+@router.post("/logout")
+async def logout(request: Request) -> dict[str, Any]:
+    """The calling token revokes itself (``semula logout``)."""
+    return await offload(_service(request).logout)
+
+
 @router.get("/tokens")
 async def list_tokens(request: Request) -> dict[str, Any]:
     """The workspace's API tokens, without their secrets. For people and local use: a token

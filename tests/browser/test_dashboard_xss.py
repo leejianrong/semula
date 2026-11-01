@@ -292,6 +292,23 @@ def test_the_signup_page_is_clean_and_styled_under_its_policy(
     audit(page)  # no blocked style or script, no off-site link
 
 
+def test_the_cli_approval_page_shows_a_hostile_name_as_text(
+    seeded: Seeded, new_page: Callable[..., Any]
+) -> None:
+    """The name comes from whoever ran ``semula login``, so it is the least trusted text on the
+    page the approving person reads (SEM-118)."""
+    hostile = VECTORS[1][:80]
+    started = httpx.post(
+        seeded.url + "/auth/device/code", json={"name": hostile, "project": "default"}, timeout=10
+    )
+    assert started.status_code == 200, started.text
+    page = open_screen(new_page, seeded, f"/auth/device?code={started.json()['user_code']}")
+    settle(page, ["Sign in the CLI"])
+    assert page.locator("button[value=approve]").count() == 1
+    assert hostile in page.inner_text("body")  # shown, not run
+    audit(page)
+
+
 def test_the_address_is_not_echoed_as_markup(seeded: Seeded, new_page: Callable[..., Any]) -> None:
     hostile = urllib.parse.quote(VECTORS[1], safe="")
     for path in (f"/ui/projects/{hostile}/log", f"/ui/{hostile}", f"/ui/workspace/{hostile}"):
