@@ -146,6 +146,8 @@ jobs:
       - uses: actions/checkout@v7
       - run: docker build --build-arg UV_EXTRAS="--extra hosted --extra postgres" -t semula:droplet-ci .
       - run: scripts/smoke_droplet.sh semula:droplet-ci ${{ matrix.variant }}
+      # the restore drill: back up, lose the database volume, restore from the file, serve it
+      - run: scripts/smoke_backup.sh semula:droplet-ci ${{ matrix.variant }}
 
   # Stored text must never run in another person's dashboard: the real dashboard in Chromium and
   # Firefox (tests/browser).

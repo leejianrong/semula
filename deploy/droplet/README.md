@@ -49,7 +49,7 @@ Upgrade: set `SEMULA_IMAGE` to the new tag, then `docker compose pull && docker 
 - **The image has to include `SEMULA_TRUSTED_PROXIES`** (after 0.4.0). An older image ignores it, and
   then every user looks like Caddy and twenty failed guesses from anyone lock everyone out. Pin a newer tag.
 - **Certificates live in the `caddy-data` volume.** Losing it re-issues them, which Let's Encrypt rate limits.
-- **No backups yet.** `pgdata` (or the `data` volume on SQLite) is the only copy of the data until the backup card lands.
+- **Back it up.** `pgdata` (or the `data` volume on SQLite) is the only copy of the data until you add the backup service (`backup/`, see "Automatic backups" in `docs/guide/upgrade-and-backup.md`): encrypted daily dumps, off-site to a bucket, kept 14 days, with an alert when one is missed. Turn on droplet snapshots too.
 - Try the whole stack without a domain: `SEMULA_DOMAIN=localhost` makes Caddy use its own CA, and
   `make droplet-smoke` does exactly that on throwaway ports and volumes.
 
