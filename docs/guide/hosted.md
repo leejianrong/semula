@@ -124,13 +124,30 @@ Send them the link; it works once, for them, after they sign in.
 
 The link asks the person to sign in (with any provider), then to confirm, and it works only if the provider has **verified** the very email that was invited. An invitation is never a way to sign in: someone who cannot prove the address gets nothing. Whatever the reason, an expired, used, revoked or unknown invitation looks the same. `semula admin members --workspace acme` lists who belongs.
 
+## From an invite code to a first replay
+
+The whole path for a person with an invite code and a coding agent, nothing installed but the `semula` CLI:
+
+```bash
+# 1. In a browser: sign in at https://semula.example.com and enter the invite code at /auth/signup.
+# 2. Sign the CLI in. Open the link it prints and approve it.
+semula login --url https://semula.example.com --project myapp
+# 3. Connect the agent. The token stays in the CLI's login file, not in the command.
+semula mcp-config --install claude        # or: semula mcp-config   to print the line
+# 4. Create the project, then put it in record mode (the dashboard's Record switch, or):
+semula project create myapp
+semula mode record --project myapp
+```
+
+Point the app at `https://semula.example.com/v1/projects/myapp` with a `replay` token (`semula admin token-create`, or the Tokens screen), and give the agent the job in [Record with a coding agent](../tutorial/agent.md#the-loop). The agent lists and answers the parked calls over MCP; once answered they replay, with the project back in `replay` mode, for the app's token. `mcp-config` prints `claude mcp add semula -- semula --url … mcp`: `semula mcp` is a stdio proxy that reads the stored login, so the token is never in the agent's configuration. `--client codex` prints Codex's line and `--client json` an `mcpServers` block for other clients. `--http` prints the plain HTTP form, which reads the token from `$SEMULA_API_KEY` instead.
+
 ## Scopes
 
 A token has one of three scopes, `replay`, `record` and `admin`, each including the ones before it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist. Listings (projects, pending, the log) hold only its own. It cannot create projects.
 
 ## MCP
 
-A coding agent connects over MCP with the same token. Use a `record` token, bound to the project the agent works on:
+A coding agent connects over MCP with the same token. `semula mcp-config` does this for the login `semula login` stored (see [from an invite code to a first replay](#from-an-invite-code-to-a-first-replay)). By hand, use a `record` token, bound to the project the agent works on:
 
 ```bash
 claude mcp add --transport http semula https://semula.example.com/mcp/ \
