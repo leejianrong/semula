@@ -113,6 +113,17 @@ def providers(request: Request) -> dict[str, Any]:
     }
 
 
+def _fine_print(settings: Any) -> str:
+    """The terms link and, when the operator set one, where to report abuse."""
+    contact = html.escape(settings.abuse_contact)
+    report = (
+        f' Report abuse to <a href="mailto:{contact}">{contact}</a>.'
+        if settings.abuse_contact
+        else ""
+    )
+    return f'<p><small>By signing in you accept the <a href="/terms">terms</a>.{report}</small></p>'
+
+
 @router.get("/login", response_model=None)
 def login_page(request: Request, next: str | None = None) -> HTMLResponse:
     found = request.app.state.settings.auth_providers
@@ -122,7 +133,11 @@ def login_page(request: Request, next: str | None = None) -> HTMLResponse:
         f"Continue with {html.escape(p.title)}</a>"
         for p in found.values()
     )
-    return _page("Sign in to semula", buttons or "<p>No sign-in provider is configured.</p>")
+    return _page(
+        "Sign in to semula",
+        (buttons or "<p>No sign-in provider is configured.</p>")
+        + _fine_print(request.app.state.settings),
+    )
 
 
 def _query(params: dict[str, str]) -> str:
@@ -267,13 +282,19 @@ async def invitation(token: str, request: Request) -> Response:
     return _invite_page(preview, token, session["csrf"], session["email"])
 
 
-def _signup_page(csrf: str, email: str) -> HTMLResponse:
+def _signup_page(csrf: str, email: str, open_: bool = False) -> HTMLResponse:
+    ask = (
+        "<p>Create a workspace of your own. If you were sent an invite code you can enter it "
+        "too, but you do not need one.</p>"
+        if open_
+        else "<p>Enter the invite code you were sent to get a workspace of your own.</p>"
+    )
     body = (
         f"<p>You are signed in as <b>{html.escape(email)}</b>.</p>"
-        "<p>Enter the invite code you were sent to get a workspace of your own.</p>"
-        '<form method=post action="/auth/signup">'
+        + ask
+        + '<form method=post action="/auth/signup">'
         f'<input type=hidden name=csrf value="{html.escape(csrf)}">'
-        "<p><input name=code autocomplete=off autofocus required size=36 "
+        f"<p><input name=code autocomplete=off size=36{'' if open_ else ' autofocus required'} "
         'placeholder="smla_code_..."></p>'
         "<button>Create my workspace</button></form>"
     )
@@ -287,7 +308,9 @@ async def signup_page(request: Request) -> Response:
     session = await offload(service.authenticate_session, request.cookies.get(cookies.session, ""))
     if session is None:
         return RedirectResponse(f"/auth/login?{_query({'next': '/auth/signup'})}", status_code=302)
-    return _signup_page(session["csrf"], session["email"])
+    return _signup_page(
+        session["csrf"], session["email"], request.app.state.settings.signup == "open"
+    )
 
 
 @router.post("/signup", response_model=None)
@@ -302,10 +325,16 @@ async def signup(request: Request) -> Response:
         or not hmac.compare_digest(str(form.get("csrf", "")), session["csrf"])
     ):
         raise SemulaError(403, "csrf", "Signing up needs the session's CSRF token.")
+    code = str(form.get("code", "")).strip()
     try:
-        made = await offload(
-            service.redeem_signup_code, str(form.get("code", "")), session["person_id"]
-        )
+        if not code and request.app.state.settings.signup == "open":
+            made = await offload(
+                service.signup_open,
+                session["person_id"],
+                request.client.host if request.client else None,
+            )
+        else:
+            made = await offload(service.redeem_signup_code, code, session["person_id"])
     except SemulaError as exc:
         return _page(
             "Create your workspace",
@@ -455,3 +484,37 @@ async def accept(token: str, request: Request) -> Response:
     except SemulaError as exc:
         return _page("Invitation", f"<p>{html.escape(exc.message)}</p>", exc.status)
     return RedirectResponse(LANDING, status_code=303)
+
+
+# --- the terms (SEM-122) -------------------------------------------------------------------
+terms_router = APIRouter()
+
+TERMS = (
+    "<p>This is a free service for developers. It is provided as it is, with no promise that it "
+    "will stay up or keep your data, so keep your own copy of anything you need (<code>semula "
+    "export</code> writes one).</p>"
+    "<h2>Acceptable use</h2>"
+    "<ul><li>Store prompts and answers for testing your own software. Do not store secrets, "
+    "passwords or other people's personal data.</li>"
+    "<li>Do not use it to break the law, to harm or harass anyone, or to store or share "
+    "abusive or illegal content.</li>"
+    "<li>Do not attack the service, probe other people's workspaces, or send load meant to "
+    "slow it down. The limits you see are there to keep it up for everyone.</li>"
+    "<li>Do not share one sign-in or token between many people to avoid the limits.</li></ul>"
+    "<h2>What we may do</h2>"
+    "<p>We may suspend a workspace that breaks these terms, or that puts the service at risk, "
+    "without notice. A suspended workspace keeps its data and can be resumed. We may delete "
+    "workspaces that stay unused, and any workspace on request.</p>"
+)
+
+
+@terms_router.get("/terms", response_model=None)
+def terms_page(request: Request) -> HTMLResponse:
+    contact = request.app.state.settings.abuse_contact
+    where = (
+        f'<p>To report abuse, write to <a href="mailto:{html.escape(contact)}">'
+        f"{html.escape(contact)}</a>.</p>"
+        if contact
+        else "<p>To report abuse, contact the operator of this server.</p>"
+    )
+    return _page("Terms and acceptable use", TERMS + "<h2>Reporting abuse</h2>" + where)

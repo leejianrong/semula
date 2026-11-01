@@ -45,6 +45,9 @@ workspace = sa.Table(
     sa.Column("name", sa.Text, nullable=False),
     _ts("created_at"),
     sa.Column("deleted_at", sa.Text),  # set when an admin deletes it; purged after the grace
+    # Set by the operator (SEM-122): tokens and sessions are refused, the data stays.
+    sa.Column("suspended_at", sa.Text),
+    sa.Column("suspended_reason", sa.Text),
 )
 
 project = sa.Table(
@@ -407,6 +410,22 @@ signup_redemption = sa.Table(
         ["code_id"], ["signup_code.id"], ondelete="CASCADE", name="fk_signup_redemption_code"
     ),
     sa.Index("idx_signup_redemption_code", "code_id"),
+)
+
+# Workspaces made by open signup (SEM-123): one row per person, so a person signs up once, and
+# the address it came from and when, which is what the daily limits count. Global, like ``person``.
+signup_open = sa.Table(
+    "signup_open",
+    metadata,
+    sa.Column("person_id", sa.Text, primary_key=True),
+    sa.Column("address", sa.Text, nullable=False),
+    sa.Column("granted_workspace", sa.Text, nullable=False),  # not a key: it may be purged
+    _ts("created_at"),
+    sa.ForeignKeyConstraint(
+        ["person_id"], ["person.id"], ondelete="CASCADE", name="fk_signup_open_person"
+    ),
+    sa.Index("idx_signup_open_created", "created_at"),
+    sa.Index("idx_signup_open_address", "address", "created_at"),
 )
 
 # A CLI sign-in waiting for a person's approval in a browser (SEM-118). Global: it exists before

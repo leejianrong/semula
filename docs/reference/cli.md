@@ -28,6 +28,7 @@ In the container, run it with `docker exec semula semula ...`.
 | Command | Arguments and flags | What it does |
 |---|---|---|
 | `semula serve` | `--host` `--port` | Run the server |
+| `semula mcp-config` | `--client` `--install` `--http` | Print (or install) the line that connects an agent to MCP |
 | `semula mcp` |  | Run an MCP server on stdio that talks to --url |
 | `semula pending` | `--all` `--project` `--wait` | List parked requests waiting for an answer |
 | `semula show` | `<id>` | Show one pending request in full |
@@ -65,6 +66,8 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula admin workspace-create` | `<id>` `--name` | Create a workspace |
 | `semula admin workspace-delete` | `<workspace>` `--confirm` | Delete a workspace: tokens stop at once, purged after 30 days |
 | `semula admin workspace-restore` | `<workspace>` | Bring a deleted workspace back during its 30 days |
+| `semula admin workspace-suspend` | `<workspace>` `--reason` | Refuse a workspace's tokens and sign-ins; its data stays |
+| `semula admin workspace-resume` | `<workspace>` | Give a suspended workspace its tokens and sign-ins back |
 | `semula admin workspace-purge` |  | Hard-delete every workspace whose 30 days are over |
 | `semula admin signup-code-create` | `--uses` `--days` `--note` | Make an invite code for signing up |
 | `semula admin signup-code-list` |  | List invite codes for signing up |

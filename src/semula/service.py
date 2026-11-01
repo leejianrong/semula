@@ -67,6 +67,7 @@ from .schema import person as PE
 from .schema import person_session as SE
 from .schema import project as P
 from .schema import signup_code as SC
+from .schema import signup_open as SO
 from .schema import signup_redemption as SR
 from .schema import upstream_usage as UU
 from .schema import workspace as WS
@@ -421,7 +422,11 @@ class Service:
         if cached and cached[0] > now and (cached[2] is None or cached[2] > now_iso()):
             return cached[1]
         row = self.db.for_workspace(None).one(
-            sa.select(T, WS.c.deleted_at.label("workspace_deleted_at"))
+            sa.select(
+                T,
+                WS.c.deleted_at.label("workspace_deleted_at"),
+                WS.c.suspended_at.label("workspace_suspended_at"),
+            )
             .select_from(T.join(WS, WS.c.id == T.c.workspace_id))
             .where(T.c.token_hash == digest)
         )
@@ -434,6 +439,10 @@ class Service:
             with self._tokens.lock:
                 self._tokens.cache.pop(digest, None)
             return None
+        if row["workspace_suspended_at"] is not None:
+            with self._tokens.lock:
+                self._tokens.cache.pop(digest, None)
+            raise self._suspended()
         principal = Principal(
             kind="token",
             id=row["id"],
@@ -708,7 +717,7 @@ class Service:
     def _operator_only(self) -> None:
         if self.principal is not None:
             raise SemulaError(
-                403, "forbidden", "Only the operator makes signup codes.",
+                403, "forbidden", "Only the operator does this.",
                 err_type="authentication_error",
             )  # fmt: skip
 
@@ -831,6 +840,87 @@ class Service:
         except sa.exc.IntegrityError as exc:  # the same person, redeeming twice at once
             raise SemulaError(
                 409, "already_signed_up", "You already have a workspace from a code."
+            ) from exc
+        return {"workspace_id": workspace_id, "workspace": f"{label}'s workspace"}
+
+    # --- open signup (SEM-123) -----------------------------------------------------------------
+    def signup_open(self, person_id: str, address: str | None) -> dict[str, Any]:
+        """With ``SEMULA_SIGNUP=open``, give a signed-in person a workspace of their own, as its
+        admin, with no code. Their email was verified by the provider to sign in at all. Each
+        person does this once, one network may do it ``signup_per_address`` times a day and the
+        server ``signup_per_day`` times; counted in the database, so a restart resets nothing."""
+        from .ratelimit import address_key
+
+        self._operator_only()
+        if self.settings.signup != "open":
+            raise SemulaError(
+                403, "signup_closed", "Signing up needs an invite code.",
+                err_type="authentication_error",
+            )  # fmt: skip
+        db = self.db.for_workspace(None)
+        who = db.one(sa.select(PE.c.name, PE.c.email).where(PE.c.id == person_id))
+        if who is None:
+            raise SemulaError(404, "person_not_found", "No such person.")
+        if self.suspended_workspaces_of(person_id):
+            raise SemulaError(  # a suspended workspace is not a reason to start over
+                403, "workspace_suspended",
+                "A workspace of yours is suspended, so a new one cannot be made. "
+                "Contact the operator.",
+                err_type="authentication_error",
+            )  # fmt: skip
+        label = (who["name"] or who["email"].split("@")[0]).strip()[:60]
+        workspace_id = "w-" + secrets.token_hex(5)
+        where = address_key(address) if address else "unknown"
+        now = self._now()
+        since = iso(now - timedelta(days=1))
+
+        def made(*conditions: Any, conn: Connection) -> int:
+            row = db.one(sa.select(sa.func.count()).select_from(SO).where(*conditions), conn)
+            return int(next(iter(row.values()))) if row else 0
+
+        try:
+            with self.db.begin() as conn:
+                # a write first, so two sign-ups at once cannot both slip under a limit on SQLite
+                db.execute(
+                    sa.insert(SO).values(
+                        person_id=person_id,
+                        address=where,
+                        granted_workspace=workspace_id,
+                        created_at=iso(now),
+                    ),
+                    conn,
+                )
+                cap = self.settings.signup_per_address
+                if (
+                    cap is not None
+                    and made(SO.c.address == where, SO.c.created_at > since, conn=conn) > cap
+                ):
+                    raise SemulaError(
+                        429, "signup_limit",
+                        "Too many workspaces were made from your network today. "
+                        "Try again tomorrow.",
+                    )  # fmt: skip
+                cap = self.settings.signup_per_day
+                if cap is not None and made(SO.c.created_at > since, conn=conn) > cap:
+                    raise SemulaError(
+                        429, "signup_limit",
+                        "New workspaces are paused for today because so many were made. "
+                        "Try again tomorrow.",
+                    )  # fmt: skip
+                self._create_workspace(conn, workspace_id, f"{label}'s workspace")
+                db.execute(
+                    sa.insert(MB).values(
+                        workspace_id=workspace_id, person_id=person_id, role="admin"
+                    ),
+                    conn,
+                )
+                acting = Principal("person", person_id, workspace_id, role="admin", name=label)
+                self.for_scope(Scope(workspace_id, acting, self.request_id, self.client))._audit(
+                    "signup.open", workspace_id, {"person": person_id}, conn
+                )
+        except sa.exc.IntegrityError as exc:  # the same person, twice
+            raise SemulaError(
+                409, "already_signed_up", "You already have a workspace of your own."
             ) from exc
         return {"workspace_id": workspace_id, "workspace": f"{label}'s workspace"}
 
@@ -1215,7 +1305,7 @@ class Service:
         """The open invitation a token belongs to, or a 404 that says nothing about why (unknown,
         used, revoked, expired and in a deleted workspace all look the same)."""
         row = self.db.for_workspace(None).one(
-            sa.select(IV, WS.c.name.label("workspace_name"), WS.c.deleted_at)
+            sa.select(IV, WS.c.name.label("workspace_name"), WS.c.deleted_at, WS.c.suspended_at)
             .select_from(IV.join(WS, WS.c.id == IV.c.workspace_id))
             .where(IV.c.token_hash == tok.digest(secret))
         )
@@ -1225,6 +1315,7 @@ class Service:
             or row["revoked_at"]
             or row["expires_at"] <= iso(self._now())
             or row["deleted_at"]
+            or row["suspended_at"]
         ):
             raise SemulaError(404, "invitation_invalid", "This invitation is not valid any more.")
         return row
@@ -1309,6 +1400,7 @@ class Service:
                 MB.c.workspace_id == workspace_id,
                 MB.c.person_id == person_id,
                 WS.c.deleted_at.is_(None),
+                WS.c.suspended_at.is_(None),
             )
         )
         return str(row["role"]) if row else None
@@ -1318,12 +1410,31 @@ class Service:
         rows = self.db.for_workspace(None).rows(
             sa.select(MB.c.workspace_id, MB.c.role, WS.c.name)
             .select_from(MB.join(WS, WS.c.id == MB.c.workspace_id))
-            .where(MB.c.person_id == person_id, WS.c.deleted_at.is_(None))
+            .where(
+                MB.c.person_id == person_id,
+                WS.c.deleted_at.is_(None),
+                WS.c.suspended_at.is_(None),
+            )
             .order_by(MB.c.created_at, MB.c.workspace_id)
         )
         return [
             {"workspace_id": r["workspace_id"], "name": r["name"], "role": r["role"]} for r in rows
         ]
+
+    def suspended_workspaces_of(self, person_id: str) -> list[dict[str, Any]]:
+        """The workspaces a person belongs to that the operator has suspended, so the dashboard
+        can say why they cannot get in."""
+        rows = self.db.for_workspace(None).rows(
+            sa.select(MB.c.workspace_id, WS.c.name)
+            .select_from(MB.join(WS, WS.c.id == MB.c.workspace_id))
+            .where(
+                MB.c.person_id == person_id,
+                WS.c.deleted_at.is_(None),
+                WS.c.suspended_at.is_not(None),
+            )
+            .order_by(MB.c.created_at, MB.c.workspace_id)
+        )
+        return [{"workspace_id": r["workspace_id"], "name": r["name"]} for r in rows]
 
     def principal_for_session(self, session: dict[str, Any]) -> Principal | None:
         """Who a signed-in person is in the workspace their session is working in: that
@@ -1510,8 +1621,12 @@ class Service:
     # --- deleting a workspace (ADR-0011 section 5) ------------------------------------------
     @needs("viewer")
     def workspace_status(self) -> dict[str, Any]:
-        """Whether this workspace is deleted, and when it will be purged for good."""
-        row = self.db.one(sa.select(WS.c.deleted_at).where(WS.c.id == self.workspace_id))
+        """Whether this workspace is deleted (and when it will be purged for good) or suspended."""
+        row = self.db.one(
+            sa.select(WS.c.deleted_at, WS.c.suspended_at, WS.c.suspended_reason).where(
+                WS.c.id == self.workspace_id
+            )
+        )
         deleted = row["deleted_at"] if row else None
         purge_after = (
             iso(
@@ -1521,7 +1636,76 @@ class Service:
             if deleted
             else None
         )
-        return {"id": self.workspace_id, "deleted_at": deleted, "purge_after": purge_after}
+        return {
+            "id": self.workspace_id,
+            "deleted_at": deleted,
+            "purge_after": purge_after,
+            "suspended_at": row["suspended_at"] if row else None,
+            "suspended_reason": row["suspended_reason"] if row else None,
+        }
+
+    # --- suspending a workspace (SEM-122) ------------------------------------------------------
+    @staticmethod
+    def _suspended() -> SemulaError:
+        return SemulaError(
+            403,
+            "workspace_suspended",
+            "This workspace is suspended. Its data is kept; ask the operator (see /terms for the "
+            "abuse contact) to resume it.",
+            err_type="authentication_error",
+        )
+
+    @needs("admin")
+    def suspend_workspace(self, reason: str = "") -> dict[str, Any]:
+        """Stop this workspace's tokens and sign-ins without touching its data. Only the
+        operator does this (a workspace's own admin cannot suspend or resume it)."""
+        self._operator_only()
+        reason = (reason or "").strip()
+        if len(reason) > 200:
+            raise SemulaError(
+                422, "invalid_reason", "A reason is at most 200 characters.", param="reason"
+            )
+        if self.workspace_id == DEFAULT_WORKSPACE:
+            raise SemulaError(
+                409, "default_workspace", "The default workspace cannot be suspended."
+            )
+        with self.db.begin() as conn:
+            # a write first, so two operators cannot both succeed
+            changed = self.db.execute(
+                sa.update(WS)
+                .where(
+                    WS.c.id == self.workspace_id,
+                    WS.c.suspended_at.is_(None),
+                    WS.c.deleted_at.is_(None),
+                )
+                .values(suspended_at=now_iso(), suspended_reason=reason or None),
+                conn,
+            )
+            if changed != 1:
+                raise SemulaError(
+                    409, "workspace_suspended", "This workspace is already suspended or deleted."
+                )
+            self._audit("workspace.suspend", self.workspace_id, {"reason": reason}, conn)
+        self._forget_workspace_tokens()
+        return self.workspace_status()
+
+    @needs("admin")
+    def resume_workspace(self) -> dict[str, Any]:
+        """Give a suspended workspace back its tokens and sign-ins, nothing lost."""
+        self._operator_only()
+        with self.db.begin() as conn:
+            changed = self.db.execute(
+                sa.update(WS)
+                .where(WS.c.id == self.workspace_id, WS.c.suspended_at.is_not(None))
+                .values(suspended_at=None, suspended_reason=None),
+                conn,
+            )
+            if changed != 1:
+                raise SemulaError(
+                    409, "workspace_not_suspended", "This workspace is not suspended."
+                )
+            self._audit("workspace.resume", self.workspace_id, conn=conn)
+        return self.workspace_status()
 
     @needs("admin")
     def delete_workspace(self, confirm: str) -> dict[str, Any]:

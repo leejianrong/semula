@@ -187,6 +187,8 @@ S: dict[str, Callable[[World], None]] = {
     "workspace_status": lambda w: _equal(w.bound.workspace_status()["id"], "a"),
     "delete_workspace": lambda w: forbidden(lambda: w.bound.delete_workspace("a")),
     "restore_workspace": lambda w: forbidden(lambda: w.bound.restore_workspace()),
+    "suspend_workspace": lambda w: forbidden(lambda: w.bound.suspend_workspace()),
+    "resume_workspace": lambda w: forbidden(lambda: w.bound.resume_workspace()),
     "recount_usage": lambda w: forbidden(lambda: w.bound.recount_usage()),
     "revoke_token": lambda w: forbidden(lambda: w.bound.revoke_token("x")),
     "rotate_token": lambda w: forbidden(lambda: w.bound.rotate_token("x")),
@@ -205,7 +207,7 @@ EXEMPT = {
     "invitation_preview",
     "accept_invitation", "create_signup_code", "list_signup_codes", "revoke_signup_code",
     "redeem_signup_code", "device_start", "device_preview", "device_decide", "device_poll",
-    "whoami", "logout",
+    "whoami", "logout", "suspended_workspaces_of", "signup_open",
 }  # fmt: skip
 
 

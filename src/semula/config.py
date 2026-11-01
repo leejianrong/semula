@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Literal
@@ -105,13 +106,22 @@ def _networks_from_env(raw: str) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _signup_from_env() -> Literal["code"]:
+def _signup_from_env() -> Literal["code", "open"]:
     raw = os.environ.get("SEMULA_SIGNUP", "code").strip().lower()
+    if raw == "open":
+        return "open"
     if raw != "code":
-        raise ValueError(
-            f"SEMULA_SIGNUP: only 'code' is available (a person needs an invite code), got {raw!r}"
-        )
+        raise ValueError(f"SEMULA_SIGNUP: 'code' or 'open', got {raw!r}")
     return "code"
+
+
+def _abuse_contact_from_env() -> str:
+    """An email address for reports of abuse, shown on the sign-in page and the terms. Checked
+    because it is written into a page."""
+    raw = os.environ.get("SEMULA_ABUSE_CONTACT", "").strip()
+    if raw and not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+", raw):
+        raise ValueError(f"SEMULA_ABUSE_CONTACT: {raw!r} is not an email address")
+    return raw
 
 
 def _limit_from_env(name: str, default: int) -> int | None:
@@ -159,7 +169,12 @@ class Settings:
     # header is ignored and the socket peer is the client.
     trusted_proxies: tuple[str, ...] = ()
     # How a person gets a workspace of their own: with an invite code the operator made.
-    signup: Literal["code"] = "code"
+    signup: Literal["code", "open"] = "code"
+    # Open signup only: workspaces one network (an IPv4 address, an IPv6 /64) may make in a day,
+    # and the whole server may. ``None`` removes a limit.
+    signup_per_address: int | None = 3
+    signup_per_day: int | None = 100
+    abuse_contact: str = ""  # where to report abuse (an email address); shown when hosted
     # Hosted only (a local server has no one to hold back). ``None`` removes a limit.
     auth_rate: int | None = 30  # /auth/* requests a minute for one address
     ui_streams_per_address: int | None = 40  # open dashboard streams from one address
@@ -234,6 +249,9 @@ class Settings:
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
             trusted_proxies=_networks_from_env(os.environ.get("SEMULA_TRUSTED_PROXIES", "")),
             signup=_signup_from_env(),
+            signup_per_address=_limit_from_env("SEMULA_SIGNUP_PER_ADDRESS", 3),
+            signup_per_day=_limit_from_env("SEMULA_SIGNUP_PER_DAY", 100),
+            abuse_contact=_abuse_contact_from_env(),
             auth_rate=_limit_from_env("SEMULA_AUTH_RATE", 30),
             ui_streams_per_address=_limit_from_env("SEMULA_UI_STREAMS_PER_ADDRESS", 40),
             ui_sessions=_limit_from_env("SEMULA_UI_SESSIONS", 2000),

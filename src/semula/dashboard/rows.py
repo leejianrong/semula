@@ -505,7 +505,7 @@ AUDIT_ACTIONS = (
     "project.mode", "project.rename", "project.settings", "project.upstream_reset",
     "project.answerer", "token.create", "token.revoke",
     "token.rotate", "workspace.create", "workspace.delete", "workspace.purge",
-    "signup.redeem", "workspace.restore",
+    "signup.open", "signup.redeem", "workspace.restore", "workspace.resume", "workspace.suspend",
 )  # fmt: skip
 AUDIT_PAGE = 50
 ROLES = ("viewer", "editor", "admin")

@@ -159,6 +159,9 @@ def create_app(
         app.state.cookies = api_auth.Cookies(settings.public_url)
         app.include_router(api_auth.router)
 
+    if settings.hosted:
+        app.include_router(api_auth.terms_router)
+
     @app.exception_handler(SemulaError)
     async def _semula_error(_: Request, exc: SemulaError) -> JSONResponse:
         return JSONResponse(exc.body(), status_code=exc.status)

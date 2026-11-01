@@ -33,6 +33,9 @@ semula serves MCP at `/mcp/` over streamable HTTP. Register that URL once.
     default_tools_approval_mode = "approve"
     ```
 
+!!! tip "On a hosted server"
+    Run `semula login`, then `semula mcp-config --install claude`: it connects the agent with the token you just signed in with, and the token is never in the command. See [From an invite code to a first replay](../guide/hosted.md#from-an-invite-code-to-a-first-replay).
+
 If the server has `SEMULA_API_KEY` set, pass the key: `--header "Authorization: Bearer $SEMULA_API_KEY"` for Claude Code, `--bearer-token-env-var SEMULA_API_KEY` for Codex.
 
 ## The loop

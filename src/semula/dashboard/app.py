@@ -72,7 +72,15 @@ def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
             return build_session(ctx, dashes.get(DEFAULT_WORKSPACE), service)
         user = ctx.user
         if user is None or user.workspace is None or not user.roles:
-            return build_waiting_session(ctx, user)
+            return build_waiting_session(
+                ctx,
+                user,
+                [w["workspace_id"] for w in service.suspended_workspaces_of(user.id)]
+                if user is not None
+                else [],
+                settings.abuse_contact if settings else "",
+                settings is not None and settings.signup == "open",
+            )
         role = next(iter(user.roles))
         workspace = user.workspace
         person = Principal(

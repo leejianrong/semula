@@ -97,6 +97,16 @@ The person opens the link, signs in if they are not, checks that the code matche
 - The person must belong to a workspace already; one who does not is told to join one first. The approval is for the workspace their session is working in.
 - The CLI asks over `POST /auth/device/code` and polls `POST /auth/device/token`; both are covered by `SEMULA_AUTH_RATE`. At most 2000 sign-ins wait at once.
 
+### Open signup
+
+When you are ready to let anyone in, set `SEMULA_SIGNUP=open` and restart. No migration and no code change. The `/auth/signup` page then offers a workspace without a code (a person who has one can still enter it), and the dashboard's no-workspace page links to it.
+
+- The person must be signed in, and the provider has vouched for their email, since a person who has not verified it cannot sign in at all.
+- Each person does it once. One network (an IPv4 address, or an IPv6 /64) can make `SEMULA_SIGNUP_PER_ADDRESS` workspaces a day (default 3) and the whole server `SEMULA_SIGNUP_PER_DAY` (default 100). The counts are in the database, so a restart does not reset them; with several replicas they are shared, though two people signing up in the same instant can slip one past a limit on Postgres. Over a limit the person gets a page that says to try tomorrow (`429 signup_limit`).
+- Behind a proxy, the address is the one [`SEMULA_TRUSTED_PROXIES`](#behind-a-reverse-proxy) lets semula believe; without it every person looks like the proxy and the per-address limit would count everyone together.
+- A person who belongs to a [suspended](#suspending-a-workspace) workspace cannot make a new one, so suspension is not a way to start over.
+- The sign-in routes keep their own rate limit (`SEMULA_AUTH_RATE`). Make workspaces with `semula admin signup-code-create` still, whenever you want someone in without opening the door.
+
 ## Members and roles
 
 Signing in makes a person; **membership** lets them into a workspace, with one of three roles that apply to every project in it:
@@ -124,13 +134,30 @@ Send them the link; it works once, for them, after they sign in.
 
 The link asks the person to sign in (with any provider), then to confirm, and it works only if the provider has **verified** the very email that was invited. An invitation is never a way to sign in: someone who cannot prove the address gets nothing. Whatever the reason, an expired, used, revoked or unknown invitation looks the same. `semula admin members --workspace acme` lists who belongs.
 
+## From an invite code to a first replay
+
+The whole path for a person with an invite code and a coding agent, nothing installed but the `semula` CLI:
+
+```bash
+# 1. In a browser: sign in at https://semula.example.com and enter the invite code at /auth/signup.
+# 2. Sign the CLI in. Open the link it prints and approve it.
+semula login --url https://semula.example.com --project myapp
+# 3. Connect the agent. The token stays in the CLI's login file, not in the command.
+semula mcp-config --install claude        # or: semula mcp-config   to print the line
+# 4. Create the project, then put it in record mode (the dashboard's Record switch, or):
+semula project create myapp
+semula mode record --project myapp
+```
+
+Point the app at `https://semula.example.com/v1/projects/myapp` with a `replay` token (`semula admin token-create`, or the Tokens screen), and give the agent the job in [Record with a coding agent](../tutorial/agent.md#the-loop). The agent lists and answers the parked calls over MCP; once answered they replay, with the project back in `replay` mode, for the app's token. `mcp-config` prints `claude mcp add semula -- semula --url … mcp`: `semula mcp` is a stdio proxy that reads the stored login, so the token is never in the agent's configuration. `--client codex` prints Codex's line and `--client json` an `mcpServers` block for other clients. `--http` prints the plain HTTP form, which reads the token from `$SEMULA_API_KEY` instead.
+
 ## Scopes
 
 A token has one of three scopes, `replay`, `record` and `admin`, each including the ones before it, and may be limited to one project. A project-bound token reaches that project and nothing else: other projects, and the entries, pending calls and review candidates in them, answer `404` as if they did not exist. Listings (projects, pending, the log) hold only its own. It cannot create projects.
 
 ## MCP
 
-A coding agent connects over MCP with the same token. Use a `record` token, bound to the project the agent works on:
+A coding agent connects over MCP with the same token. `semula mcp-config` does this for the login `semula login` stored (see [from an invite code to a first replay](#from-an-invite-code-to-a-first-replay)). By hand, use a `record` token, bound to the project the agent works on:
 
 ```bash
 claude mcp add --transport http semula https://semula.example.com/mcp/ \
@@ -228,6 +255,19 @@ A hosted workspace has limits so that one tenant cannot use up the server. Defau
 Beyond the workspace limits, one address and one person are held back too: sign-in routes allow 30 requests a minute for an address (`SEMULA_AUTH_RATE`), and the dashboard allows 40 open tabs for an address and 10 for a person (`SEMULA_UI_STREAMS_PER_ADDRESS`, `SEMULA_UI_TABS_PER_PERSON`). Behind a proxy these see the real client only if you set [`SEMULA_TRUSTED_PROXIES`](#behind-a-reverse-proxy); without it every user shares the proxy's one address.
 
 The error body names the limit: `{"quota": {"name": "entries", "limit": 50000, "used": 50000}}`. Counters are kept as writes happen, in the same transaction, so a replay hit never counts anything and stays fast; `semula usage` shows them, and `semula admin recount` rebuilds them if they ever drift. A local server has no limits.
+
+## Suspending a workspace
+
+A free public server will be abused sooner or later. Deleting a workspace is the heavy remedy; suspending is the light one:
+
+```bash
+semula admin workspace-suspend acme --reason "spam"
+semula admin workspace-resume acme
+```
+
+A suspended workspace's tokens are refused at once, on every surface (`/v1`, `/api/v1` and `/mcp`), with `403 workspace_suspended` and a message that says why, and its people cannot work in it: the dashboard tells them it is suspended and where to write. Nothing is deleted, so resuming gives everything back. A refusal is not counted as a failed token guess. Only the operator suspends or resumes; a workspace's own admin cannot, and neither can a token. Both are in the [audit log](#the-audit-log) (`workspace.suspend` and `workspace.resume`, with the reason). Another replica that has a token cached notices within the cache time (30 seconds), like a revoked token. An invitation into a suspended workspace is not valid until it is resumed.
+
+Set `SEMULA_ABUSE_CONTACT` to an email address. The sign-in page then says where to report abuse, and `/terms` (a short terms and acceptable-use page the server serves when hosted) names the same address. The terms are a plain template: read them and make sure they say what you mean before you open the server to others.
 
 ## Deleting a workspace
 
