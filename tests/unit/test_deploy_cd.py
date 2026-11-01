@@ -18,18 +18,18 @@ def run(*args: str, stdin_cmd: str | None = None) -> subprocess.CompletedProcess
     env = {"PATH": "/usr/bin:/bin"}
     if stdin_cmd is not None:
         env["SSH_ORIGINAL_COMMAND"] = stdin_cmd  # what sshd hands a forced command
-    return subprocess.run(
-        ["bash", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=20
-    )
+    command = ["bash", str(SCRIPT), *args]  # noqa: S607 (bash, on our own script)
+    return subprocess.run(command, capture_output=True, text=True, env=env, timeout=20)  # noqa: S603
 
 
 def test_the_script_parses_and_stops_on_any_error() -> None:
-    assert subprocess.run(["bash", "-n", str(SCRIPT)]).returncode == 0
+    assert subprocess.run(["bash", "-n", str(SCRIPT)]).returncode == 0  # noqa: S603, S607
     assert "set -euo pipefail" in SCRIPT.read_text()
 
 
 @pytest.mark.parametrize(
-    "bad", ["", "latest", "0.5", "v0.5.0", "0.5.0; id", "$(id)", "0.5.0 --force", "../0.5.0", "0.5.0\nid"]
+    "bad",
+    ["", "latest", "0.5", "v0.5.0", "0.5.0; id", "$(id)", "0.5.0 --force", "../0.5.0", "0.5.0\nid"],
 )
 def test_only_a_plain_version_is_accepted(bad: str) -> None:
     for result in (run(bad), run(stdin_cmd=bad)):
@@ -55,7 +55,7 @@ def test_the_workflow_pins_the_host_key_and_never_trusts_on_first_use() -> None:
 
 
 def test_the_key_is_not_printed_and_the_job_cannot_write_to_the_repo() -> None:
-    assert "set -x" not in DEPLOY and "echo \"$DEPLOY_SSH_KEY\"" not in DEPLOY
+    assert "set -x" not in DEPLOY and 'echo "$DEPLOY_SSH_KEY"' not in DEPLOY
     assert "contents: read" in DEPLOY
     assert "contents: write" not in DEPLOY
 
