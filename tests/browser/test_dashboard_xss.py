@@ -309,6 +309,14 @@ def test_the_cli_approval_page_shows_a_hostile_name_as_text(
     audit(page)
 
 
+def test_the_terms_page_is_clean_and_styled_under_its_policy(
+    seeded: Seeded, new_page: Callable[..., Any]
+) -> None:
+    page = open_screen(new_page, seeded, "/terms")
+    settle(page, ["Terms and acceptable use"])
+    audit(page)
+
+
 def test_the_address_is_not_echoed_as_markup(seeded: Seeded, new_page: Callable[..., Any]) -> None:
     hostile = urllib.parse.quote(VECTORS[1], safe="")
     for path in (f"/ui/projects/{hostile}/log", f"/ui/{hostile}", f"/ui/workspace/{hostile}"):

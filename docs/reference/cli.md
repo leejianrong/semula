@@ -66,6 +66,8 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula admin workspace-create` | `<id>` `--name` | Create a workspace |
 | `semula admin workspace-delete` | `<workspace>` `--confirm` | Delete a workspace: tokens stop at once, purged after 30 days |
 | `semula admin workspace-restore` | `<workspace>` | Bring a deleted workspace back during its 30 days |
+| `semula admin workspace-suspend` | `<workspace>` `--reason` | Refuse a workspace's tokens and sign-ins; its data stays |
+| `semula admin workspace-resume` | `<workspace>` | Give a suspended workspace its tokens and sign-ins back |
 | `semula admin workspace-purge` |  | Hard-delete every workspace whose 30 days are over |
 | `semula admin signup-code-create` | `--uses` `--days` `--note` | Make an invite code for signing up |
 | `semula admin signup-code-list` |  | List invite codes for signing up |
