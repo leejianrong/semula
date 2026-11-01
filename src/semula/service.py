@@ -67,6 +67,7 @@ from .schema import person as PE
 from .schema import person_session as SE
 from .schema import project as P
 from .schema import signup_code as SC
+from .schema import signup_open as SO
 from .schema import signup_redemption as SR
 from .schema import upstream_usage as UU
 from .schema import workspace as WS
@@ -839,6 +840,87 @@ class Service:
         except sa.exc.IntegrityError as exc:  # the same person, redeeming twice at once
             raise SemulaError(
                 409, "already_signed_up", "You already have a workspace from a code."
+            ) from exc
+        return {"workspace_id": workspace_id, "workspace": f"{label}'s workspace"}
+
+    # --- open signup (SEM-123) -----------------------------------------------------------------
+    def signup_open(self, person_id: str, address: str | None) -> dict[str, Any]:
+        """With ``SEMULA_SIGNUP=open``, give a signed-in person a workspace of their own, as its
+        admin, with no code. Their email was verified by the provider to sign in at all. Each
+        person does this once, one network may do it ``signup_per_address`` times a day and the
+        server ``signup_per_day`` times; counted in the database, so a restart resets nothing."""
+        from .ratelimit import address_key
+
+        self._operator_only()
+        if self.settings.signup != "open":
+            raise SemulaError(
+                403, "signup_closed", "Signing up needs an invite code.",
+                err_type="authentication_error",
+            )  # fmt: skip
+        db = self.db.for_workspace(None)
+        who = db.one(sa.select(PE.c.name, PE.c.email).where(PE.c.id == person_id))
+        if who is None:
+            raise SemulaError(404, "person_not_found", "No such person.")
+        if self.suspended_workspaces_of(person_id):
+            raise SemulaError(  # a suspended workspace is not a reason to start over
+                403, "workspace_suspended",
+                "A workspace of yours is suspended, so a new one cannot be made. "
+                "Contact the operator.",
+                err_type="authentication_error",
+            )  # fmt: skip
+        label = (who["name"] or who["email"].split("@")[0]).strip()[:60]
+        workspace_id = "w-" + secrets.token_hex(5)
+        where = address_key(address) if address else "unknown"
+        now = self._now()
+        since = iso(now - timedelta(days=1))
+
+        def made(*conditions: Any, conn: Connection) -> int:
+            row = db.one(sa.select(sa.func.count()).select_from(SO).where(*conditions), conn)
+            return int(next(iter(row.values()))) if row else 0
+
+        try:
+            with self.db.begin() as conn:
+                # a write first, so two sign-ups at once cannot both slip under a limit on SQLite
+                db.execute(
+                    sa.insert(SO).values(
+                        person_id=person_id,
+                        address=where,
+                        granted_workspace=workspace_id,
+                        created_at=iso(now),
+                    ),
+                    conn,
+                )
+                cap = self.settings.signup_per_address
+                if (
+                    cap is not None
+                    and made(SO.c.address == where, SO.c.created_at > since, conn=conn) > cap
+                ):
+                    raise SemulaError(
+                        429, "signup_limit",
+                        "Too many workspaces were made from your network today. "
+                        "Try again tomorrow.",
+                    )  # fmt: skip
+                cap = self.settings.signup_per_day
+                if cap is not None and made(SO.c.created_at > since, conn=conn) > cap:
+                    raise SemulaError(
+                        429, "signup_limit",
+                        "New workspaces are paused for today because so many were made. "
+                        "Try again tomorrow.",
+                    )  # fmt: skip
+                self._create_workspace(conn, workspace_id, f"{label}'s workspace")
+                db.execute(
+                    sa.insert(MB).values(
+                        workspace_id=workspace_id, person_id=person_id, role="admin"
+                    ),
+                    conn,
+                )
+                acting = Principal("person", person_id, workspace_id, role="admin", name=label)
+                self.for_scope(Scope(workspace_id, acting, self.request_id, self.client))._audit(
+                    "signup.open", workspace_id, {"person": person_id}, conn
+                )
+        except sa.exc.IntegrityError as exc:  # the same person, twice
+            raise SemulaError(
+                409, "already_signed_up", "You already have a workspace of your own."
             ) from exc
         return {"workspace_id": workspace_id, "workspace": f"{label}'s workspace"}
 

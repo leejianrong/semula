@@ -97,6 +97,16 @@ The person opens the link, signs in if they are not, checks that the code matche
 - The person must belong to a workspace already; one who does not is told to join one first. The approval is for the workspace their session is working in.
 - The CLI asks over `POST /auth/device/code` and polls `POST /auth/device/token`; both are covered by `SEMULA_AUTH_RATE`. At most 2000 sign-ins wait at once.
 
+### Open signup
+
+When you are ready to let anyone in, set `SEMULA_SIGNUP=open` and restart. No migration and no code change. The `/auth/signup` page then offers a workspace without a code (a person who has one can still enter it), and the dashboard's no-workspace page links to it.
+
+- The person must be signed in, and the provider has vouched for their email, since a person who has not verified it cannot sign in at all.
+- Each person does it once. One network (an IPv4 address, or an IPv6 /64) can make `SEMULA_SIGNUP_PER_ADDRESS` workspaces a day (default 3) and the whole server `SEMULA_SIGNUP_PER_DAY` (default 100). The counts are in the database, so a restart does not reset them; with several replicas they are shared, though two people signing up in the same instant can slip one past a limit on Postgres. Over a limit the person gets a page that says to try tomorrow (`429 signup_limit`).
+- Behind a proxy, the address is the one [`SEMULA_TRUSTED_PROXIES`](#behind-a-reverse-proxy) lets semula believe; without it every person looks like the proxy and the per-address limit would count everyone together.
+- A person who belongs to a [suspended](#suspending-a-workspace) workspace cannot make a new one, so suspension is not a way to start over.
+- The sign-in routes keep their own rate limit (`SEMULA_AUTH_RATE`). Make workspaces with `semula admin signup-code-create` still, whenever you want someone in without opening the door.
+
 ## Members and roles
 
 Signing in makes a person; **membership** lets them into a workspace, with one of three roles that apply to every project in it:
