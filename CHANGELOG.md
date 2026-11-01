@@ -14,6 +14,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- `deploy/droplet/compose.sqlite.yaml`: the hosted stack on SQLite for a 1 GB droplet (no Postgres container, one app process, a `data` volume). `make droplet-smoke VARIANT=sqlite` and the CI `droplet` job check both variants, including 40 simultaneous writes and a restart.
 - `semula login`, `whoami` and `logout`: sign the CLI in to a hosted server by approving a short code in a browser (a device flow). The token is bound to the workspace the approving person is in, never more than their role allows, optionally to one project, and is stored mode 0600; after login every command uses it without flags. Codes last ten minutes and work once.
 - Invite codes for signing up: `semula admin signup-code-create` (and `-list`, `-revoke`) makes a code; a person who has signed in enters it at `/auth/signup` and gets a workspace of their own, as its admin. A code works for a set number of people, once each, for a set time, and says the same thing whatever is wrong with it. `SEMULA_SIGNUP` (`code`) is the setting a later open signup would change. Migration 0020 adds two tables.
 - A hosted server limits the sign-in routes per client address (`SEMULA_AUTH_RATE`, 30 a minute) and the dashboard per address and per person (`SEMULA_UI_STREAMS_PER_ADDRESS`, `SEMULA_UI_TABS_PER_PERSON`, `SEMULA_UI_SESSIONS`), and passes indah's per-address rates on the dashboard's event, stream and upload routes. The dashboard had none of these before.
