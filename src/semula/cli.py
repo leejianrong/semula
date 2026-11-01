@@ -768,6 +768,17 @@ def _admin_workspace_state(args: argparse.Namespace) -> int:
         if args.verb == "purge":
             purged = service.purge_workspaces()
             return _ok(args, {"purged": purged}, f"purged {', '.join(purged) or 'nothing'}")
+        if args.verb == "suspend":
+            status = service.suspend_workspace(args.reason)
+            return _ok(
+                args,
+                status,
+                f"workspace {status['id']} is suspended: its tokens and sign-ins are refused, "
+                "its data is kept",
+            )
+        if args.verb == "resume":
+            status = service.resume_workspace()
+            return _ok(args, status, f"workspace {status['id']} is resumed")
         if args.verb == "delete":
             status = service.delete_workspace(args.confirm)
         else:
@@ -1256,12 +1267,16 @@ def build_parser() -> argparse.ArgumentParser:
     for verb, helptext in (
         ("delete", "Delete a workspace: tokens stop at once, purged after 30 days"),
         ("restore", "Bring a deleted workspace back during its 30 days"),
+        ("suspend", "Refuse a workspace's tokens and sign-ins; its data stays"),
+        ("resume", "Give a suspended workspace its tokens and sign-ins back"),
     ):
         ws = add(asub, f"workspace-{verb}", _admin_workspace_state, helptext)
         ws.set_defaults(verb=verb)
         ws.add_argument("workspace", help="the workspace id")
         if verb == "delete":
             ws.add_argument("--confirm", required=True, help="the workspace id again, to confirm")
+        if verb == "suspend":
+            ws.add_argument("--reason", default="", help="why (kept in the audit log)")
     purge = add(
         asub,
         "workspace-purge",

@@ -231,6 +231,12 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
         _equal(w.b.workspace_status()["deleted_at"], None),
     ),
     "restore_workspace": lambda w: missing_409(lambda: w.a.restore_workspace()),
+    "suspend_workspace": lambda w: (
+        _equal(w.a.suspend_workspace("x")["suspended_at"] is not None, True),  # only A's own
+        _equal(w.b.workspace_status()["suspended_at"], None),
+        w.a.resume_workspace(),
+    ),
+    "resume_workspace": lambda w: missing_409(lambda: w.a.resume_workspace()),
     "usage": lambda w: _equal(w.a.usage()["used"]["entries"], 1),  # its own one, not B's
     "recount_usage": lambda w: (
         w.a.recount_usage(),
@@ -252,6 +258,7 @@ EXEMPT = {
     "authenticate_token": "finds the workspace from the credential, so no tenant exists yet",
     "workspaces_of": "a person's workspaces: people are global",
     "membership_of": "a person's role in a named workspace: people are global",
+    "suspended_workspaces_of": "a person's suspended workspaces, found by their own id: global",
     "principal_for_session": "a signed-in person's identity: global",
     "switch_workspace": "a person's own session: checks their membership",
     "switch_session": "a person's own session: checks their membership",
