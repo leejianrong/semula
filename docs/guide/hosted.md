@@ -229,6 +229,19 @@ Beyond the workspace limits, one address and one person are held back too: sign-
 
 The error body names the limit: `{"quota": {"name": "entries", "limit": 50000, "used": 50000}}`. Counters are kept as writes happen, in the same transaction, so a replay hit never counts anything and stays fast; `semula usage` shows them, and `semula admin recount` rebuilds them if they ever drift. A local server has no limits.
 
+## Suspending a workspace
+
+A free public server will be abused sooner or later. Deleting a workspace is the heavy remedy; suspending is the light one:
+
+```bash
+semula admin workspace-suspend acme --reason "spam"
+semula admin workspace-resume acme
+```
+
+A suspended workspace's tokens are refused at once, on every surface (`/v1`, `/api/v1` and `/mcp`), with `403 workspace_suspended` and a message that says why, and its people cannot work in it: the dashboard tells them it is suspended and where to write. Nothing is deleted, so resuming gives everything back. A refusal is not counted as a failed token guess. Only the operator suspends or resumes; a workspace's own admin cannot, and neither can a token. Both are in the [audit log](#the-audit-log) (`workspace.suspend` and `workspace.resume`, with the reason). Another replica that has a token cached notices within the cache time (30 seconds), like a revoked token. An invitation into a suspended workspace is not valid until it is resumed.
+
+Set `SEMULA_ABUSE_CONTACT` to an email address. The sign-in page then says where to report abuse, and `/terms` (a short terms and acceptable-use page the server serves when hosted) names the same address. The terms are a plain template: read them and make sure they say what you mean before you open the server to others.
+
 ## Deleting a workspace
 
 ```bash

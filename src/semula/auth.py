@@ -177,11 +177,15 @@ class TokenAuthMiddleware:
         auth = headers.get(b"authorization", b"")
         secret = auth[7:].strip().decode() if auth[:7].lower() == b"bearer " else ""
         secret = secret or headers.get(b"x-api-key", b"").decode().strip()
-        principal = (
-            await run_in_threadpool(self.service.authenticate_token, secret, client)
-            if secret
-            else None
-        )
+        try:
+            principal = (
+                await run_in_threadpool(self.service.authenticate_token, secret, client)
+                if secret
+                else None
+            )
+        except SemulaError as refusal:  # a suspended workspace: a clear refusal, not a bad guess
+            await self._refuse(send, refusal)
+            return
         if principal is None:
             self.limiter.failed(client)
             await self._refuse(

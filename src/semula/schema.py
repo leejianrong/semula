@@ -45,6 +45,9 @@ workspace = sa.Table(
     sa.Column("name", sa.Text, nullable=False),
     _ts("created_at"),
     sa.Column("deleted_at", sa.Text),  # set when an admin deletes it; purged after the grace
+    # Set by the operator (SEM-122): tokens and sessions are refused, the data stays.
+    sa.Column("suspended_at", sa.Text),
+    sa.Column("suspended_reason", sa.Text),
 )
 
 project = sa.Table(

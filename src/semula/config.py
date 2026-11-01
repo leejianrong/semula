@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Literal
@@ -114,6 +115,15 @@ def _signup_from_env() -> Literal["code"]:
     return "code"
 
 
+def _abuse_contact_from_env() -> str:
+    """An email address for reports of abuse, shown on the sign-in page and the terms. Checked
+    because it is written into a page."""
+    raw = os.environ.get("SEMULA_ABUSE_CONTACT", "").strip()
+    if raw and not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+", raw):
+        raise ValueError(f"SEMULA_ABUSE_CONTACT: {raw!r} is not an email address")
+    return raw
+
+
 def _limit_from_env(name: str, default: int) -> int | None:
     """A whole number of at least 1, or ``none`` to remove the limit."""
     raw = os.environ.get(name, "").strip().lower()
@@ -160,6 +170,7 @@ class Settings:
     trusted_proxies: tuple[str, ...] = ()
     # How a person gets a workspace of their own: with an invite code the operator made.
     signup: Literal["code"] = "code"
+    abuse_contact: str = ""  # where to report abuse (an email address); shown when hosted
     # Hosted only (a local server has no one to hold back). ``None`` removes a limit.
     auth_rate: int | None = 30  # /auth/* requests a minute for one address
     ui_streams_per_address: int | None = 40  # open dashboard streams from one address
@@ -234,6 +245,7 @@ class Settings:
             ui=_flag(os.environ.get("SEMULA_UI", "on")),
             trusted_proxies=_networks_from_env(os.environ.get("SEMULA_TRUSTED_PROXIES", "")),
             signup=_signup_from_env(),
+            abuse_contact=_abuse_contact_from_env(),
             auth_rate=_limit_from_env("SEMULA_AUTH_RATE", 30),
             ui_streams_per_address=_limit_from_env("SEMULA_UI_STREAMS_PER_ADDRESS", 40),
             ui_sessions=_limit_from_env("SEMULA_UI_SESSIONS", 2000),

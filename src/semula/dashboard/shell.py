@@ -296,9 +296,30 @@ def workspace_switcher(tab: Tab, who: indah.Principal) -> list[indah.Component]:
     ]
 
 
-def build_waiting_session(ctx: indah.Context, who: indah.Principal | None) -> indah.Session:
-    """A signed-in person who belongs to no workspace yet can do nothing but wait for a link."""
+def build_waiting_session(
+    ctx: indah.Context,
+    who: indah.Principal | None,
+    suspended: list[str] | None = None,
+    abuse_contact: str = "",
+) -> indah.Session:
+    """A signed-in person who belongs to no workspace yet can do nothing but wait for a link.
+    One whose workspace the operator suspended is told so, and where to appeal."""
     name = who.email if who is not None else ""
+    if suspended:
+        names = ", ".join(suspended)
+        where = f" Write to {abuse_contact}." if abuse_contact else " Contact the operator."
+        return indah.Session(
+            indah.Column(
+                children=[
+                    indah.Text("# Workspace suspended", markdown=True),
+                    indah.Text(
+                        f"The workspace {names} is suspended, so nothing in it can be used for "
+                        f"now. Its data is kept.{where} The terms are at /terms.",
+                        size="body",
+                    ),
+                ]
+            )
+        )
     return indah.Session(
         indah.Column(
             children=[
