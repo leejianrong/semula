@@ -222,7 +222,7 @@ SEMULA_TRUSTED_PROXIES=172.18.0.0/16     # the network the proxy connects from
 
 The header is believed only when the connection comes from one of these addresses, and is read from the right: each of your proxies adds the address it received the request from, so the first address that is not one of yours is the client. Anything the client wrote further left is ignored. Without the setting the header is ignored altogether, so a client cannot choose its own address. Use the narrowest range that covers the proxy; `*` is refused.
 
-A complete example for one machine is in the repository under `deploy/droplet`: Caddy for TLS, semula, Postgres with the two roles set up, and a daily purge, as one compose project.
+A complete example for one machine is in the repository under `deploy/droplet`: Caddy for TLS, semula, Postgres with the two roles set up, and a daily purge, as one compose project. A second file, `compose.sqlite.yaml`, is the same without Postgres, for a 1 GB droplet (see [SQLite or Postgres](#sqlite-or-postgres)).
 
 ## Several replicas
 
@@ -286,6 +286,15 @@ semula audit --action project.delete
 ```
 
 The log keeps ids, key names and counts, never a prompt, an answer or a secret: a settings change records *which* settings changed, not their values. A database trigger refuses every `UPDATE` and every `DELETE` of a row younger than a year, so nothing can rewrite history, and a row older than that is pruned. Reading it needs the operator (or a signed-in admin, later), not a token.
+
+## SQLite or Postgres
+
+Postgres is what hosting is built for (above). SQLite also works, and is the cheapest way to start: `deploy/droplet/compose.sqlite.yaml` runs the whole stack on a 1 GB droplet with the database as one file in a volume. What that costs:
+
+- **One app process.** SQLite has one writer, and the event bus that wakes a held call lives in the process, so a second replica would not hear the first. The writers wait their turn (a five second timeout) rather than fail; the droplet smoke test makes 40 writes at once on this variant and none fails.
+- **No row-level-security backstop.** Tenant isolation is the service's own workspace filter on every query, which the tenant-isolation tests cover for every method. Postgres adds the database's policy behind it.
+- **The backups are yours.** The file in the `data` volume is the only copy.
+- **Moving later.** Per-project [export and import](../reference/cli.md) moves entries only. People, sign-ins, tokens and the audit log do not move with it, until the copy tool lands (SEM-127). Until then, moving to Postgres means a new database.
 
 ## Postgres and roles
 

@@ -97,3 +97,72 @@ def test_the_database_role_for_the_app_is_not_a_superuser_and_bypasses_nothing()
     assert "ALTER DEFAULT PRIVILEGES FOR ROLE semula_owner" in script
     assert "OWNER" not in script.replace("semula_owner", "")  # never makes the app role an owner
     assert (DIR / "initdb" / "01-roles.sh").stat().st_mode & 0o111
+
+
+# --- the SQLite variant (SEM-126): the same stack on one small droplet, with no Postgres ----------
+
+LITE = (DIR / "compose.sqlite.yaml").read_text()
+LITE_SERVICES = ("migrate", "semula", "caddy", "purge", "admin")
+
+
+def lite(name: str) -> str:
+    body = LITE.split("\nservices:\n", 1)[1].split("\nnetworks:\n", 1)[0]
+    match = re.search(rf"^  {name}:.*?(?=^  \S|\Z)", body, re.S | re.M)
+    assert match, f"no service {name}"
+    return match.group(0)
+
+
+def env_keys(block: str) -> set[str]:
+    env = block.split("environment:", 1)[1]
+    return set(re.findall(r"^      (\w+):", env.split("\n    depends_on")[0], re.M))
+
+
+def test_the_sqlite_variant_has_no_database_server_and_no_postgres_settings() -> None:
+    assert "image: postgres" not in LITE and "\n  db:" not in LITE
+    assert (
+        "postgresql://" not in LITE and "POSTGRES_" not in LITE and "SEMULA_DB_PASSWORD" not in LITE
+    )
+    assert "SEMULA_DATABASE_URL" not in LITE  # the file in the data volume is the default
+
+
+def test_the_sqlite_variant_is_one_app_container_on_one_shared_data_volume() -> None:
+    assert re.findall(r"^  semula:", LITE, re.M) == ["  semula:"]
+    assert "replicas" not in LITE and "scale:" not in LITE
+    for name in ("migrate", "semula", "purge", "admin"):
+        assert "data:/data" in lite(name) or "*data" in lite(name), name
+    assert "\nvolumes:\n  data:\n" in LITE
+    assert " - data:/data" not in lite("caddy")  # the proxy never sees the database
+
+
+def test_the_sqlite_variant_keeps_every_guard_of_the_postgres_one() -> None:
+    for name in LITE_SERVICES:
+        block = lite(name)
+        assert "mem_limit:" in block and "*hardening" in block, name
+        assert ("ports:" in block) == (name == "caddy"), name
+    published = re.findall(r'"\$\{\w+:-(\d+)\}:(\d+)"', lite("caddy"))
+    assert sorted(container for _, container in published) == ["443", "80"]
+    trusted = re.search(r"SEMULA_TRUSTED_PROXIES: (\S+)", lite("semula"))
+    caddy = re.search(r"ipv4_address: (\S+)", lite("caddy"))
+    assert trusted and caddy and trusted.group(1) == caddy.group(1)
+    assert "ip_range: 172.30.0.128/25" in LITE
+    app = lite("semula")
+    assert 'SEMULA_MIGRATE: "off"' in app and 'SEMULA_HOSTED: "on"' in app
+    assert re.search(r"migrate:\s*\{condition: service_completed_successfully\}", app)
+    for name in SECRETS[2:]:
+        assert f"${{{name}:?" in LITE and f"${{{name}:-" not in LITE, name
+    assert "./Caddyfile:/etc/caddy/Caddyfile:ro" in lite("caddy")  # the one Caddyfile, shared
+
+
+def test_the_two_variants_configure_the_app_the_same_way_but_for_the_database() -> None:
+    assert env_keys(lite("semula")) == env_keys(service("semula")) - {"SEMULA_DATABASE_URL"}
+    for name in ("migrate", "purge", "admin"):
+        assert env_keys(lite(name)) == env_keys(service(name)) - {"SEMULA_DATABASE_URL"}, name
+
+
+def test_the_sqlite_variant_fits_a_one_gigabyte_droplet() -> None:
+    # What stays up (migrate runs once and exits; admin only when the operator runs it).
+    steady = sum(
+        int(re.search(r"mem_limit: (\d+)m", lite(n)).group(1)) for n in ("semula", "caddy", "purge")
+    )  # type: ignore[union-attr]
+    assert steady <= 850
+    assert int(re.search(r"mem_limit: (\d+)m", lite("semula")).group(1)) >= 512  # type: ignore[union-attr]

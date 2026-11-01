@@ -8,6 +8,20 @@ The app connects as the Postgres role `semula`, which owns no table and bypasses
 row-level security applies to it. Migrations, the purge and `admin` connect as `semula_owner`
 (see "Postgres and roles" in `docs/guide/hosted.md`).
 
+## Two variants: Postgres, or SQLite on a small droplet
+
+| | `compose.yaml` | `compose.sqlite.yaml` |
+|---|---|---|
+| Database | Postgres 16 in the same project, app on a role with row-level security | one SQLite file in the `data` volume |
+| Fits | a 2 GB droplet or more | a 1 GB droplet (add swap: `fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`) |
+| App containers | one or more | exactly one (one writer, in-memory event bus) |
+| Tenant isolation | the service's filter, and RLS behind it | the service's filter alone |
+
+Everything else (Caddy, headers, the trusted proxy, the purge, `admin`) is the same. Start the SQLite
+variant with `docker compose -f compose.sqlite.yaml up -d --wait`, and use the same `-f` on every
+later command. To move to Postgres once you outgrow it, see "SQLite or Postgres" in
+`docs/guide/hosted.md`; until the copy tool exists (SEM-127) that means starting a new database.
+
 ## First start
 
 Needs Docker with compose, a name that resolves to the machine, and ports 80 and 443 open.
@@ -35,7 +49,7 @@ Upgrade: set `SEMULA_IMAGE` to the new tag, then `docker compose pull && docker 
 - **The image has to include `SEMULA_TRUSTED_PROXIES`** (after 0.4.0). An older image ignores it, and
   then every user looks like Caddy and twenty failed guesses from anyone lock everyone out. Pin a newer tag.
 - **Certificates live in the `caddy-data` volume.** Losing it re-issues them, which Let's Encrypt rate limits.
-- **No backups yet.** `pgdata` is the only copy of the data until the backup card lands.
+- **No backups yet.** `pgdata` (or the `data` volume on SQLite) is the only copy of the data until the backup card lands.
 - Try the whole stack without a domain: `SEMULA_DOMAIN=localhost` makes Caddy use its own CA, and
   `make droplet-smoke` does exactly that on throwaway ports and volumes.
 

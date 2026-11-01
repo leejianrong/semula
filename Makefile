@@ -50,8 +50,8 @@ image-smoke: ## Start IMAGE (default semula:check) and check /health, /v1, a mis
 image-smoke-hosted: ## Check a hosted image (IMAGE, default semula:hosted-check, built with the hosted and postgres extras)
 	scripts/smoke_image_hosted.sh $(or $(IMAGE),semula:hosted-check)
 
-droplet-smoke: ## Bring up deploy/droplet (Caddy, app, Postgres) on a throwaway name and check it (IMAGE, default semula:hosted-check; needs Docker)
-	scripts/smoke_droplet.sh $(or $(IMAGE),semula:hosted-check)
+droplet-smoke: ## Bring up deploy/droplet (Caddy, app, Postgres or, with VARIANT=sqlite, SQLite) on a throwaway name and check it (IMAGE, default semula:hosted-check; needs Docker)
+	scripts/smoke_droplet.sh $(or $(IMAGE),semula:hosted-check) $(or $(VARIANT),postgres)
 
 PLAYWRIGHT ?= playwright==1.64.1
 test-browser: ## Real browsers against the real dashboard: stored text never runs. First: uv run --with $(PLAYWRIGHT) playwright install chromium firefox
