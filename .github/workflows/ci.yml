@@ -135,13 +135,17 @@ jobs:
       - run: scripts/check_image.sh semula:ci
 
   # The public deployment (deploy/droplet): the whole compose stack, behind Caddy, on Postgres with
-  # a non-owner role, checked by scripts/smoke_droplet.sh.
+  # a non-owner role, and the same on SQLite for a small droplet, checked by scripts/smoke_droplet.sh.
   droplet:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [postgres, sqlite]
     steps:
       - uses: actions/checkout@v7
       - run: docker build --build-arg UV_EXTRAS="--extra hosted --extra postgres" -t semula:droplet-ci .
-      - run: scripts/smoke_droplet.sh semula:droplet-ci
+      - run: scripts/smoke_droplet.sh semula:droplet-ci ${{ matrix.variant }}
 
   # Stored text must never run in another person's dashboard: the real dashboard in Chromium and
   # Firefox (tests/browser).
