@@ -64,7 +64,7 @@ UNRESTRICTED = frozenset(
         "principal_for_session",
         "switch_workspace", "switch_session", "invitation_preview", "accept_invitation",
         "create_signup_code", "list_signup_codes", "revoke_signup_code", "redeem_signup_code",
-        "suspended_workspaces_of", "device_start", "device_preview", "device_decide",
+        "suspended_workspaces_of", "signup_open", "device_start", "device_preview", "device_decide",
         "device_poll", "whoami", "logout",
     }
 )  # fmt: skip

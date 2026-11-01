@@ -18,7 +18,9 @@ semula reads its settings from the environment. Every one has a default that wor
 | `SEMULA_MIGRATE` | `on` | `off` stops a start from migrating the database and refuses to start if it is not up to date. For replicas: run `semula admin migrate` once before rollout. |
 | `SEMULA_UI` | `on` | `off` hides the dashboard at `/ui`. |
 | `SEMULA_TRUSTED_PROXIES` | none | Comma-separated addresses or CIDR ranges of the reverse proxies whose `X-Forwarded-For` is believed, for example `172.18.0.0/16`. The failed-token limiter, a token's last-used network and the audit log then see the real client. Unset, the header is ignored. `*` is refused. See [behind a proxy](../guide/hosted.md#behind-a-reverse-proxy). |
-| `SEMULA_SIGNUP` | `code` | How a person gets a workspace of their own: `code` (an invite code the operator made, see [signing up](../guide/hosted.md#signing-up-with-an-invite-code)). No other value is accepted yet. |
+| `SEMULA_SIGNUP` | `code` | How a person gets a workspace of their own: `code` (an invite code the operator made, see [signing up](../guide/hosted.md#signing-up-with-an-invite-code)) or `open` (any signed-in person, within the two limits below). Flip it and restart; nothing else changes. |
+| `SEMULA_SIGNUP_PER_ADDRESS` | `3` | Open signup only. Workspaces one client address may make in a day (an IPv6 address counts as its whole /64). Over it is `429 signup_limit`. `none` removes the limit. |
+| `SEMULA_SIGNUP_PER_DAY` | `100` | Open signup only. Workspaces the whole server will make in a day. `none` removes the limit. |
 | `SEMULA_ABUSE_CONTACT` | none | Hosted only. An email address to report abuse to. It is shown on the sign-in page and on `/terms`. Anything that is not an email address is refused at start. |
 | `SEMULA_AUTH_RATE` | `30` | Hosted only. Sign-in requests a minute for one client address, on every `/auth/*` route: a burst of this many, then steadily. Over it is `429` with `Retry-After`. An IPv6 address counts as its whole /64. `none` removes the limit. |
 | `SEMULA_UI_STREAMS_PER_ADDRESS` | `40` | Hosted only. Open dashboard streams (tabs) from one client address. Over it is `429`. `none` removes the cap. |

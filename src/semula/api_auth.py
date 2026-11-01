@@ -282,13 +282,19 @@ async def invitation(token: str, request: Request) -> Response:
     return _invite_page(preview, token, session["csrf"], session["email"])
 
 
-def _signup_page(csrf: str, email: str) -> HTMLResponse:
+def _signup_page(csrf: str, email: str, open_: bool = False) -> HTMLResponse:
+    ask = (
+        "<p>Create a workspace of your own. If you were sent an invite code you can enter it "
+        "too, but you do not need one.</p>"
+        if open_
+        else "<p>Enter the invite code you were sent to get a workspace of your own.</p>"
+    )
     body = (
         f"<p>You are signed in as <b>{html.escape(email)}</b>.</p>"
-        "<p>Enter the invite code you were sent to get a workspace of your own.</p>"
-        '<form method=post action="/auth/signup">'
+        + ask
+        + '<form method=post action="/auth/signup">'
         f'<input type=hidden name=csrf value="{html.escape(csrf)}">'
-        "<p><input name=code autocomplete=off autofocus required size=36 "
+        f"<p><input name=code autocomplete=off size=36{'' if open_ else ' autofocus required'} "
         'placeholder="smla_code_..."></p>'
         "<button>Create my workspace</button></form>"
     )
@@ -302,7 +308,9 @@ async def signup_page(request: Request) -> Response:
     session = await offload(service.authenticate_session, request.cookies.get(cookies.session, ""))
     if session is None:
         return RedirectResponse(f"/auth/login?{_query({'next': '/auth/signup'})}", status_code=302)
-    return _signup_page(session["csrf"], session["email"])
+    return _signup_page(
+        session["csrf"], session["email"], request.app.state.settings.signup == "open"
+    )
 
 
 @router.post("/signup", response_model=None)
@@ -317,10 +325,16 @@ async def signup(request: Request) -> Response:
         or not hmac.compare_digest(str(form.get("csrf", "")), session["csrf"])
     ):
         raise SemulaError(403, "csrf", "Signing up needs the session's CSRF token.")
+    code = str(form.get("code", "")).strip()
     try:
-        made = await offload(
-            service.redeem_signup_code, str(form.get("code", "")), session["person_id"]
-        )
+        if not code and request.app.state.settings.signup == "open":
+            made = await offload(
+                service.signup_open,
+                session["person_id"],
+                request.client.host if request.client else None,
+            )
+        else:
+            made = await offload(service.redeem_signup_code, code, session["person_id"])
     except SemulaError as exc:
         return _page(
             "Create your workspace",

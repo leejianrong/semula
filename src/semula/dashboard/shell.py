@@ -301,6 +301,7 @@ def build_waiting_session(
     who: indah.Principal | None,
     suspended: list[str] | None = None,
     abuse_contact: str = "",
+    signup_open: bool = False,
 ) -> indah.Session:
     """A signed-in person who belongs to no workspace yet can do nothing but wait for a link.
     One whose workspace the operator suspended is told so, and where to appeal."""
@@ -330,7 +331,10 @@ def build_waiting_session(
                     size="body",
                 ),
                 indah.Text(
-                    "Or, if you were sent an invite code, [enter it here](/auth/signup).",
+                    "[Create a workspace of your own](/auth/signup), or open the invitation link "
+                    "you were sent."
+                    if signup_open
+                    else "Or, if you were sent an invite code, [enter it here](/auth/signup).",
                     markdown=True,
                     size="body",
                 ),
