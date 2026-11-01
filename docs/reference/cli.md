@@ -28,6 +28,7 @@ In the container, run it with `docker exec semula semula ...`.
 | Command | Arguments and flags | What it does |
 |---|---|---|
 | `semula serve` | `--host` `--port` | Run the server |
+| `semula mcp-config` | `--client` `--install` `--http` | Print (or install) the line that connects an agent to MCP |
 | `semula mcp` |  | Run an MCP server on stdio that talks to --url |
 | `semula pending` | `--all` `--project` `--wait` | List parked requests waiting for an answer |
 | `semula show` | `<id>` | Show one pending request in full |
