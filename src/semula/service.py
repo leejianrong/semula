@@ -56,6 +56,7 @@ from .schema import api_token as T
 from .schema import audit_log as AU
 from .schema import call_log as L
 from .schema import candidate as C
+from .schema import device_login as DL
 from .schema import entry as E
 from .schema import entry_revision as R
 from .schema import identity as ID
@@ -141,6 +142,25 @@ SESSION_SECONDS = 7 * 86400  # ... or seven days, however active
 SESSION_TOUCH_EVERY = 60.0  # last-seen is written at most this often
 WORKSPACE_GRACE_DAYS = 30  # a deleted workspace can be restored for this long, then it is purged
 AUDIT_RETENTION_DAYS = 365  # the audit log is kept this long, then pruned (never edited)
+DEVICE_LOGIN_SECONDS = 600  # a CLI sign-in waits ten minutes for a person to approve it
+DEVICE_POLL_SECONDS = 5  # how often the CLI asks
+DEVICE_LOGINS_WAITING = 2000  # most sign-ins waiting at once, so the table cannot be flooded
+DEVICE_TOKEN_DAYS = 90  # a token made by a CLI sign-in expires after this
+DEVICE_SCOPE_FOR = {"viewer": "replay", "editor": "record", "admin": "admin"}  # most a role gets
+USER_CODE_ALPHABET = "BCDFGHJKMNPQRSTVWXZ23456789"  # no vowels, no 0/O/1/I/L: read aloud, typed
+
+
+def _user_code() -> str:
+    body = "".join(secrets.choice(USER_CODE_ALPHABET) for _ in range(8))
+    return f"{body[:4]}-{body[4:]}"
+
+
+def _normal_code(code: str) -> str:
+    """A code as typed: any case, with or without the hyphen."""
+    plain = re.sub(r"[^A-Za-z0-9]", "", code or "").upper()
+    return f"{plain[:4]}-{plain[4:]}"
+
+
 TOKEN_CACHE_TTL = 30.0  # seconds a verified token is trusted without asking the database
 TOKEN_TOUCH_EVERY = 60.0  # a token's last-used time is written at most this often
 
@@ -288,6 +308,19 @@ class Service:
     ) -> dict[str, Any]:
         """Mint a token for this workspace. The secret is in the result once and never again."""
         self._not_a_token()
+        return self._mint_token(
+            name, scope, project=project, expires_at=expires_at, created_by=created_by
+        )
+
+    def _mint_token(
+        self,
+        name: str,
+        scope: str,
+        *,
+        project: str | None = None,
+        expires_at: str | None = None,
+        created_by: str | None = None,
+    ) -> dict[str, Any]:
         label = name.strip()
         if not label or len(label) > 80:
             raise SemulaError(
@@ -800,6 +833,198 @@ class Service:
                 409, "already_signed_up", "You already have a workspace from a code."
             ) from exc
         return {"workspace_id": workspace_id, "workspace": f"{label}'s workspace"}
+
+    # --- signing the CLI in by approval in a browser (SEM-118) ---------------------------------
+    def device_start(
+        self, scope: str = "record", project: str | None = None, name: str = "semula CLI"
+    ) -> dict[str, Any]:
+        """A CLI asks to be signed in. It gets a secret ``device_code`` to poll with and a short
+        ``user_code`` for the person to check; nothing is granted until a signed-in person
+        approves it. The most it can earn is ``scope`` (cut down to that person's role)."""
+        self._operator_only()
+        if scope not in tok.SCOPES:
+            raise SemulaError(
+                422, "invalid_scope", f"scope must be one of {list(tok.SCOPES)}.", param="scope"
+            )
+        if project is not None and not SLUG.fullmatch(project):
+            raise SemulaError(
+                422, "invalid_project", "That is not a project name.", param="project"
+            )
+        label = (name or "").strip()
+        if not label or len(label) > 80:
+            raise SemulaError(422, "invalid_name", "A name is 1 to 80 characters.", param="name")
+        db = self.db.for_workspace(None)
+        now = self._now()
+        db.execute(sa.delete(DL).where(DL.c.expires_at <= iso(now)))  # nobody can use these now
+        waiting = db.one(sa.select(sa.func.count()).select_from(DL))
+        if waiting is not None and int(next(iter(waiting.values()))) >= DEVICE_LOGINS_WAITING:
+            raise SemulaError(
+                429, "too_many_logins", "Too many sign-ins are waiting. Try again in a few minutes."
+            )
+        device_code = secrets.token_urlsafe(32)
+        for _ in range(5):
+            user_code = _user_code()
+            try:
+                db.execute(
+                    sa.insert(DL).values(
+                        id=new_ulid(),
+                        user_code=user_code,
+                        device_hash=tok.digest(device_code),
+                        scope=scope,
+                        project=project,
+                        name=label,
+                        expires_at=iso(now + timedelta(seconds=DEVICE_LOGIN_SECONDS)),
+                    )
+                )
+                break
+            except IntegrityError:  # the same short code twice: draw another
+                continue
+        else:
+            raise SemulaError(503, "try_again", "Could not make a code. Try again.")
+        return {
+            "device_code": device_code,
+            "user_code": user_code,
+            "expires_in": DEVICE_LOGIN_SECONDS,
+            "interval": DEVICE_POLL_SECONDS,
+        }
+
+    def _open_device_login(self, user_code: str, conn: Connection | None = None) -> Any:
+        row = self.db.for_workspace(None).one(
+            sa.select(DL).where(
+                DL.c.user_code == _normal_code(user_code),
+                DL.c.decided_at.is_(None),
+                DL.c.expires_at > iso(self._now()),
+            ),
+            conn,
+        )
+        if row is None:
+            raise SemulaError(404, "device_code_invalid", "That code is not valid any more.")
+        return row
+
+    def device_preview(self, user_code: str) -> dict[str, Any]:
+        """What a code is asking for, for the page a person approves it on."""
+        row = self._open_device_login(user_code)
+        return {
+            "user_code": row["user_code"],
+            "scope": row["scope"],
+            "project": row["project"],
+            "name": row["name"],
+        }
+
+    def device_decide(
+        self, user_code: str, person_id: str, workspace_id: str, approve: bool
+    ) -> dict[str, Any]:
+        """A signed-in person approves or denies a code, for the workspace they are in. Each code
+        is decided once. The token is never more than the person may do themselves."""
+        row = self._open_device_login(user_code)
+        role = self.membership_of(person_id, workspace_id)
+        if role is None:
+            raise SemulaError(
+                403, "not_a_member", "You do not belong to a workspace to sign in to.",
+                err_type="authentication_error",
+            )  # fmt: skip
+        granted = min(row["scope"], DEVICE_SCOPE_FOR[role], key=lambda s: tok.LEVEL[s])
+        if approve and row["project"] is not None:
+            self.for_scope(Scope(workspace_id)).require_project(row["project"])
+        claimed = self.db.for_workspace(None).execute(
+            sa.update(DL)
+            .where(
+                DL.c.id == row["id"],
+                DL.c.decided_at.is_(None),
+                DL.c.expires_at > iso(self._now()),
+            )
+            .values(
+                decided_at=now_iso(),
+                approved=approve,
+                person_id=person_id,
+                workspace_id=workspace_id,
+                granted_scope=granted,
+            )
+        )
+        if claimed != 1:  # someone else decided it first
+            raise SemulaError(404, "device_code_invalid", "That code is not valid any more.")
+        return {"approved": approve, "scope": granted, "workspace_id": workspace_id}
+
+    def device_poll(self, device_code: str) -> dict[str, Any]:
+        """The CLI asks whether it was approved. Approved, it gets its token here, once: the
+        secret is made now and never stored. A code that is unknown, expired or collected is
+        refused in one way."""
+        invalid = SemulaError(400, "device_code_invalid", "That sign-in is not valid any more.")
+        if not device_code:
+            raise invalid
+        db = self.db.for_workspace(None)
+        row = db.one(
+            sa.select(DL).where(
+                DL.c.device_hash == tok.digest(device_code),
+                DL.c.expires_at > iso(self._now()),
+                DL.c.collected_at.is_(None),
+            )
+        )
+        if row is None:
+            raise invalid
+        if row["decided_at"] is None:
+            return {"status": "pending"}
+        if not row["approved"]:
+            return {"status": "denied"}
+        taken = db.execute(  # a write first, so two polls cannot both collect the token
+            sa.update(DL)
+            .where(DL.c.id == row["id"], DL.c.collected_at.is_(None))
+            .values(collected_at=now_iso())
+        )
+        role = self.membership_of(row["person_id"], row["workspace_id"])
+        if taken != 1 or role is None:
+            raise invalid
+        who = db.one(sa.select(PE.c.name, PE.c.email).where(PE.c.id == row["person_id"]))
+        acting = Principal(
+            "person", row["person_id"], row["workspace_id"], role=role,
+            name=(who["name"] or who["email"]) if who else "",
+        )  # fmt: skip
+        mine = self.for_scope(Scope(row["workspace_id"], acting, self.request_id, self.client))
+        made = mine._mint_token(
+            row["name"],
+            row["granted_scope"],
+            project=row["project"],
+            expires_at=iso(self._now() + timedelta(days=DEVICE_TOKEN_DAYS)),
+            created_by=row["person_id"],
+        )
+        return {
+            "status": "approved",
+            "token": made["token"],
+            "token_id": made["id"],
+            "workspace_id": row["workspace_id"],
+            "scope": made["scope"],
+            "project": made["project"],
+            "expires_at": made["expires_at"],
+        }
+
+    def whoami(self) -> dict[str, Any]:
+        """What the credential making this call is: a token's name, scope and project."""
+        if self.acting_as_token and self.principal is not None:
+            row = self._token_row(self.principal.id)
+            return {**self._token_view(row), "kind": "token", "workspace_id": self.workspace_id}
+        kind = self.principal.kind if self.principal is not None else "local"
+        return {"kind": kind, "workspace_id": self.workspace_id}
+
+    def logout(self) -> dict[str, Any]:
+        """A token ends itself (``semula logout``)."""
+        if not self.acting_as_token or self.principal is None:
+            raise SemulaError(400, "not_a_token", "Only an API token can log itself out.")
+        token_id = self.principal.id
+        with self.db.begin() as conn:
+            ended = self.db.execute(
+                sa.update(T)
+                .where(*self._pk(T, token_id), T.c.revoked_at.is_(None))
+                .values(revoked_at=now_iso()),
+                conn,
+            )
+            if ended != 1:
+                raise SemulaError(
+                    401, "invalid_api_key", "That token is not valid any more.",
+                    err_type="authentication_error",
+                )  # fmt: skip
+            self._audit("token.revoke", token_id, {"by": "itself"}, conn)
+        self._forget_token(token_id)
+        return {"revoked": token_id}
 
     # --- members and invitations (ADR-0010 section 3) ----------------------------------------
     @needs("admin")

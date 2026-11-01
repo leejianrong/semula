@@ -10,7 +10,7 @@ Exit codes
     2  usage error (bad flags)
     3  not found
     4  rejected: invalid input, a version conflict, or a pinned entry
-    5  authentication failed (set SEMULA_API_KEY)
+    5  authentication failed (run `semula login`, or set SEMULA_API_KEY)
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import sys
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from . import __version__
+from . import __version__, credentials
 
 if TYPE_CHECKING:  # httpx is only imported by commands that talk to a server: `serve` starts faster
     import httpx
@@ -32,12 +32,18 @@ DEFAULT_URL = "http://127.0.0.1:8080"
 
 
 # --- plumbing ---------------------------------------------------------------------------
+def _key_for(args: argparse.Namespace) -> str | None:
+    """The credential to send: SEMULA_API_KEY from the environment, else the token that
+    ``semula login`` stored for this server. Never from argv, so it is not in a process list."""
+    return os.environ.get("SEMULA_API_KEY") or credentials.token_for(args.url)
+
+
 def _call(args: argparse.Namespace, method: str, path: str, **kwargs: Any) -> httpx.Response:
     import httpx
 
     headers = dict(kwargs.pop("headers", {}))
-    key = os.environ.get("SEMULA_API_KEY")
-    if key:  # from the environment only, so the secret never appears in argv
+    key = _key_for(args)
+    if key and "Authorization" not in headers:
         headers["Authorization"] = f"Bearer {key}"
     if getattr(args, "as_human", False):
         headers["X-Semula-Actor"] = "human"
@@ -511,8 +517,8 @@ def _tail(args: argparse.Namespace) -> int:
 
     params = {"project": args.project} if args.project else {}
     headers = {}
-    if os.environ.get("SEMULA_API_KEY"):
-        headers["Authorization"] = f"Bearer {os.environ['SEMULA_API_KEY']}"
+    if key := _key_for(args):
+        headers["Authorization"] = f"Bearer {key}"
     seen = 0
     try:
         with httpx.stream(
@@ -900,6 +906,111 @@ def _admin_token(args: argparse.Namespace) -> int:
     return _ok(args, out, human)
 
 
+def _pause(seconds: float) -> None:
+    import time
+
+    time.sleep(seconds)
+
+
+def _login(args: argparse.Namespace) -> int:
+    """Ask the server for a code, tell the person where to approve it, wait, and keep the token."""
+    import socket
+    import time
+
+    asked: dict[str, Any] = {
+        "scope": args.scope,
+        "name": f"semula CLI on {socket.gethostname()}"[:80],
+    }
+    if args.project:
+        asked["project"] = args.project
+    start = _call(args, "POST", "/auth/device/code", json=asked)
+    if start.status_code != 200:
+        return _fail(args, start)
+    began = start.json()
+    print(
+        f"Open this link in a browser where you are signed in, and approve it:\n\n"
+        f"  {began['verification_url']}\n\nThe page should show the code {began['user_code']}. "
+        "If it does not, deny it.\nWaiting for your approval...",
+        file=sys.stderr,
+        flush=True,
+    )
+    wait = began["expires_in"] if args.wait is None else args.wait
+    deadline = time.monotonic() + wait
+    while True:
+        poll = _call(args, "POST", "/auth/device/token", json={"device_code": began["device_code"]})
+        if poll.status_code != 200:
+            return _fail(args, poll)
+        got = poll.json()
+        if got["status"] == "denied":
+            print("error: the sign-in was denied in the browser.", file=sys.stderr)
+            return EXIT_AUTH
+        if got["status"] == "approved":
+            break
+        if time.monotonic() >= deadline:
+            print(
+                "error: the sign-in was not approved in time. Run `semula login` again.",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        _pause(min(float(began["interval"]), max(0.0, deadline - time.monotonic())))
+    credentials.save(
+        args.url,
+        {
+            "token": got["token"],
+            "token_id": got["token_id"],
+            "workspace_id": got["workspace_id"],
+            "scope": got["scope"],
+            "project": got["project"],
+            "expires_at": got["expires_at"],
+        },
+    )
+    done = {
+        "url": args.url.rstrip("/"),
+        "workspace": got["workspace_id"],
+        "scope": got["scope"],
+        "project": got["project"],
+        "expires_at": got["expires_at"],
+    }
+    where = got["project"] or "all projects"
+    return _ok(
+        args,
+        done,
+        f"Signed in to {args.url.rstrip('/')}: workspace {got['workspace_id']}, "
+        f"{got['scope']} access to {where}. The token is kept in {credentials.path()} "
+        "(readable by you only).",
+    )
+
+
+def _whoami(args: argparse.Namespace) -> int:
+    resp = _call(args, "GET", "/api/v1/whoami")
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    me = resp.json()
+    if me.get("kind") != "token":
+        return _ok(args, me, f"{args.url.rstrip('/')}: {me.get('kind')} access, no token in use.")
+    return _ok(
+        args,
+        me,
+        f"{args.url.rstrip('/')}: workspace {me['workspace_id']}, token {me['name']!r} with "
+        f"{me['scope']} access to {me['project'] or 'all projects'}"
+        + (f", expires {me['expires_at']}" if me.get("expires_at") else ""),
+    )
+
+
+def _logout(args: argparse.Namespace) -> int:
+    """Revoke the stored token on the server, then forget it here."""
+    url = args.url.rstrip("/")
+    token = credentials.token_for(args.url)
+    if token is None:
+        return _ok(args, {"signed_out": False, "url": url}, f"Not signed in to {url}.")
+    resp = _call(args, "POST", "/api/v1/logout", headers={"Authorization": f"Bearer {token}"})
+    if resp.status_code not in (200, 401):  # 401: it was already revoked or expired
+        return _fail(args, resp)  # keep the token: it is still live on the server
+    credentials.forget(args.url)
+    note = "" if resp.status_code == 200 else " (the server no longer accepted the token)"
+    return _ok(args, {"signed_out": True, "url": url}, f"Signed out of {url}{note}.")
+
+
 def _mcp(args: argparse.Namespace) -> int:
     try:
         from .mcp_server import run_stdio_proxy
@@ -915,7 +1026,7 @@ def _mcp(args: argparse.Namespace) -> int:
     if health.status_code != 200:
         return _fail(args, health)
 
-    run_stdio_proxy(args.url, os.environ.get("SEMULA_API_KEY"))
+    run_stdio_proxy(args.url, _key_for(args))
     return EXIT_OK
 
 
@@ -929,7 +1040,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"semula {__version__}")
     parser.add_argument(
-        "--url", default=os.environ.get("SEMULA_URL", DEFAULT_URL), help="server URL (SEMULA_URL)"
+        "--url",
+        default=os.environ.get("SEMULA_URL"),
+        help=f"server URL (SEMULA_URL; else the server of your last login; else {DEFAULT_URL})",
     )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1111,6 +1224,22 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("mode", nargs="?", choices=["replay", "record"])
     mode.add_argument("--project", default=None, help="set this project's own mode (kept)")
 
+    login = add(
+        sub, "login", _login, "Sign in to a hosted server by approving a code in your browser"
+    )
+    login.add_argument("--url", default=argparse.SUPPRESS, help="the hosted server")
+    login.add_argument("--project", default=None, help="bind the token to one project")
+    login.add_argument(
+        "--scope", choices=("replay", "record", "admin"), default="record",
+        help="the most the token may do (never more than you may); default record",
+    )  # fmt: skip
+    login.add_argument(
+        "--wait", type=float, metavar="SECONDS", default=None,
+        help="give up after this long (default: until the code expires, ten minutes)",
+    )  # fmt: skip
+    add(sub, "whoami", _whoami, "Show the server, workspace and access this login has")
+    add(sub, "logout", _logout, "Revoke the stored token and forget it")
+
     add(sub, "usage", _usage, "What the workspace holds against its limits")
 
     audit = add(sub, "audit", _audit, "Show the audit log, newest first (people and the operator)")
@@ -1200,6 +1329,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if not args.url:
+        args.url = credentials.default_url() or DEFAULT_URL
     try:
         return int(args.func(args))
     except Exception as exc:

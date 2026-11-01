@@ -23,8 +23,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from starlette.concurrency import run_in_threadpool as offload
 
 from . import oidc
+from . import tokens as tok
 from .errors import SemulaError
-from .service import SESSION_SECONDS, Service
+from .service import DEVICE_SCOPE_FOR, SESSION_SECONDS, Service
 
 log = logging.getLogger("semula.auth")
 router = APIRouter(prefix="/auth")
@@ -313,6 +314,128 @@ async def signup(request: Request) -> Response:
         )
     await offload(service.switch_session, session["session_id"], made["workspace_id"])
     return RedirectResponse(LANDING, status_code=303)
+
+
+# --- signing the CLI in (SEM-118) ----------------------------------------------------------
+
+
+async def _body(request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise SemulaError(400, "invalid_json", "The request body is not valid JSON.") from exc
+    if not isinstance(body, dict):
+        raise SemulaError(400, "invalid_request", "The body must be a JSON object.")
+    return body
+
+
+def _text(body: dict[str, Any], key: str) -> str | None:
+    value = body.get(key)
+    if value is not None and not isinstance(value, str):
+        raise SemulaError(400, "invalid_request", f"'{key}' must be text.", param=key)
+    return value
+
+
+@router.post("/device/code")
+async def device_code(request: Request) -> JSONResponse:
+    """The CLI asks to be signed in. Body: ``{"scope"?, "project"?, "name"?}``. Nothing is granted
+    until a signed-in person approves the short code in a browser."""
+    service, _, cookies, _ = _state(request)
+    body = await _body(request)
+    started = await offload(
+        service.device_start,
+        _text(body, "scope") or "record",
+        _text(body, "project"),
+        _text(body, "name") or "semula CLI",
+    )
+    base = request.app.state.settings.public_url
+    return JSONResponse(
+        {
+            **started,
+            "verification_url": f"{base}/auth/device?{_query({'code': started['user_code']})}",
+        }
+    )
+
+
+@router.post("/device/token")
+async def device_token(request: Request) -> JSONResponse:
+    """The CLI polls with its secret code: ``pending``, ``denied``, or (once) its token."""
+    service, _, _, _ = _state(request)
+    body = await _body(request)
+    got = await offload(service.device_poll, _text(body, "device_code") or "")
+    return JSONResponse(got)
+
+
+def _device_page(preview: dict[str, Any], role: str, workspace: str, csrf: str) -> HTMLResponse:
+    granted = min(preview["scope"], DEVICE_SCOPE_FOR[role], key=lambda s: tok.LEVEL[s])
+    where = html.escape(preview["project"]) if preview["project"] else "all projects"
+    body = (
+        "<p>A program asked to sign in to semula. Approve it only if you just ran "
+        "<code>semula login</code> and this code matches your terminal.</p>"
+        f"<h2>{html.escape(preview['user_code'])}</h2>"
+        f"<p>Name: <b>{html.escape(preview['name'])}</b><br>"
+        f"Workspace: <b>{html.escape(workspace)}</b><br>"
+        f"Access: <b>{html.escape(granted)}</b> to <b>{where}</b></p>"
+        '<form method=post action="/auth/device">'
+        f'<input type=hidden name=csrf value="{html.escape(csrf)}">'
+        f'<input type=hidden name=code value="{html.escape(preview["user_code"])}">'
+        "<button name=decision value=approve>Approve</button> "
+        "<button name=decision value=deny>Deny</button></form>"
+    )
+    return _page("Sign in the CLI", body)
+
+
+@router.get("/device", response_model=None)
+async def device_page(request: Request, code: str = "") -> Response:
+    service, _, cookies, _ = _state(request)
+    session = await offload(service.authenticate_session, request.cookies.get(cookies.session, ""))
+    if session is None:
+        target = f"/auth/device?{_query({'code': code})}"
+        return RedirectResponse(f"/auth/login?{_query({'next': target})}", status_code=302)
+    try:
+        preview = await offload(service.device_preview, code)
+    except SemulaError as exc:
+        return _page("Sign in the CLI", f"<p>{html.escape(exc.message)}</p>", exc.status)
+    acting = await offload(service.principal_for_session, session)
+    if acting is None or acting.role is None:
+        return _page(
+            "Sign in the CLI",
+            "<p>You do not belong to a workspace yet, so there is nothing to sign in to. "
+            'Join one first (an invitation, or <a href="/auth/signup">an invite code</a>).</p>',
+        )
+    return _device_page(preview, acting.role, acting.workspace_id, session["csrf"])
+
+
+@router.post("/device", response_model=None)
+async def device_decision(request: Request) -> Response:
+    service, _, cookies, _ = _state(request)
+    session = await offload(service.authenticate_session, request.cookies.get(cookies.session, ""))
+    form = await request.form()
+    origin = request.headers.get("origin")
+    if (
+        session is None
+        or (origin is not None and origin != cookies.origin)
+        or not hmac.compare_digest(str(form.get("csrf", "")), session["csrf"])
+    ):
+        raise SemulaError(403, "csrf", "Signing in the CLI needs the session's CSRF token.")
+    approve = form.get("decision") == "approve"
+    acting = await offload(service.principal_for_session, session)
+    try:
+        await offload(
+            service.device_decide,
+            str(form.get("code", "")),
+            session["person_id"],
+            acting.workspace_id if acting else "",
+            approve,
+        )
+    except SemulaError as exc:
+        return _page("Sign in the CLI", f"<p>{html.escape(exc.message)}</p>", exc.status)
+    return _page(
+        "Sign in the CLI",
+        "<p>Approved. You can close this tab; the terminal will finish signing in.</p>"
+        if approve
+        else "<p>Denied. Nothing was signed in.</p>",
+    )
 
 
 @router.post("/invite/{token}", response_model=None)

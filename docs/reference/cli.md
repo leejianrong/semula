@@ -1,6 +1,6 @@
 # CLI
 
-`semula` is both the server (`semula serve`) and a client for a running one. Every client command talks to the server at `--url` (default `http://127.0.0.1:8080`, or the `SEMULA_URL` environment variable). If the server has an API key, set `SEMULA_API_KEY`: the CLI reads it from the environment so the key never appears in a process list.
+`semula` is both the server (`semula serve`) and a client for a running one. Every client command talks to the server at `--url` (default `http://127.0.0.1:8080`, or the `SEMULA_URL` environment variable). If the server has an API key, set `SEMULA_API_KEY`: the CLI reads it from the environment so the key never appears in a process list. On a [hosted](../guide/hosted.md#signing-in-from-the-cli) server, run `semula login` once instead: it stores a token (and the server's address, which then becomes the default for `--url`) in `credentials.json` in `$SEMULA_CONFIG_DIR`, else `$XDG_CONFIG_HOME/semula`, else `~/.config/semula`, readable by you only. `SEMULA_API_KEY` wins over a stored token, and `SEMULA_URL` or `--url` wins over a stored address.
 
 In the container, run it with `docker exec semula semula ...`.
 
@@ -56,6 +56,9 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula export` | `<project>` `--dir` | Write a project's entries to a directory of JSON files |
 | `semula import` | `<dir>` `--project` `--force` | Load an exported directory (safe to repeat) |
 | `semula mode` | `<mode>` `--project` | Show or switch the mode (replay or record) |
+| `semula login` | `--url` `--project` `--scope` `--wait` | Sign in to a hosted server by approving a code in your browser |
+| `semula whoami` |  | Show the server, workspace and access this login has |
+| `semula logout` |  | Revoke the stored token and forget it |
 | `semula usage` |  | What the workspace holds against its limits |
 | `semula audit` | `--limit` `--action` `--before` | Show the audit log, newest first (people and the operator) |
 | `semula admin migrate` |  | Bring the database up to date (run once before replicas) |

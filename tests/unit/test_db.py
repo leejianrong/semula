@@ -19,7 +19,7 @@ from tests.support.db import fresh_database_url
 
 pytestmark = pytest.mark.unit
 
-HEAD = "0020"  # bump with every new migration
+HEAD = "0021"  # bump with every new migration
 
 # What the pre-Alembic hand-rolled runner produced at its version 2.
 LEGACY_DDL = """
@@ -86,7 +86,7 @@ def test_every_table_carries_workspace_id(tmp_path: Path) -> None:
     # codes people sign up with, which make a workspace and so belong to none (SEM-117).
     skip = {
         "alembic_version", "workspace", "person", "identity", "person_session",
-        "signup_code", "signup_redemption",
+        "signup_code", "signup_redemption", "device_login",
     }  # fmt: skip
     missing = [
         t

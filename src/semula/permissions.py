@@ -45,6 +45,9 @@ RULES: tuple[tuple[str, str, str], ...] = (
     ("GET", r"/api/v1/mode", "record"),
     ("GET", r"/api/v1/embeddings", "record"),
     ("GET", r"/api/v1/usage", "record"),
+    # Any token may say who it is and end itself.
+    ("GET", r"/api/v1/whoami", "replay"),
+    ("POST", r"/api/v1/logout", "replay"),
     # What a human decides: destroying, approving into serving, settings, mode, moving data.
     ("POST", r"/api/v1/projects", "admin"),
     ("PATCH", r"/api/v1/projects/[^/]+", "admin"),

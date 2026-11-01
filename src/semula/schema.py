@@ -409,6 +409,30 @@ signup_redemption = sa.Table(
     sa.Index("idx_signup_redemption_code", "code_id"),
 )
 
+# A CLI sign-in waiting for a person's approval in a browser (SEM-118). Global: it exists before
+# anyone has said which workspace it is for. Only a hash of the CLI's secret code is kept, and the
+# token it earns is minted at the poll that collects it, so its secret is never stored.
+device_login = sa.Table(
+    "device_login",
+    metadata,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("user_code", sa.Text, nullable=False),  # what the person reads and checks
+    sa.Column("device_hash", sa.Text, nullable=False),  # hash of what only the CLI knows
+    sa.Column("scope", sa.Text, nullable=False),  # the most the CLI asked for
+    sa.Column("project", sa.Text),
+    sa.Column("name", sa.Text, nullable=False),
+    _ts("created_at"),
+    sa.Column("expires_at", sa.Text, nullable=False),
+    sa.Column("decided_at", sa.Text),
+    sa.Column("approved", sa.Boolean),  # None until decided
+    sa.Column("person_id", sa.Text),
+    sa.Column("workspace_id", sa.Text),
+    sa.Column("granted_scope", sa.Text),  # the asked-for scope, cut to the person's role
+    sa.Column("collected_at", sa.Text),
+    sa.Index("uq_device_login_user_code", "user_code", unique=True),
+    sa.Index("uq_device_login_hash", "device_hash", unique=True),
+)
+
 # An offer to join, by email and role. Single use, seven days. Only a hash of its token is kept.
 # Accepting needs a signed-in person whose *verified* email matches: an invitation is never a way
 # to sign in.
