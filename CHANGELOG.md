@@ -8,6 +8,8 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
 ### Fixed
 
 - The live log was 7 px wider than a phone; its five stats now sit in two rows. On the log, pending, review and entries screens a row can now be chosen with the keyboard (arrow keys, then Enter), and the pending answer box says that Ctrl-S sends and Ctrl-M then Tab leaves it.
