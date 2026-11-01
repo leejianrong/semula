@@ -258,6 +258,7 @@ EXEMPT = {
     "authenticate_token": "finds the workspace from the credential, so no tenant exists yet",
     "workspaces_of": "a person's workspaces: people are global",
     "membership_of": "a person's role in a named workspace: people are global",
+    "signup_open": "a person with no workspace yet makes their own, found by their own id",
     "suspended_workspaces_of": "a person's suspended workspaces, found by their own id: global",
     "principal_for_session": "a signed-in person's identity: global",
     "switch_workspace": "a person's own session: checks their membership",

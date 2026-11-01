@@ -79,6 +79,7 @@ def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
                 if user is not None
                 else [],
                 settings.abuse_contact if settings else "",
+                settings is not None and settings.signup == "open",
             )
         role = next(iter(user.roles))
         workspace = user.workspace

@@ -412,6 +412,22 @@ signup_redemption = sa.Table(
     sa.Index("idx_signup_redemption_code", "code_id"),
 )
 
+# Workspaces made by open signup (SEM-123): one row per person, so a person signs up once, and
+# the address it came from and when, which is what the daily limits count. Global, like ``person``.
+signup_open = sa.Table(
+    "signup_open",
+    metadata,
+    sa.Column("person_id", sa.Text, primary_key=True),
+    sa.Column("address", sa.Text, nullable=False),
+    sa.Column("granted_workspace", sa.Text, nullable=False),  # not a key: it may be purged
+    _ts("created_at"),
+    sa.ForeignKeyConstraint(
+        ["person_id"], ["person.id"], ondelete="CASCADE", name="fk_signup_open_person"
+    ),
+    sa.Index("idx_signup_open_created", "created_at"),
+    sa.Index("idx_signup_open_address", "address", "created_at"),
+)
+
 # A CLI sign-in waiting for a person's approval in a browser (SEM-118). Global: it exists before
 # anyone has said which workspace it is for. Only a hash of the CLI's secret code is kept, and the
 # token it earns is minted at the poll that collects it, so its secret is never stored.

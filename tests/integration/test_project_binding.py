@@ -207,7 +207,7 @@ EXEMPT = {
     "invitation_preview",
     "accept_invitation", "create_signup_code", "list_signup_codes", "revoke_signup_code",
     "redeem_signup_code", "device_start", "device_preview", "device_decide", "device_poll",
-    "whoami", "logout", "suspended_workspaces_of",
+    "whoami", "logout", "suspended_workspaces_of", "signup_open",
 }  # fmt: skip
 
 
