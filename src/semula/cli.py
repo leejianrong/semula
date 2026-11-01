@@ -1057,6 +1057,77 @@ def _logout(args: argparse.Namespace) -> int:
     return _ok(args, {"signed_out": True, "url": url}, f"Signed out of {url}{note}.")
 
 
+def _mcp_config(args: argparse.Namespace) -> int:
+    """The line that connects an agent client to this server, for the login ``semula login``
+    stored. The default runs ``semula mcp`` (the stdio proxy), which reads the stored token
+    itself, so the token is in no command, config file or process list."""
+    import shlex
+    import shutil
+    import subprocess
+
+    client = args.install or args.client
+    if args.http and (client != "claude" or args.install):
+        print(
+            "error: --http prints the Claude Code line only, and cannot be installed (it needs "
+            "the token in the environment).",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    if not _key_for(args):
+        print(
+            f"error: not signed in to {args.url.rstrip('/')}. Run `semula login` first.",
+            file=sys.stderr,
+        )
+        return EXIT_AUTH
+    who = _call(args, "GET", "/api/v1/whoami")  # the server accepts the token, or say so now
+    if who.status_code != 200:
+        return _fail(args, who)
+    me = who.json()
+    url = args.url.rstrip("/")
+    proxy = ["semula", "--url", url, "mcp"]
+    out: dict[str, Any] = {
+        "client": client,
+        "url": url,
+        "workspace": me.get("workspace_id"),
+        "project": me.get("project"),
+        "scope": me.get("scope"),
+    }
+    if client == "json":
+        out["config"] = {"mcpServers": {"semula": {"command": proxy[0], "args": proxy[1:]}}}
+        return _ok(args, out, json.dumps(out["config"], indent=2))
+    if args.http:
+        header = "Authorization: Bearer $SEMULA_API_KEY"
+        out["command"] = [
+            "claude", "mcp", "add", "--transport", "http", "semula", f"{url}/mcp/",
+            "--header", header,
+        ]  # fmt: skip
+        line = (
+            f"claude mcp add --transport http semula {shlex.quote(url + '/mcp/')} "
+            f'--header "{header}"'
+        )
+        return _ok(args, out, f"{line}\n(put a token with record scope in SEMULA_API_KEY first)")
+    command = [client, "mcp", "add", "semula", "--", *proxy]
+    out["command"] = command
+    if args.install:
+        if shutil.which(client) is None:
+            print(
+                f"error: `{client}` not found on PATH. Print the command instead.", file=sys.stderr
+            )
+            return EXIT_USAGE
+        if subprocess.run(command, check=False).returncode != 0:  # noqa: S603
+            print(f"error: `{client} mcp add` failed.", file=sys.stderr)
+            return EXIT_ERROR
+        out["installed"] = True
+        return _ok(args, out, f"Added the semula MCP server to {client}.")
+    where = me.get("project") or "all projects"
+    return _ok(
+        args,
+        out,
+        f"{shlex.join(command)}\n# {me.get('scope')} access to {where} in workspace "
+        f"{me.get('workspace_id')}; the token stays in {credentials.path()}",
+    )
+
+
 def _mcp(args: argparse.Namespace) -> int:
     try:
         from .mcp_server import run_stdio_proxy
@@ -1107,6 +1178,21 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default=None)
     serve.add_argument("--port", type=int, default=None)
 
+    mcp_config = add(
+        sub, "mcp-config", _mcp_config, "Print (or install) the line that connects an agent to MCP"
+    )
+    mcp_config.add_argument(
+        "--client", choices=("claude", "codex", "json"), default="claude",
+        help="whose line to print; json prints an mcpServers block",
+    )  # fmt: skip
+    mcp_config.add_argument(
+        "--install", choices=("claude", "codex"), default=None,
+        help="run the client's own `mcp add` instead of printing it",
+    )  # fmt: skip
+    mcp_config.add_argument(
+        "--http", action="store_true",
+        help="print the plain HTTP form that reads $SEMULA_API_KEY (Claude Code only)",
+    )  # fmt: skip
     add(sub, "mcp", _mcp, "Run an MCP server on stdio that talks to --url")
 
     pending = add(sub, "pending", _pending, "List parked requests waiting for an answer")
