@@ -12,6 +12,8 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 - `deploy/droplet/deploy.sh` and `.github/workflows/deploy.yml`: a release deploys to the droplet after you approve the `production` environment, over an SSH key locked to the script, and puts the previous version back if the new one is not healthy. *Actions > Deploy* redeploys or rolls back any released version.
 
+## [0.5.0] - 2026-11-02
+
 ### Fixed
 
 - The live log was 7 px wider than a phone; its five stats now sit in two rows. On the log, pending, review and entries screens a row can now be chosen with the keyboard (arrow keys, then Enter), and the pending answer box says that Ctrl-S sends and Ctrl-M then Tab leaves it.
