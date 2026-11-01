@@ -293,7 +293,7 @@ Postgres is what hosting is built for (above). SQLite also works, and is the che
 
 - **One app process.** SQLite has one writer, and the event bus that wakes a held call lives in the process, so a second replica would not hear the first. The writers wait their turn (a five second timeout) rather than fail; the droplet smoke test makes 40 writes at once on this variant and none fails.
 - **No row-level-security backstop.** Tenant isolation is the service's own workspace filter on every query, which the tenant-isolation tests cover for every method. Postgres adds the database's policy behind it.
-- **The backups are yours.** The file in the `data` volume is the only copy.
+- **The backups are yours.** Nothing backs up the database until you add the backup service: see [Automatic backups](upgrade-and-backup.md#automatic-backups-sqlite-or-postgres).
 - **Moving later.** Per-project [export and import](../reference/cli.md) moves entries only. `semula admin copy-to` moves the whole deployment (people, sign-ins, tokens, the audit log and all) into an empty Postgres database; the steps are in [Moving from SQLite to Postgres](#moving-from-sqlite-to-postgres).
 
 ## Postgres and roles

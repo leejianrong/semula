@@ -1,0 +1,56 @@
+# Nightly backups of the Postgres database in compose.yaml. Add it with a second -f:
+#
+#   docker compose -f compose.yaml -f backup/compose.postgres.yaml up -d --wait
+#
+# It dumps as the owner role: the app's role is held back by row-level security and would see
+# no rows. The dumps stay in the `backups` volume and, with the SEMULA_BACKUP_S3_* settings in
+# .env, go to a bucket too. See "Backups" in docs/guide/upgrade-and-backup.md.
+services:
+  backup:
+    build:
+      context: ../..
+      dockerfile: deploy/droplet/backup/Dockerfile
+    image: semula-backup:local
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    environment:
+      SEMULA_DATABASE_URL: postgresql://semula_owner:${POSTGRES_OWNER_PASSWORD:?set POSTGRES_OWNER_PASSWORD in .env}@db:5432/semula
+      SEMULA_BACKUP_DIR: /backups
+      SEMULA_BACKUP_KEEP_DAYS: ${SEMULA_BACKUP_KEEP_DAYS:-14}
+      SEMULA_BACKUP_PASSPHRASE: ${SEMULA_BACKUP_PASSPHRASE:-}
+      SEMULA_BACKUP_S3_ENDPOINT: ${SEMULA_BACKUP_S3_ENDPOINT:-}
+      SEMULA_BACKUP_S3_REGION: ${SEMULA_BACKUP_S3_REGION:-}
+      SEMULA_BACKUP_S3_BUCKET: ${SEMULA_BACKUP_S3_BUCKET:-}
+      SEMULA_BACKUP_S3_PREFIX: ${SEMULA_BACKUP_S3_PREFIX:-semula/}
+      SEMULA_BACKUP_S3_ACCESS_KEY: ${SEMULA_BACKUP_S3_ACCESS_KEY:-}
+      SEMULA_BACKUP_S3_SECRET_KEY: ${SEMULA_BACKUP_S3_SECRET_KEY:-}
+      SEMULA_BACKUP_PING_URL: ${SEMULA_BACKUP_PING_URL:-}
+    volumes:
+      - backups:/backups
+    # a backup now, then one a day at 02:30 UTC (a failed one is retried in five minutes)
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          if semula-backup backup; then
+            now=$$(date +%s); next=$$(( now / 86400 * 86400 + 9000 ))
+            [ "$$next" -le "$$now" ] && next=$$(( next + 86400 ))
+            sleep $$(( next - now ))
+          else
+            sleep 300  # a failed backup is tried again soon, not tomorrow
+          fi
+        done
+    healthcheck: # unhealthy when the newest backup is over 30 hours old
+      test: ["CMD", "semula-backup", "check", "--max-hours", "30"]
+      interval: 10m
+      timeout: 30s
+      retries: 1
+      start_period: 10m
+    depends_on:
+      db: {condition: service_healthy}
+    mem_limit: 128m
+
+volumes:
+  backups:
