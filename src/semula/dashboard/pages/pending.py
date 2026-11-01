@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 
 HINT = (
     "Plain text is sent as the reply. To send a tool call or a stream, write JSON that starts "
-    'with `{`, for example `{"chunks": ["Hel", "lo"]}`.'
+    'with `{`, for example `{"chunks": ["Hel", "lo"]}`. '
+    "With the keyboard: Ctrl-S sends, and Ctrl-M then Tab leaves the box (Tab indents in it)."
 )
 
 
@@ -152,6 +153,7 @@ def pending_page(tab: Tab) -> indah.Component:
         rows=shown,
         key="id",
         selected=picked,
+        keyboard=True,  # arrows move, Enter selects: a row is not a link, so Tab skips it
         height="16rem",
         density="compact",
         label="Parked calls",
@@ -176,6 +178,7 @@ def pending_page(tab: Tab) -> indah.Component:
                             height="10rem",
                             label="Answer",
                             placeholder="What the real model would say",
+                            on_save=send,
                         ),
                         indah.Text(
                             lambda: error.value, size="body"

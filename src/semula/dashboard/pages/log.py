@@ -169,6 +169,7 @@ def log_page(tab: Tab) -> indah.Component:
         rows=shown,
         key="id",
         selected=picked,
+        keyboard=True,  # arrows move, Enter selects: a row is not a link, so Tab skips it
         height="26rem",
         label="Calls",
         follow=True,
@@ -199,11 +200,17 @@ def log_page(tab: Tab) -> indah.Component:
                 ],
                 align="center",
             ),
+            # two rows, not one: five stats in a single Row shrink side by side and push the page
+            # wider than a phone (a Row's children do not wrap, whatever its ``wrap`` says)
             indah.Row(
                 children=[
                     indah.Stat(stat_rate, label="Hit rate"),
                     indah.Stat(stat_median, label="Median"),
                     indah.Stat(stat_parked, label="Parked"),
+                ]
+            ),
+            indah.Row(
+                children=[
                     indah.Stat(stat_forwarded, label="Forwarded"),
                     indah.Stat(stat_upstream, label="Upstream calls"),
                 ]
