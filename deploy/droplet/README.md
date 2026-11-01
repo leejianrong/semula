@@ -20,7 +20,7 @@ row-level security applies to it. Migrations, the purge and `admin` connect as `
 Everything else (Caddy, headers, the trusted proxy, the purge, `admin`) is the same. Start the SQLite
 variant with `docker compose -f compose.sqlite.yaml up -d --wait`, and use the same `-f` on every
 later command. To move to Postgres once you outgrow it, see "SQLite or Postgres" in
-`docs/guide/hosted.md`; until the copy tool exists (SEM-127) that means starting a new database.
+`docs/guide/hosted.md`; `semula admin copy-to` carries everything over (people, tokens, data).
 
 ## First start
 
