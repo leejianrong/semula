@@ -244,3 +244,12 @@ jobs:
             echo "digest: ${{ steps.build.outputs.digest }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: [verify, release, image]
+    if: needs.verify.outputs.publish == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      version: ${{ needs.verify.outputs.version }}

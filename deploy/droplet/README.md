@@ -44,6 +44,28 @@ docker compose run --rm admin token-create --workspace acme --name ci --scope re
 Upgrade: set `SEMULA_IMAGE` to the new tag, then `docker compose pull && docker compose up -d --wait`
 (the migrate step runs first). Logs: `docker compose logs -f semula caddy`.
 
+## Deploying from GitHub Actions
+
+A release deploys itself. After the Release run publishes the image, its `deploy` job waits for you to
+approve the `production` environment, then runs `deploy/droplet/deploy.sh X.Y.Z` on the droplet over SSH.
+The script checks out that tag, points `SEMULA_IMAGE` at `ghcr.io/leejianrong/semula:X.Y.Z-hosted`,
+runs `docker compose up -d --wait` and waits for `/health`. If the new version does not come up healthy
+it puts the previous one back and the job fails. To redeploy or roll back, run *Actions > Deploy* with a
+released version.
+
+Setup, once:
+
+- On the droplet, a `deploy` user in the `docker` group owns the checkout (`/opt/semula`). Its
+  `authorized_keys` line is locked to the script:
+  `command="/opt/semula/deploy/droplet/deploy.sh",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-ed25519 ...`.
+  The key can start a deploy of a plain `X.Y.Z` and nothing else. The group still gives that user
+  Docker, which is root-equivalent, so the key lives only in the `production` environment secrets.
+- `.env` has `COMPOSE_FILE=compose.sqlite.yaml` (or `compose.yaml`) so every compose command in the
+  script uses your variant.
+- The `production` environment (Settings > Environments) has a required reviewer, and the secrets
+  `DEPLOY_HOST`, `DEPLOY_HOST_KEY` (the droplet's `ssh-ed25519` host key, pinned: the job refuses any
+  other host) and `DEPLOY_SSH_KEY`, and the variable `DEPLOY_DOMAIN`.
+
 ## Before it is public
 
 - **The image has to include `SEMULA_TRUSTED_PROXIES`** (after 0.4.0). An older image ignores it, and

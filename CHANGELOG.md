@@ -20,6 +20,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- `deploy/droplet/deploy.sh` and `.github/workflows/deploy.yml`: a release deploys to the droplet after you approve the `production` environment, over an SSH key locked to the script, and puts the previous version back if the new one is not healthy. *Actions > Deploy* redeploys or rolls back any released version.
 - `scripts/backup.py` backs up and restores the database, SQLite or Postgres, by `SEMULA_DATABASE_URL`: SQLite through its online backup API with an integrity check (a copied file would miss the write-ahead log), Postgres through `pg_dump`. Optional AES-256 encryption, upload to any S3-compatible bucket (a DigitalOcean Space), 14-day retention, an alert ping and a `check` for a missed backup. `deploy/droplet/backup` runs it daily beside either compose file, and `scripts/smoke_backup.sh` is the restore drill.
 - `semula admin copy-to --database-url ...`: copy a whole SQLite deployment (every table, with ids and token hashes unchanged, so tokens and sign-ins keep working) into an empty Postgres database in one transaction. It refuses a non-empty target, checks every table's row count, and rebuilds the search index and quota counters. Steps in the hosted guide.
 - `deploy/droplet/compose.sqlite.yaml`: the hosted stack on SQLite for a 1 GB droplet (no Postgres container, one app process, a `data` volume). `make droplet-smoke VARIANT=sqlite` and the CI `droplet` job check both variants, including 40 simultaneous writes and a restart.
