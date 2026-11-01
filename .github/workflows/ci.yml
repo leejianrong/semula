@@ -149,19 +149,19 @@ jobs:
       # the restore drill: back up, lose the database volume, restore from the file, serve it
       - run: scripts/smoke_backup.sh semula:droplet-ci ${{ matrix.variant }}
 
-  # Stored text must never run in another person's dashboard: the real dashboard in Chromium and
-  # Firefox (tests/browser).
+  # Stored text must never run in another person's dashboard, and the dashboard must work on a
+  # phone and by keyboard: the real dashboard in Chromium, Firefox and WebKit (tests/browser).
   browser:
     runs-on: ubuntu-latest
     env:
-      SEMULA_BROWSERS: chromium,firefox
+      SEMULA_BROWSERS: chromium,firefox,webkit
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.0
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev
-      - run: uv run --with playwright==1.64.1 playwright install --with-deps chromium firefox
+      - run: uv run --with playwright==1.64.1 playwright install --with-deps chromium firefox webkit
       - run: uv run --with playwright==1.64.1 pytest -m browser -q
 
   # Heavy layer: the real app over loopback driven by the OpenAI SDK, network blocked.

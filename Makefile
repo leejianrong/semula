@@ -54,8 +54,8 @@ droplet-smoke: ## Bring up deploy/droplet (Caddy, app, Postgres or, with VARIANT
 	scripts/smoke_droplet.sh $(or $(IMAGE),semula:hosted-check) $(or $(VARIANT),postgres)
 
 PLAYWRIGHT ?= playwright==1.64.1
-test-browser: ## Real browsers against the real dashboard: stored text never runs. First: uv run --with $(PLAYWRIGHT) playwright install chromium firefox
-	SEMULA_BROWSERS=$(or $(BROWSERS),chromium,firefox) uv run --extra dev --with $(PLAYWRIGHT) pytest -m browser -q
+test-browser: ## Real browsers against the real dashboard: stored text never runs, it fits a phone, the keyboard works (an engine that cannot start here is skipped). First: uv run --with $(PLAYWRIGHT) playwright install chromium firefox webkit
+	SEMULA_BROWSERS=$(or $(BROWSERS),chromium,firefox,webkit) uv run --extra dev --with $(PLAYWRIGHT) pytest -m browser -q
 
 release-check: ## Would TAG (like v0.1.0) release? Tag, pyproject, lockfile and CHANGELOG must agree
 	python3 scripts/release.py check $(TAG)

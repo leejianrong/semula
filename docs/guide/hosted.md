@@ -294,15 +294,36 @@ Postgres is what hosting is built for (above). SQLite also works, and is the che
 - **One app process.** SQLite has one writer, and the event bus that wakes a held call lives in the process, so a second replica would not hear the first. The writers wait their turn (a five second timeout) rather than fail; the droplet smoke test makes 40 writes at once on this variant and none fails.
 - **No row-level-security backstop.** Tenant isolation is the service's own workspace filter on every query, which the tenant-isolation tests cover for every method. Postgres adds the database's policy behind it.
 - **The backups are yours.** Nothing backs up the database until you add the backup service: see [Automatic backups](upgrade-and-backup.md#automatic-backups-sqlite-or-postgres).
-- **Moving later.** Per-project [export and import](../reference/cli.md) moves entries only. People, sign-ins, tokens and the audit log do not move with it, until the copy tool lands (SEM-127). Until then, moving to Postgres means a new database.
+- **Moving later.** Per-project [export and import](../reference/cli.md) moves entries only. `semula admin copy-to` moves the whole deployment (people, sign-ins, tokens, the audit log and all) into an empty Postgres database; the steps are in [Moving from SQLite to Postgres](#moving-from-sqlite-to-postgres).
 
 ## Postgres and roles
 
 Hosting wants Postgres. Every tenant table has a [row-level-security](../reference/configuration.md) policy on `workspace_id`, so a query that forgot its filter sees nothing of another workspace's. The role that owns the tables, and any superuser, bypasses it. Migrate as the owner, then run semula as a role that is neither.
 
+## Moving from SQLite to Postgres
+
+A server can start on a SQLite file and move to Postgres later with everything in it: people, sign-ins, tokens, invitations, invite and device codes, suspended workspaces, projects, entries and their history, the call log, the audit log and the quota counters. Per-project [export and import](../reference/cli.md) moves entries only; this moves the deployment.
+
+```bash
+semula admin copy-to --database-url postgresql://semula_owner:...@db:5432/semula
+```
+
+Cutover, in order:
+
+1. **Make an empty Postgres database** and, if you use the droplet stack, its `semula` app role (see [Postgres and roles](#postgres-and-roles)). A database that has only been migrated counts as empty; one with anything in it is refused, and so is copying a database onto itself.
+2. **Stop the server** that uses the SQLite file. A copy of a database that is being written is not a snapshot. Take a backup of the file first (copy it while stopped).
+3. **Run the copy where the SQLite file is**, with `SEMULA_DATABASE_URL` (or `SEMULA_DATA_DIR`) pointing at it, as the role that owns the Postgres tables, the one that migrates, not the role the server runs as: row-level security applies to that role and would refuse the rows, so the command says so and stops. To keep the password out of the process list, put the target in `SEMULA_COPY_TO_URL` and leave `--database-url` off.
+4. **Read the counts it prints.** It migrates the target, copies every table in one transaction with ids, token hashes and timestamps unchanged, then checks each table's row count against the source and the target. A mismatch, or any error, rolls the whole copy back and leaves the target as it was, so you can fix the cause and run it again.
+5. **Point the server at Postgres**: set `SEMULA_DATABASE_URL` to the app role's address and start it. Existing tokens and sign-in cookies work unchanged, and so do people's workspaces and roles. The search index (a Postgres server scans instead of using SQLite's FTS5) and each workspace's quota counters are rebuilt by the copy.
+6. **Keep the SQLite file** until you are sure. Nothing is written to it, and moving back means starting from it again: copying from Postgres to SQLite is not supported.
+
+The list of tables is read from the schema, so a table added in a later release is copied too. Rows are not rewritten, so a prompt or answer that contains a NUL character (which Postgres cannot store) makes the copy fail loudly rather than lose it.
+
 ## The dashboard
 
 With a sign-in provider configured, `/ui` is the same dashboard as locally, behind sign-in. A page load without a sign-in goes to `/auth/login`; the dashboard's own calls get a 401. It shows one workspace, the one the person is working in, and what it offers follows their role. A **viewer** can read the log, entries, review and pending. An **editor** also answers, edits, approves and turns recording on. Controls a role may not use are not sent to the browser at all. The role is read again on every action, so an admin who demotes or removes someone is obeyed at that person's next click. A person who belongs to no workspace sees only a page saying so. A person who belongs to several has a *Workspace* menu above the project switcher: picking one is remembered by their sign-in and ends the open tab. A reload opens the dashboard in the new workspace with the role they hold there. Picking one they do not belong to is refused.
+
+The dashboard fits a phone (the sidebar stacks above the page) and works without a mouse: in a table, Tab to it, use the arrow keys and press Enter to pick a row. Inside an answer or prompt box Tab indents, so press Ctrl-M and then Tab to leave it; on the Pending screen Ctrl-S sends the answer.
 
 An **admin** also gets a *Workspace* section in the sidebar:
 

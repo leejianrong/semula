@@ -55,3 +55,15 @@ Checked while building the sign-in gate, the per-role shell and the four admin s
 - **An ephemeral value is sent as an ordinary patch** (`props.value` of the node), so a test, or a person reading the wire, sees it; that is expected ("to the open tab only") and worth saying in the docs, since "never in a snapshot" is not "never on the wire".
 - **A plain `Text` is still heading-sized** and `size="body"` is needed on every sentence (see the 0.3 list).
 - **A server cannot reload or redirect a tab.** `ctx.navigate` takes in-app paths only and a `signed_out` message just stops the stream, so switching workspace (a tab is signed for one) ends the tab and asks the person to reload. A `reload` message, or letting a session be re-signed for another workspace, would remove the step.
+
+## Phone width and the keyboard (SEM-124)
+
+Walked on indah 0.11 in Chromium and Firefox (WebKit runs in CI), at 390 px and without a mouse; `tests/browser/test_dashboard_use.py` keeps it that way.
+
+- **A `Row` never wraps.** `.row > * { flex: 1 1 0; min-width: 0 }` makes children shrink side by side whatever `wrap` says, so five `Stat`s pushed the live log 7 px past a phone. semula now uses two rows of stats. A `Row` with a minimum child width, or a `Grid` with `repeat(auto-fit, minmax(...))` (its tracks accept only px, rem, em, %, fr and auto), would fix it for every screen.
+- **A selectable `Table` row is not reachable by Tab** unless `keyboard=True`. semula now sets it on the log, pending, review and entries tables (arrow keys move, Enter selects). It would be a safer default when `selected=` is given.
+- **`CodeEditor` keeps Tab** (it indents), so a keyboard user is stuck in the box until they know Ctrl-M. The pending screen now says so and Ctrl-S sends; the other six editors say nothing. A visible hint in the editor itself, or Escape then Tab leaving it, would cover them all.
+- **Text typed quickly can lose its last characters.** A text box sends its text after a pause in typing and again on blur, as separate requests, and a stale one can land last: through a real browser at typing speed a token named `by keyboard` was made as `by keyboar` or `by keyboa` in about one run in four, even after a pause before Tab, and an answer once arrived empty. A single input event (a paste, or the tests' `insert_text`) is never affected. The test walks the keyboard with Tab and Enter but inserts the text in one event. Applying only the newest value (a sequence number on the event) would fix it; worth reproducing with a fast typist before assuming it is rare.
+- Wide tables (members at 809 px, tokens at 438 px) scroll inside their own container and do not widen the page.
+- Not done: a screen reader, and WebKit on a developer machine (it needs system libraries; the tests skip it there and the CI job requires it).
+

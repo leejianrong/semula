@@ -1,5 +1,6 @@
-"""A real browser (Chromium through Playwright) for what only a browser can show: whether text an
-attacker stored ever runs. Not in the fast layer: own CI job, ``make test-browser``."""
+"""A real browser (Playwright: Chromium, Firefox, WebKit) for what only a browser can show: whether
+text an attacker stored ever runs, and whether the dashboard can be used on a phone and with the
+keyboard alone. Not in the fast layer: own CI job, ``make test-browser``."""
 
 from __future__ import annotations
 
@@ -35,19 +36,27 @@ def engine(request: pytest.FixtureRequest) -> Iterator[Any]:
             args = [
                 "--disable-features=LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests"
             ]
-        browser = kind.launch(args=args)
+        try:
+            browser = kind.launch(args=args)
+        except Exception as exc:
+            if os.environ.get("CI"):
+                raise  # in CI every engine asked for must start
+            # WebKit needs system libraries that a laptop often lacks; say so rather than fail
+            pytest.skip(f"{request.param} cannot start here: {str(exc).splitlines()[0]}")
         yield browser
         browser.close()
 
 
 @pytest.fixture
 def new_page(engine: Any) -> Iterator[Any]:
-    """``new_page(cookies, url)`` -> a page with the cookies set, recording dialogs and CSP
-    violations. Closed after the test."""
+    """``new_page(url, cookies, viewport)`` -> a page with the cookies set, recording dialogs and
+    CSP violations. Closed after the test."""
     contexts: list[Any] = []
 
-    def make(url: str, cookies: dict[str, str] | None = None) -> Any:
-        context = engine.new_context(viewport={"width": 1440, "height": 900})
+    def make(
+        url: str, cookies: dict[str, str] | None = None, viewport: tuple[int, int] = (1440, 900)
+    ) -> Any:
+        context = engine.new_context(viewport={"width": viewport[0], "height": viewport[1]})
         contexts.append(context)
         if cookies:
             context.add_cookies([{"name": k, "value": v, "url": url} for k, v in cookies.items()])

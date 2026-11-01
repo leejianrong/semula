@@ -98,3 +98,8 @@ The dashboard's policy is `default-src 'none'`, scripts by nonce or same origin 
 ### What would move the dashboard off indah
 
 Move screen by screen to Svelte + Vite (as above) if any of these happens: a stored-text finding turns out to be in indah's renderer (not in what semula passes to it) and is not fixed within two weeks of a report; the policy cannot be tightened where a customer or an audit requires it (the style attribute and the tile host); or WebKit, phone or keyboard testing finds problems indah cannot fix. Until then the cost of a second toolchain, a second client and a second test style (ADR-0012) is higher than what was found.
+
+### Follow-up: WebKit, a phone, the keyboard (SEM-124)
+
+`tests/browser` now runs in WebKit too (the CI job installs it; locally an engine that cannot start is skipped, in CI it fails). At 390 px every screen fits and a parked call can be answered and a token made, with the mouse and with the keyboard alone. It found the live log 7 px too wide on a phone, table rows that Tab could not reach, and an answer box that holds Tab; the first two are fixed, the third is documented on the screen. The rest is in `docs/INDAH-FINDINGS.md`. A screen reader was not tried.
+

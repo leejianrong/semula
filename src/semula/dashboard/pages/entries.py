@@ -188,6 +188,7 @@ def entries_page(tab: Tab) -> indah.Component:
         rows=shown,
         key="id",
         selected=picked,
+        keyboard=True,  # arrows move, Enter selects: a row is not a link, so Tab skips it
         height="28rem",
         density="compact",
         label="Entries",
