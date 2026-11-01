@@ -118,6 +118,7 @@ def review_page(tab: Tab) -> indah.Component:
         rows=shown,
         key="id",
         selected=picked,
+        keyboard=True,  # arrows move, Enter selects: a row is not a link, so Tab skips it
         height="14rem",
         density="compact",
         label="Review queue",

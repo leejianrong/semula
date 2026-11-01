@@ -275,8 +275,14 @@ def test_a_screen_never_runs_stored_text(
     if screen in ("pending", "entries", "review"):
         select_first_row(page)
     if screen == "playground":
-        page.locator(".cm-content").first.click()
+        # both editors must be built before the first is clicked: WebKit builds them later, and
+        # a click while the layout is still moving put the text in the wrong box
+        editors = page.locator(".cm-content")
+        editors.nth(1).wait_for(timeout=30000)
+        page.wait_for_timeout(500)
+        editors.first.click()
         page.keyboard.insert_text(payload("entryprompt"))
+        editors.first.filter(has_text="XSSentryprompt").wait_for()  # in the box we meant
         page.wait_for_timeout(500)
         page.get_by_role("button", name="Test it").click()
     settle(page, seeded.markers.get(screen, []))

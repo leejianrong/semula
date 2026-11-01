@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Fixed
+
+- The live log was 7 px wider than a phone; its five stats now sit in two rows. On the log, pending, review and entries screens a row can now be chosen with the keyboard (arrow keys, then Enter), and the pending answer box says that Ctrl-S sends and Ctrl-M then Tab leaves it.
+
 ### Changed
 
 - The dashboard runs on indah 0.11 (was 0.4). A tab's session id now travels in a per-tab cookie instead of the stream URL, so it stays out of access and proxy logs; a malformed route in the address no longer errors; the page's image policy lists no map host (semula has no map).
