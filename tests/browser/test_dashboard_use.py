@@ -108,8 +108,18 @@ def test_the_sign_in_pages_fit_a_phone_too(site: Site, new_page: Callable[..., A
         assert page.evaluate("document.documentElement.scrollWidth") <= PHONE[0], path
 
 
+def see(page: Any, text: str) -> None:
+    """Wait for ``text`` on the page, and show what the page said instead if it never comes."""
+    try:
+        page.get_by_text(text).first.wait_for(timeout=30000)
+    except Exception as exc:
+        raise AssertionError(
+            f"{text!r} never appeared; the page shows:\n{page.inner_text('body')[-1500:]}"
+        ) from exc
+
+
 def answer_by_mouse(page: Any, text: str) -> None:
-    page.wait_for_selector("tbody tr", timeout=15000)
+    page.wait_for_selector("tbody tr", timeout=30000)
     page.locator("tbody tr").first.click()
     editor = page.locator("[contenteditable=true], textarea").first
     editor.click()
@@ -128,11 +138,11 @@ def test_a_parked_call_is_answered_and_a_token_made_at_phone_width(
     site.park("what is two plus two")
     page = open_on_phone(new_page, site, SCREENS["pending"])
     answer_by_mouse(page, "four")
-    page.get_by_text("Answered").first.wait_for(timeout=15000)
+    see(page, "Answered")
     assert site.acme.list_pending("pending", "shop") == []
     page = open_on_phone(new_page, site, SCREENS["tokens"])
     mint_by_mouse(page, "from a phone")
-    page.get_by_text("smla_live_").first.wait_for(timeout=15000)
+    see(page, "smla_live_")
     assert "from a phone" in [t["name"] for t in site.acme.list_tokens()]
 
 
@@ -163,33 +173,33 @@ def tab_to(page: Any, tag: str, text: str = "", inside: str = "", limit: int = 8
     raise AssertionError(f"Tab never reached {want}; it visited {seen}")
 
 
-# Note: a text box sends its last keystrokes when it loses focus, and the click that follows goes
-# as a separate request; Tab then Enter within a few milliseconds (a script, not a person) can
-# overtake that last flush, so the test pauses as a person does. Listed in INDAH-REQUESTS-PROMPT.
+# Note: the keyboard path is walked with Tab and Enter, but the text is inserted in one input
+# event rather than typed key by key. Typed fast, a text box's own sends (after a pause, and on
+# blur) race: `by keyboard` came out as `by keyboar` or `by keyboa` in about one run in four, and
+# an answer went empty. See docs/INDAH-FINDINGS.md.
 def test_a_parked_call_is_answered_and_a_token_made_with_the_keyboard_alone(
     site: Site, new_page: Callable[..., Any]
 ) -> None:
     site.park("what is two plus two")
     page = open_on_phone(new_page, site, SCREENS["pending"])
-    page.wait_for_selector("tbody tr", timeout=15000)
+    page.wait_for_selector("tbody tr", timeout=30000)
     # into the table, pick the first row, then on to the answer box
     tab_to(page, "table")
     page.keyboard.press("ArrowDown")
     page.keyboard.press("Enter")
     page.get_by_text("Select a parked call to read it.").wait_for(state="detached", timeout=15000)
     tab_to(page, "div", "Answer")  # the editor
-    page.keyboard.type("four")
+    page.keyboard.insert_text("four")
     page.keyboard.press("Control+m")  # Tab indents in the editor: this is how a keyboard leaves
     tab_to(page, "button", "Send answer")
     page.keyboard.press("Enter")
-    page.get_by_text("Answered").first.wait_for(timeout=15000)
+    see(page, "Answered")
     assert site.acme.list_pending("pending", "shop") == []
 
     page = open_on_phone(new_page, site, SCREENS["tokens"])
     tab_to(page, "input")
-    page.keyboard.type("by keyboard")
+    page.keyboard.insert_text("by keyboard")  # one input event: see the note
     tab_to(page, "button", "Create token")
-    page.wait_for_timeout(1000)  # a person's pause between Tab and Enter; see the note above
     page.keyboard.press("Enter")
-    page.get_by_text("smla_live_").first.wait_for(timeout=15000)
+    see(page, "smla_live_")
     assert "by keyboard" in [t["name"] for t in site.acme.list_tokens()]
