@@ -14,6 +14,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Added
 
+- `semula admin copy-to --database-url ...`: copy a whole SQLite deployment (every table, with ids and token hashes unchanged, so tokens and sign-ins keep working) into an empty Postgres database in one transaction. It refuses a non-empty target, checks every table's row count, and rebuilds the search index and quota counters. Steps in the hosted guide.
 - Open signup: `SEMULA_SIGNUP=open` lets any signed-in person (the provider verified their email) make a workspace of their own, once each, within `SEMULA_SIGNUP_PER_ADDRESS` (3) and `SEMULA_SIGNUP_PER_DAY` (100) a day, counted in the database. The default is still invite codes only, and invite codes keep working. A person with a suspended workspace cannot make a new one.
 - `semula admin workspace-suspend` and `workspace-resume`: refuse a workspace's tokens and sign-ins with a clear `workspace_suspended` answer on every surface while its data stays, audited. `/terms` serves a terms and acceptable-use page when hosted, and `SEMULA_ABUSE_CONTACT` puts an abuse address on it and on the sign-in page.
 - `semula login`, `whoami` and `logout`: sign the CLI in to a hosted server by approving a short code in a browser (a device flow). The token is bound to the workspace the approving person is in, never more than their role allows, optionally to one project, and is stored mode 0600; after login every command uses it without flags. Codes last ten minutes and work once.

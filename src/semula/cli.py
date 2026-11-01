@@ -740,6 +740,41 @@ def _admin_migrate(args: argparse.Namespace) -> int:
     return _ok(args, {"revision": db.revision()}, f"the database is at revision {head_revision()}")
 
 
+def _admin_copy_to(args: argparse.Namespace) -> int:
+    """Copy this server's whole database into an empty one (SQLite into Postgres, say)."""
+    try:
+        from . import copydb
+        from .config import Settings
+    except ImportError:
+        return _left_out("admin", SERVER_HINT)
+    target = args.database_url or os.environ.get("SEMULA_COPY_TO_URL")
+    if not target:
+        print(
+            "error: say where to copy to: --database-url, or SEMULA_COPY_TO_URL in the "
+            "environment (which keeps the password out of the process list).",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    settings = Settings.from_env()
+    try:
+        done = copydb.copy_database(
+            settings.resolved_database_url,
+            target,
+            settings=settings,
+            log=None if args.json else lambda line: print(f"  {line}", file=sys.stderr),
+        )
+    except copydb.CopyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_REJECTED
+    total = sum(done.counts.values())
+    return _ok(
+        args,
+        {"tables": done.counts, "rows": total, "workspaces": done.workspaces},
+        f"copied {total} rows in {len(done.counts)} tables ({done.workspaces} workspaces); search "
+        "indexes and quota counters rebuilt. Start the server on the new database.",
+    )
+
+
 def _admin_workspace(args: argparse.Namespace) -> int:
     try:
         service = _admin_service(args, None)
@@ -1261,6 +1296,17 @@ def build_parser() -> argparse.ArgumentParser:
     admin = sub.add_parser("admin", help="Operator tasks on the server's own database (hosting)")
     asub = admin.add_subparsers(dest="admin_command", required=True)
     add(asub, "migrate", _admin_migrate, "Bring the database up to date (run once before replicas)")
+    copy_to = add(
+        asub,
+        "copy-to",
+        _admin_copy_to,
+        "Copy this database into an empty one (SQLite into Postgres)",
+    )
+    copy_to.add_argument(
+        "--database-url",
+        default=None,
+        help="the new database (else SEMULA_COPY_TO_URL, which keeps the password out of argv)",
+    )
     wscreate = add(asub, "workspace-create", _admin_workspace, "Create a workspace")
     wscreate.add_argument("id", help="a slug: lowercase letters, digits, hyphens")
     wscreate.add_argument("--name", default=None)
