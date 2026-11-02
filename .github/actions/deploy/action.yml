@@ -1,0 +1,56 @@
+name: Deploy to the droplet
+description: Run deploy/droplet/deploy.sh X.Y.Z on the droplet over its locked SSH key, then check the site.
+
+inputs:
+  version:
+    description: Released version (X.Y.Z)
+    required: true
+  host:
+    description: The droplet's address
+    required: true
+  host-key:
+    description: The droplet's ssh-ed25519 host key ("ssh-ed25519 AAAA...", pinned; any other host is refused)
+    required: true
+  ssh-key:
+    description: The private key of the deploy user
+    required: true
+  domain:
+    description: The public name to health-check
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check the settings
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        HOST: ${{ inputs.host }}
+        HOST_KEY: ${{ inputs.host-key }}
+        SSH_KEY: ${{ inputs.ssh-key }}
+        DOMAIN: ${{ inputs.domain }}
+      run: |
+        [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must be X.Y.Z" >&2; exit 2; }
+        for name in HOST HOST_KEY SSH_KEY DOMAIN; do
+          [ -n "${!name}" ] || { echo "$name is empty: set it on the production environment" >&2; exit 2; }
+        done
+    - name: Deploy
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        HOST: ${{ inputs.host }}
+        HOST_KEY: ${{ inputs.host-key }}
+        SSH_KEY: ${{ inputs.ssh-key }}
+      run: |
+        install -d -m 700 ~/.ssh
+        printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        printf '%s %s\n' "$HOST" "$HOST_KEY" > ~/.ssh/known_hosts
+        ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+          -o BatchMode=yes "deploy@${HOST}" "$VERSION"
+        rm -f ~/.ssh/deploy_key
+    - name: Check the site from here
+      shell: bash
+      env:
+        DOMAIN: ${{ inputs.domain }}
+      run: curl -fsS --retry 5 --retry-delay 5 "https://${DOMAIN}/health"
