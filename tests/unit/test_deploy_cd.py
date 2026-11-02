@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "deploy" / "droplet" / "deploy.sh"
 DEPLOY = (ROOT / ".github" / "workflows" / "deploy.yml").read_text()
 RELEASE = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+ACTION = (ROOT / ".github" / "actions" / "deploy" / "action.yml").read_text()
 
 
 def run(*args: str, stdin_cmd: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -42,20 +43,39 @@ def test_a_forced_command_cannot_pass_anything_but_the_version() -> None:
     assert result.returncode == 2
 
 
-def test_the_workflow_waits_for_the_production_environment() -> None:
+def test_both_ways_in_wait_for_the_production_environment() -> None:
     assert "environment: production" in DEPLOY
-    assert "workflow_dispatch" in DEPLOY and "workflow_call" in DEPLOY
+    assert "workflow_dispatch" in DEPLOY
+    assert "environment: production" in RELEASE.split("\n  deploy:\n", 1)[1]
 
 
-def test_the_workflow_pins_the_host_key_and_never_trusts_on_first_use() -> None:
-    assert "DEPLOY_HOST_KEY" in DEPLOY
-    assert "StrictHostKeyChecking=yes" in DEPLOY
-    assert "accept-new" not in DEPLOY and "StrictHostKeyChecking=no" not in DEPLOY
-    assert "ssh-keyscan" not in DEPLOY
+def test_the_deploy_is_not_a_reusable_workflow() -> None:
+    # a called workflow cannot see its job's environment secrets: the first run got an empty host
+    assert "workflow_call" not in DEPLOY
+    assert "uses: ./.github/workflows/deploy.yml" not in RELEASE
 
 
-def test_the_key_is_not_printed_and_the_job_cannot_write_to_the_repo() -> None:
-    assert "set -x" not in DEPLOY and 'echo "$DEPLOY_SSH_KEY"' not in DEPLOY
+def test_the_one_action_does_the_ssh_and_both_workflows_use_it() -> None:
+    assert "uses: ./.github/actions/deploy" in DEPLOY
+    assert "uses: ./.github/actions/deploy" in RELEASE.split("\n  deploy:\n", 1)[1]
+
+
+def test_the_action_refuses_empty_settings_before_it_connects() -> None:
+    for name in ("host", "host-key", "ssh-key"):
+        assert f"{name}:" in ACTION
+    assert "is empty" in ACTION
+
+
+def test_the_action_pins_the_host_key_and_never_trusts_on_first_use() -> None:
+    assert "StrictHostKeyChecking=yes" in ACTION
+    for text in (ACTION, DEPLOY):
+        assert "accept-new" not in text and "StrictHostKeyChecking=no" not in text
+        assert "ssh-keyscan" not in text
+
+
+def test_the_key_is_not_printed_and_the_jobs_cannot_write_to_the_repo() -> None:
+    for text in (ACTION, DEPLOY):
+        assert "set -x" not in text and 'echo "$DEPLOY_SSH_KEY"' not in text
     assert "contents: read" in DEPLOY
     assert "contents: write" not in DEPLOY
 
@@ -64,4 +84,3 @@ def test_a_release_deploys_only_after_the_image_exists_and_never_on_a_dry_run() 
     block = RELEASE.split("\n  deploy:\n", 1)[1]
     assert "needs: [verify, release, image]" in block
     assert "needs.verify.outputs.publish == 'true'" in block
-    assert "uses: ./.github/workflows/deploy.yml" in block

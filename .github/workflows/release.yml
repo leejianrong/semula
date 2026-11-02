@@ -248,8 +248,22 @@ jobs:
   deploy:
     needs: [verify, release, image]
     if: needs.verify.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: production # waits for your approval
+    timeout-minutes: 15
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     permissions:
       contents: read
-    uses: ./.github/workflows/deploy.yml
-    with:
-      version: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/deploy
+        with:
+          version: ${{ needs.verify.outputs.version }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          host-key: ${{ secrets.DEPLOY_HOST_KEY }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          domain: ${{ vars.DEPLOY_DOMAIN }}

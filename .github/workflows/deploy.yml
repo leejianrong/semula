@@ -1,15 +1,10 @@
 name: Deploy
 
-# Puts a released version on the droplet. A release calls this after the image is published
-# (release.yml); Actions > Deploy > Run workflow redeploys or rolls back to any released version.
-# Both wait for you to approve the `production` environment.
+# Redeploys, or rolls back to, a released version: Actions > Deploy > Run workflow. (A release
+# deploys itself from release.yml.) It waits for you to approve the `production` environment.
+# This is not a reusable workflow on purpose: a called workflow cannot see its job's
+# environment secrets, so both ways in run the same action from a job of their own.
 on:
-  workflow_call:
-    inputs:
-      version:
-        description: X.Y.Z
-        type: string
-        required: true
   workflow_dispatch:
     inputs:
       version:
@@ -29,24 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 15
-    env:
-      VERSION: ${{ inputs.version }}
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
     steps:
-      - name: Check the version
-        run: |
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must be X.Y.Z" >&2; exit 2; }
-      - name: Connect settings
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          printf '%s %s\n' "$DEPLOY_HOST" "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
-      - name: Deploy
-        run: |
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes "deploy@${DEPLOY_HOST}" "$VERSION"
-      - name: Check the site from here
-        run: curl -fsS --retry 5 --retry-delay 5 "https://${{ vars.DEPLOY_DOMAIN }}/health"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/deploy
+        with:
+          version: ${{ inputs.version }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          host-key: ${{ secrets.DEPLOY_HOST_KEY }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          domain: ${{ vars.DEPLOY_DOMAIN }}
