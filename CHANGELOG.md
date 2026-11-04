@@ -14,6 +14,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ### Fixed
 
+- The droplet compose files hand `SEMULA_ABUSE_CONTACT` and `SEMULA_SIGNUP` to the app. Setting them in `.env` did nothing before, so the sign-in page and terms could not show an abuse address and open signup could not be turned on.
 - `deploy/droplet/deploy.sh` pulls with `--ignore-buildable` and starts with `--build`, so a stack that includes the backup overlay (built from the checkout) deploys instead of failing on a pull.
 
 ## [0.5.0] - 2026-11-02
