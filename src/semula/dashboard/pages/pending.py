@@ -145,7 +145,7 @@ def pending_page(tab: Tab) -> indah.Component:
         lambda: (
             f"**{detail.value['project']}**  ·  {detail.value['id']}"
             if detail.value
-            else "Select a parked call to read it."
+            else "Select a parked call above to read it and answer it."
         )
     )
 
@@ -177,14 +177,18 @@ def pending_page(tab: Tab) -> indah.Component:
                             lint=False,
                             height="10rem",
                             label="Answer",
-                            placeholder="What the real model would say",
+                            placeholder="Select a parked call, then write what the model would say",
                             on_save=send,
                         ),
                         indah.Text(
                             lambda: error.value, size="body"
                         ),  # plain: codes have underscores
                         indah.Text(HINT, markdown=True),
-                        indah.Button("Send answer", on_click=send),
+                        indah.Button(
+                            "Send answer",
+                            on_click=send,
+                            disabled=indah.computed(lambda: picked.value is None),
+                        ),
                     ]
                 ),
             ),

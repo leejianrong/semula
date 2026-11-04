@@ -111,9 +111,10 @@ def review_page(tab: Tab) -> indah.Component:
             f"**{detail.value['project']}**  ·  score {detail.value['score']:.2f}  ·  "
             f"found by the {detail.value['tier']} tier"
             if detail.value
-            else "Select a near miss to compare it."
+            else "Select a near miss above to compare it and decide."
         )
     )
+    nothing_picked = indah.computed(lambda: detail.value is None)
     table = indah.Table(
         rows=shown,
         key="id",
@@ -146,18 +147,25 @@ def review_page(tab: Tab) -> indah.Component:
                     indah.Diff(
                         incoming, recorded, normalise="text", labels=("new prompt", "recorded")
                     ),
-                    indah.Text(CHECK, size="body"),
+                    indah.Text(lambda: CHECK if detail.value else "", size="body"),
                     indah.Card(
                         title="The recorded answer",
-                        children=[indah.Text(lambda: answer.value, size="body")],
+                        children=[
+                            indah.Text(
+                                lambda: answer.value if detail.value else "Nothing selected.",
+                                size="body",
+                            )
+                        ],
                     ),
                     indah.Text(lambda: problem.value, size="body"),
                     *tab.only(
                         "edit",
                         lambda: indah.Row(
                             children=[
-                                indah.Button("Approve", approve),
-                                indah.Button("Reject", reject, variant="outlined"),
+                                indah.Button("Approve", approve, disabled=nothing_picked),
+                                indah.Button(
+                                    "Reject", reject, variant="ghost", disabled=nothing_picked
+                                ),
                             ],
                             align="center",
                         ),
