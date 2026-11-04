@@ -139,7 +139,8 @@ def test_the_mode_sits_in_the_top_bar_and_pause_in_the_logs_own_toolbar(
 
 
 FILLED = """() => [...document.querySelectorAll('button')]
-  .filter(b => !b.closest('.theme-toggle, .segmented, [role=radiogroup], table, header, .select, .field')
+  .filter(b => !b.closest(
+      '.theme-toggle, .segmented, [role=radiogroup], table, header, .select, .field')
     && !b.hasAttribute('aria-haspopup') && !b.hasAttribute('aria-expanded')
     && !b.matches('.ghost, .tonal, .danger') && b.offsetParent !== null && b.innerText.trim())
   .map(b => b.innerText.trim())"""
