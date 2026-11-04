@@ -8,6 +8,8 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-05
+
 ### Changed
 
 - The live log's *When* column reads "just now", "12s ago", "3m ago" and a date for older calls, with the exact time on hover. Every call ends as Hit, Miss, Error or Parked (a recorded or forwarded call is a Hit, a dry run a Miss, a timed-out wait an Error; what kind of hit moves to the *Matched by* column, which now draws the five tiers as dots with the answering one ringed). The empty detail pane says "Select a call to see which tier answered it." and the median no longer breaks across two lines on a phone (SEM-134). Newest-first order waits for indah's `newest_first` (IND-254).
