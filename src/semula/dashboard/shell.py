@@ -52,10 +52,10 @@ class Tab:
         self.queues_moved: indah.Signal[int] = indah.Signal(0)
         self.entries_moved: indah.Signal[int] = indah.Signal(0)  # same, for the entries list
         self.stats: indah.Signal[dict[str, Any]] = indah.Signal(EMPTY_STATS)
-        # Whether *this project* records. ``_applied`` is what the service last said, so the
-        # switch handler can tell a viewer's click from an update that came from the service.
+        # The mode of *this project*. ``_applied`` is what the service last said, so the
+        # handler can tell a viewer's choice from an update that came from the service.
         self._applied = self.service.default_mode
-        self.recording: indah.Signal[bool] = indah.Signal(self._applied == "record")
+        self.mode: indah.Signal[str] = indah.Signal(self._applied)
         self._stale = asyncio.Event()
         self._stale.set()  # the first refresh is due now
         self._follow_events(ctx)
@@ -87,7 +87,7 @@ class Tab:
             for event in rows:
                 if event.get("type") == "mode" and event["project"] == self.project.peek():
                     self._applied = event["mode"]
-                    self.recording.set(event["mode"] == "record")
+                    self.mode.set(event["mode"])
                 if event.get("type") == "queues" and event["project"] == self.project.peek():
                     self.queues_moved.set(self.queues_moved.peek() + 1)
                 if event.get("type") == "entries" and event["project"] == self.project.peek():
@@ -109,10 +109,10 @@ class Tab:
         indah.effect(self._push_mode)
 
     def _push_mode(self) -> None:
-        """The viewer flipped the switch: save it for this project. The service then announces
+        """The viewer chose a mode: save it for this project. The service then announces
         it and every tab agrees already, so that does not loop."""
-        want = "record" if self.recording.value else "replay"
-        if want == self._applied:
+        want = self.mode.value
+        if want not in ("record", "replay") or want == self._applied:
             return
         self._applied = want
         project = self.project.peek()
@@ -129,7 +129,7 @@ class Tab:
         project = self.project.peek()
         mode = await blocking(self.service.mode_of, project)
         self._applied = mode
-        self.recording.set(mode == "record")
+        self.mode.set(mode)
         self.counts.set(await blocking(self.service.queue_counts, project))
         self.stats.set(await blocking(self.service.log_stats, project, "30m"))
 
@@ -144,7 +144,6 @@ def nav(tab: Tab) -> indah.Component:
 
     return indah.Column(
         children=[
-            indah.Select(_chosen(tab), options=tab.projects, label="Project"),
             indah.Link(tab.ctx, "Live log", to=to("log"), match="prefix"),
             indah.Link(tab.ctx, "Entries", to=to("entries"), match="prefix"),
             *tab.only(
@@ -169,9 +168,29 @@ def nav(tab: Tab) -> indah.Component:
                 ],
                 align="center",
             ),
-            *tab.only("edit", lambda: indah.Switch(tab.recording, label="Record")),
             *workspace_links(tab),
         ]
+    )
+
+
+def top_bar(tab: Tab) -> indah.Component:
+    """The project and its mode, on every screen. The mode is per project and changes what the
+    server does with an unknown prompt, so it sits beside the project it belongs to; red is
+    the design's ``record`` colour (needs you). Someone who may not edit reads it as text."""
+    if tab.can("edit"):
+        mode: indah.Component = indah.Segmented(
+            tab.mode,
+            options=[("replay", "Replay"), ("record", "Record")],
+            tones={"record": "err"},
+            label="Mode",
+        )
+    else:
+        mode = indah.Text(
+            indah.computed(lambda: f"{tab.mode.value.capitalize()} mode"), size="body"
+        )
+    return indah.Row(
+        children=[indah.Select(_chosen(tab), options=tab.projects, label="Project"), mode],
+        align="end",
     )
 
 
@@ -237,7 +256,9 @@ def build_session(
         not_found=indah.Text("### There is nothing at this address.", markdown=True),
     )
     side = [account(tab, who), nav(tab)] if who is not None else [nav(tab)]
-    return indah.Session(indah.Sidebar(children=[indah.Column(children=side), pages]))
+    return indah.Session(
+        indah.AppShell(rail=indah.Column(children=side), top=top_bar(tab), main=pages)
+    )
 
 
 def account(tab: Tab, who: indah.Principal) -> indah.Component:

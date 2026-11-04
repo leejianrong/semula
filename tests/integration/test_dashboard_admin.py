@@ -236,7 +236,7 @@ def test_creating_a_token_shows_its_secret_once_and_it_works_with_its_scope_and_
         until(lambda: tab.find("table", label="Tokens"), "page built")
         type_into(tab, "textinput", "Name", "ci runner")
         type_into(tab, "select", "Scope", "replay")
-        type_into(tab, "select", "Project", "shop")
+        type_into(tab, "select", "Limit to project", "shop")
         mark = tab.mark()
         tab.send(tab.find("button", label="Create token"), "click")
         secret = until(lambda: revealed(tab, mark, "New token"), "the secret")

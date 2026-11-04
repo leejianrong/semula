@@ -279,7 +279,9 @@ def tokens_page(tab: Tab) -> indah.Component:
                     indah.TextInput(name, label="Name", placeholder="ci runner"),
                     indah.Select(scope, options=list(TOKEN_SCOPES), label="Scope"),
                     indah.Select(
-                        project, options=[ALL_PROJECTS, *tab.dash.project_ids()], label="Project"
+                        project,
+                        options=[ALL_PROJECTS, *tab.dash.project_ids()],
+                        label="Limit to project",
                     ),
                     indah.Button("Create token", on_click=create),
                 ],
