@@ -11,6 +11,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 ### Changed
 
 - The dashboard puts the project's mode in the top bar next to the project switcher, as a labelled **Replay | Record** control (Record in red), instead of a switch under the navigation; people who may not edit see it as plain text. The log's **Live** switch became a **Pause / Resume** button beside the **Show** filter, with the state in words (Live, or Paused and how many new calls it holds). The token form's project menu is now "Limit to project", so the top bar's "Project" is the only one by that name. Nothing else about the mode or the stream changed (SEM-132).
+- The pages a hosted server serves itself (sign-in, sign-up, invitations, the CLI approval, the terms, the rate-limit page) share one styled page: the mark, a card, light and dark by your system setting, 44 px controls and a readable terms page. A browser that asks for a missing page on a hosted server now gets the same page with a 404 status instead of JSON; API clients still get JSON. Nothing is loaded from outside and the policy is unchanged.
 
 ### Fixed
 

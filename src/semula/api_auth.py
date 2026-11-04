@@ -8,8 +8,6 @@ every sign-in and the one it replaces is ended. Signing out needs the session's 
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import hmac
 import html
 import json
@@ -25,6 +23,7 @@ from starlette.concurrency import run_in_threadpool as offload
 from . import oidc
 from . import tokens as tok
 from .errors import SemulaError
+from .public_page import page
 from .service import DEVICE_SCOPE_FOR, SESSION_SECONDS, Service
 
 log = logging.getLogger("semula.auth")
@@ -71,36 +70,8 @@ def safe_next(target: str | None) -> str:
     return target if not parsed.scheme and not parsed.netloc else LANDING
 
 
-_STYLE = (
-    "body{font:16px system-ui;max-width:26rem;margin:4rem auto;padding:0 1rem}"
-    "a.b{display:block;margin:.6rem 0;padding:.7rem 1rem;border:1px solid #888;"
-    "border-radius:8px;"
-    "text-decoration:none;color:inherit}"
-)
-_STYLE_HASH = base64.b64encode(hashlib.sha256(_STYLE.encode()).digest()).decode()
-# These pages run no script and cannot be framed; their one style block is allowed by its hash,
-# and the only thing they submit goes back to this site.
-_PAGE_HEADERS = {
-    "Content-Security-Policy": (
-        "default-src 'none'; "
-        f"style-src 'sha256-{_STYLE_HASH}'; img-src data:; "
-        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
-    ),
-    "X-Frame-Options": "DENY",
-    "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer",
-    "Cache-Control": "no-store",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
-}
-
-
-def _page(title: str, body: str, status: int = 200) -> HTMLResponse:
-    page = (
-        "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-        f"<title>{html.escape(title)}</title><link rel=icon href='data:,'><style>{_STYLE}</style>"
-        f"<h1>{html.escape(title)}</h1>{body}"
-    )
-    return HTMLResponse(page, status_code=status, headers=_PAGE_HEADERS)
+def _page(title: str, body: str, status: int = 200, *, wide: bool = False) -> HTMLResponse:
+    return page(title, body, status, wide=wide)
 
 
 @router.get("/providers")
@@ -129,7 +100,7 @@ def login_page(request: Request, next: str | None = None) -> HTMLResponse:
     found = request.app.state.settings.auth_providers
     target = safe_next(next)
     buttons = "".join(
-        f'<a class=b href="/auth/login/{html.escape(p.name)}?{_query({"next": target})}">'
+        f'<a class=btn href="/auth/login/{html.escape(p.name)}?{_query({"next": target})}">'
         f"Continue with {html.escape(p.title)}</a>"
         for p in found.values()
     )
@@ -294,7 +265,8 @@ def _signup_page(csrf: str, email: str, open_: bool = False) -> HTMLResponse:
         + ask
         + '<form method=post action="/auth/signup">'
         f'<input type=hidden name=csrf value="{html.escape(csrf)}">'
-        f"<p><input name=code autocomplete=off size=36{'' if open_ else ' autofocus required'} "
+        "<p><input name=code autocomplete=off aria-label='Invite code' "
+        f"{'' if open_ else 'autofocus required '}"
         'placeholder="smla_code_..."></p>'
         "<button>Create my workspace</button></form>"
     )
@@ -401,15 +373,15 @@ def _device_page(preview: dict[str, Any], role: str, workspace: str, csrf: str) 
     body = (
         "<p>A program asked to sign in to semula. Approve it only if you just ran "
         "<code>semula login</code> and this code matches your terminal.</p>"
-        f"<h2>{html.escape(preview['user_code'])}</h2>"
+        f"<p class=code>{html.escape(preview['user_code'])}</p>"
         f"<p>Name: <b>{html.escape(preview['name'])}</b><br>"
         f"Workspace: <b>{html.escape(workspace)}</b><br>"
         f"Access: <b>{html.escape(granted)}</b> to <b>{where}</b></p>"
         '<form method=post action="/auth/device">'
         f'<input type=hidden name=csrf value="{html.escape(csrf)}">'
         f'<input type=hidden name=code value="{html.escape(preview["user_code"])}">'
-        "<button name=decision value=approve>Approve</button> "
-        "<button name=decision value=deny>Deny</button></form>"
+        "<div class=actions><button name=decision value=approve>Approve</button>"
+        "<button class=alt name=decision value=deny>Deny</button></div></form>"
     )
     return _page("Sign in the CLI", body)
 
@@ -517,4 +489,4 @@ def terms_page(request: Request) -> HTMLResponse:
         if contact
         else "<p>To report abuse, contact the operator of this server.</p>"
     )
-    return _page("Terms and acceptable use", TERMS + "<h2>Reporting abuse</h2>" + where)
+    return _page("Terms and acceptable use", TERMS + "<h2>Reporting abuse</h2>" + where, wide=True)
