@@ -166,3 +166,13 @@ def test_the_sqlite_variant_fits_a_one_gigabyte_droplet() -> None:
     )  # type: ignore[union-attr]
     assert steady <= 850
     assert int(re.search(r"mem_limit: (\d+)m", lite("semula")).group(1)) >= 512  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize("name", ["compose.yaml", "compose.sqlite.yaml"])
+def test_the_settings_an_operator_sets_in_env_reach_the_app(name: str) -> None:
+    # SEMULA_ABUSE_CONTACT is printed on the sign-in page and the terms, and SEMULA_SIGNUP opens
+    # signup later: setting either in .env did nothing while the compose file ignored them
+    text = (DIR / name).read_text()
+    body = text.split("\n  semula:\n", 1)[1].split("\n  caddy:\n", 1)[0]
+    assert "SEMULA_ABUSE_CONTACT: ${SEMULA_ABUSE_CONTACT:-}" in body
+    assert "SEMULA_SIGNUP: ${SEMULA_SIGNUP:-code}" in body  # closed unless the operator opens it
