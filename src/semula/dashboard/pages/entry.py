@@ -231,9 +231,6 @@ def entry_page(tab: Tab) -> indah.Component:
             return
         ctx.navigate(f"/projects/{tab.project.peek()}/entries")
 
-    def back() -> None:
-        ctx.navigate(f"/projects/{tab.project.peek()}/entries")
-
     revisions = indah.Table(
         rows=history,
         key="id",
@@ -251,7 +248,9 @@ def entry_page(tab: Tab) -> indah.Component:
         children=[
             indah.Row(
                 children=[
-                    indah.Button("Back to entries", back, variant="outlined"),
+                    indah.Link(
+                        ctx, "Back to entries", to=lambda: f"/projects/{tab.project.value}/entries"
+                    ),
                     indah.Text(heading, markdown=True),
                 ],
                 align="center",
@@ -262,11 +261,20 @@ def entry_page(tab: Tab) -> indah.Component:
                     indah.List(indah.computed(request_rows), key="id", item=MESSAGE, empty="")
                 ],
             ),
-            indah.Card(
-                title="Answers",
-                children=[
-                    indah.List(indah.computed(answer_rows), key="id", item=MESSAGE, empty="")
-                ],
+            # an editor reads the answer in the editor below, so it is not shown twice
+            *(
+                []
+                if tab.can("edit")
+                else [
+                    indah.Card(
+                        title="Answers",
+                        children=[
+                            indah.List(
+                                indah.computed(answer_rows), key="id", item=MESSAGE, empty=""
+                            )
+                        ],
+                    )
+                ]
             ),
             *tab.only(
                 "edit",
@@ -301,7 +309,7 @@ def entry_page(tab: Tab) -> indah.Component:
                                 indah.Row(
                                     children=[
                                         indah.Button("Save answer", save),
-                                        indah.Button("Reload", reload_current, variant="outlined"),
+                                        indah.Button("Reload", reload_current, variant="ghost"),
                                         indah.Button(
                                             lambda: (
                                                 "Unpin"
@@ -309,12 +317,13 @@ def entry_page(tab: Tab) -> indah.Component:
                                                 else "Pin"
                                             ),
                                             toggle_pin,
-                                            variant="outlined",
+                                            variant="ghost",
                                         ),
+                                        indah.Spacer(),
                                         indah.Button(
                                             "Delete entry",
                                             delete,
-                                            variant="outlined",
+                                            variant="ghost",
                                             confirm="Delete this entry? Its history goes with it.",
                                         ),
                                     ],
@@ -332,7 +341,7 @@ def entry_page(tab: Tab) -> indah.Component:
                                     height="6rem",
                                     label="Another answer",
                                 ),
-                                indah.Button("Add answer", add_answer, variant="outlined"),
+                                indah.Button("Add answer", add_answer, variant="ghost"),
                             ],
                         ),
                     ]

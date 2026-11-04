@@ -177,7 +177,7 @@ def entries_page(tab: Tab) -> indah.Component:
             indah.Row(
                 children=[
                     indah.Button("Create entry", create),
-                    indah.Button("Cancel", cancel_form, variant="outlined"),
+                    indah.Button("Cancel", cancel_form, variant="ghost"),
                 ],
                 align="center",
             ),
@@ -222,9 +222,19 @@ def entries_page(tab: Tab) -> indah.Component:
             table,
             indah.Row(
                 children=[
-                    indah.Button("Previous", previous, variant="outlined"),
+                    indah.Button(
+                        "Previous",
+                        previous,
+                        variant="ghost",
+                        disabled=indah.computed(lambda: offset.value == 0),
+                    ),
                     indah.Text(lambda: summary.value, size="body"),
-                    indah.Button("Next", following, variant="outlined"),
+                    indah.Button(
+                        "Next",
+                        following,
+                        variant="ghost",
+                        disabled=indah.computed(lambda: offset.value + ENTRY_PAGE >= total.value),
+                    ),
                 ],
                 align="center",
             ),

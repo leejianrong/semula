@@ -82,7 +82,14 @@ def playground_page(tab: Tab) -> indah.Component:
                     indah.List(rail, key="id", item=RAIL_ROW),
                     indah.Text(near, size="body"),
                     indah.Text(preview, size="body"),
-                    indah.Button("Open the entry", open_entry, variant="outlined"),
+                    indah.Button(
+                        "Open the entry",
+                        open_entry,
+                        variant="ghost",
+                        disabled=indah.computed(
+                            lambda: not (result.value and result.value.get("entry_id"))
+                        ),
+                    ),
                 ]
             ),
         ]

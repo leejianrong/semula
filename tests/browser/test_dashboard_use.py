@@ -138,6 +138,27 @@ def test_the_mode_sits_in_the_top_bar_and_pause_in_the_logs_own_toolbar(
     assert site.acme.mode_of("shop") == "record"
 
 
+FILLED = """() => [...document.querySelectorAll('button')]
+  .filter(b => !b.closest(
+      '.theme-toggle, .segmented, [role=radiogroup], table, header, .select, .field')
+    && !b.hasAttribute('aria-haspopup') && !b.hasAttribute('aria-expanded')
+    && !b.matches('.ghost, .tonal, .danger') && b.offsetParent !== null && b.innerText.trim())
+  .map(b => b.innerText.trim())"""
+
+
+@pytest.mark.parametrize("screen", ["log", "pending", "review", "entries", "playground"])
+def test_each_screen_has_at_most_one_filled_button(
+    screen: str, site: Site, new_page: Callable[..., Any]
+) -> None:
+    """The one action of a view is drawn filled; every other button is ghost or tonal."""
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + SCREENS[screen])
+    page.wait_for_selector("h1", timeout=20000)
+    page.wait_for_timeout(800)
+    filled = page.evaluate(FILLED)
+    assert len(filled) <= 1, f"{screen} has several filled buttons: {filled}"
+
+
 def see(page: Any, text: str) -> None:
     """Wait for ``text`` on the page, and show what the page said instead if it never comes."""
     try:
@@ -153,7 +174,7 @@ def answer_by_mouse(page: Any, text: str) -> None:
     page.locator("tbody tr").first.click()
     editor = page.locator("[contenteditable=true], textarea").first
     editor.click()
-    page.keyboard.type(text)
+    page.keyboard.insert_text(text)  # typed key by key, the box's own send can race the click
     page.get_by_role("button", name="Send answer").click()
 
 

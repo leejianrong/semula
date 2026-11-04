@@ -98,3 +98,11 @@ Write one document, `docs/SEMULA-REQUESTS-PLAN.md` in the indah repo, with these
 8. **Hosted take.** Half a page: after this roadmap, where would indah still be weaker than Svelte + Vite + TypeScript for a hosted product with login, workspaces and tokens, and where stronger. Be candid. I will use this to decide.
 
 When the document is written, stop and tell me what to review. Do not start building.
+
+## Later requests (UI refresh, SEM-130)
+
+Filed on board IND as the screens needed them.
+
+- **A quiet connection status** (IND-251, indah PR 313): the shell's `live` dot sits in a footer line and always speaks. Wanted: silent while connected, beside the theme switch in the header when lost. Needed by SEM-132.
+- **`Button(variant="danger")`** (IND-252, indah PR 314): filled, tonal and ghost only. Reject and Delete need to read as set apart. Until it is released semula draws them ghost. Needed by SEM-133.
+- **`Show(when, children)`** (IND-253): no way to leave a subtree out until a signal is true. Pending's answer form and the playground's "Open the entry" are disabled with a hint until there is something to act on, instead of absent. Needed by SEM-133.

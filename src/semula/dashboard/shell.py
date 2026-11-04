@@ -277,7 +277,7 @@ def account(tab: Tab, who: indah.Principal) -> indah.Component:
             indah.Text(who.name or who.email, size="body"),
             indah.Text(f"{role} in {who.workspace}", size="body"),
             *workspace_switcher(tab, who),
-            indah.Button("Sign out", sign_out, variant="outlined"),
+            indah.Button("Sign out", sign_out, variant="ghost"),
         ]
     )
 
