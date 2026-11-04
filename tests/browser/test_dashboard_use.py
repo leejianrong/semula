@@ -174,7 +174,7 @@ def answer_by_mouse(page: Any, text: str) -> None:
     page.locator("tbody tr").first.click()
     editor = page.locator("[contenteditable=true], textarea").first
     editor.click()
-    page.keyboard.type(text)
+    page.keyboard.insert_text(text)  # typed key by key, the box's own send can race the click
     page.get_by_role("button", name="Send answer").click()
 
 
