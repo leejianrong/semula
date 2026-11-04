@@ -11,11 +11,11 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
-from . import __version__, api_admin, api_auth, api_openai, oidc
+from . import __version__, api_admin, api_auth, api_openai, oidc, public_page
 from .answerer import Answerer
 from .auth import ApiKeyMiddleware, TokenAuthMiddleware
 from .config import Settings
@@ -167,7 +167,16 @@ def create_app(
         return JSONResponse(exc.body(), status_code=exc.status)
 
     @app.exception_handler(StarletteHTTPException)
-    async def _http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def _http_error(request: Request, exc: StarletteHTTPException) -> Response:
+        if (
+            exc.status_code == 404
+            and settings.hosted
+            and "text/html" in request.headers.get("accept", "")
+            and not request.url.path.startswith(("/v1/", "/api/", "/mcp"))
+        ):  # a person who followed a bad link, not a client: the shared page, not JSON
+            return public_page.page(
+                "Page not found", "<p>There is nothing at this address.</p>", 404
+            )
         code = {404: "not_found", 405: "method_not_allowed"}.get(exc.status_code, "http_error")
         return JSONResponse(
             SemulaError(exc.status_code, code, str(exc.detail)).body(), status_code=exc.status_code

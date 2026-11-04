@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Changed
+
+- The pages a hosted server serves itself (sign-in, sign-up, invitations, the CLI approval, the terms, the rate-limit page) share one styled page: the mark, a card, light and dark by your system setting, 44 px controls and a readable terms page. A browser that asks for a missing page on a hosted server now gets the same page with a 404 status instead of JSON; API clients still get JSON. Nothing is loaded from outside and the policy is unchanged.
+
 ### Fixed
 
 - `deploy/droplet/deploy.sh` pulls with `--ignore-buildable` and starts with `--build`, so a stack that includes the backup overlay (built from the checkout) deploys instead of failing on a pull.
