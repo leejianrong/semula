@@ -60,8 +60,10 @@ Setup, once:
   `command="/opt/semula/deploy/droplet/deploy.sh",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-ed25519 ...`.
   The key can start a deploy of a plain `X.Y.Z` and nothing else. The group still gives that user
   Docker, which is root-equivalent, so the key lives only in the `production` environment secrets.
-- `.env` has `COMPOSE_FILE=compose.sqlite.yaml` (or `compose.yaml`) so every compose command in the
-  script uses your variant.
+- `.env` has `COMPOSE_FILE` so every compose command in the script uses your variant, with the backup
+  overlay added after a colon: `COMPOSE_FILE=compose.sqlite.yaml:backup/compose.sqlite.yaml` (or
+  `compose.yaml:backup/compose.postgres.yaml`). The backup service is built from the checkout, which is why the
+  script pulls with `--ignore-buildable` and starts with `--build`.
 - The `production` environment (Settings > Environments) has a required reviewer, and the secrets
   `DEPLOY_HOST`, `DEPLOY_HOST_KEY` (the droplet's `ssh-ed25519` host key, pinned: the job refuses any
   other host) and `DEPLOY_SSH_KEY`, and the variable `DEPLOY_DOMAIN`.
