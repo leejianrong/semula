@@ -21,6 +21,43 @@ def test_a_call_becomes_a_row_with_text_for_every_column() -> None:
     assert row["at"] == int(parse_ts(CALL["ts"]).timestamp() * 1000)
 
 
+@pytest.mark.parametrize(
+    ("outcome", "result", "tone", "match"),
+    [
+        ("hit", "Hit", "ok", "Words 0.98"),
+        ("recorded", "Hit", "ok", "Recorded"),
+        ("forwarded", "Hit", "ok", "Forwarded"),
+        ("miss", "Miss", "warn", ""),
+        ("dry_run", "Miss", "warn", "Dry run"),
+        ("record_timeout", "Error", "err", ""),
+        ("error", "Error", "err", ""),
+        ("parked", "Parked", "err", ""),
+    ],
+)
+def test_every_call_reads_as_hit_miss_error_or_parked(
+    outcome: str, result: str, tone: str, match: str
+) -> None:
+    """One vocabulary, one capitalisation; the tone follows the word (SEM-134). What kind of
+    hit it was moves to the Matched-by cell."""
+    from semula.dashboard.rows import OUTCOME_TONES
+
+    with_tier = outcome == "hit"
+    call = {**CALL, "outcome": outcome} | ({} if with_tier else {"tier": None, "score": None})
+    row = call_row(call, UTC)
+    assert row["result"] == result and OUTCOME_TONES[result] == tone
+    assert row["match"] == match
+
+
+def test_a_row_carries_five_rail_dots_with_the_answering_tier_ringed() -> None:
+    row = call_row(CALL, UTC, meaning_on=False)  # answered by the words tier
+    dots = [row[f"rail{i}"] for i in range(5)]
+    assert all("border-radius:50%" in d for d in dots)
+    assert "box-shadow" in dots[3] and not any("box-shadow" in d for d in dots[:3] + dots[4:])
+    assert "dotted" in dots[4]  # meaning is switched off
+    exact = call_row({**CALL, "tier": "exact", "score": 1.0}, UTC, meaning_on=True)
+    assert "box-shadow" in exact["rail0"] and "dashed" in exact["rail1"]
+
+
 def test_the_clock_uses_the_given_zone() -> None:
     moment = parse_ts("2026-10-21T23:59:59.007Z")
     assert clock(moment, UTC) == "23:59:59.007"
@@ -68,7 +105,7 @@ def test_older_rows_and_unknown_outcomes_still_make_rows() -> None:
         row["prompt"] == ""
         and row["took"] == ""
         and row["match"] == ""
-        and row["result"] == "mystery"
+        and row["result"] == "Mystery"
     )
     forced = call_row({**bare, "outcome": "forced_write"}, UTC)
     assert forced["result"] == "Forced edit"
