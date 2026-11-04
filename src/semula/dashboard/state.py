@@ -28,7 +28,7 @@ class Dash:
         seeded = list(reversed(service.list_calls(limit=SEED_CALLS)))  # oldest first
         self._seeded_up_to = max((c["id"] for c in seeded), default=0)
         for call in seeded:
-            self.calls.publish(call_row(call))
+            self.calls.publish(call_row(call, meaning_on=self.meaning_on))
 
     def publish(self, event: dict[str, Any]) -> None:
         """Called on the event loop for every service event."""
@@ -36,7 +36,7 @@ class Dash:
             return  # another workspace's event: this dashboard shows one
         if event.get("type") == "call":
             if event["id"] > self._seeded_up_to:  # else the seed already has it
-                self.calls.publish(call_row(event))
+                self.calls.publish(call_row(event, meaning_on=self.meaning_on))
         else:
             self.events.publish(event)
 

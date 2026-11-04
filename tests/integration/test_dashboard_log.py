@@ -300,3 +300,21 @@ def test_a_parked_call_shows_in_the_parked_count(server: str, tab: Tab) -> None:
         tab.wait_for(count("0"), 4)
     finally:
         httpx.put(server + "/api/v1/mode", json={"mode": "replay"})
+
+
+def test_the_log_scans_by_time_result_and_tier(server: str, tab: Tab) -> None:
+    """Relative times (the exact one is the tooltip), one status vocabulary, the tier rail in
+    the Matched-by cell, and a hint where the detail will be (SEM-134)."""
+    table = tab.find("table", label="Calls")
+    columns = {c["field"]: c for c in table["props"]["columns"]}
+    assert columns["at"]["kind"] == "time" and columns["at"]["title"] == "When"
+    assert columns["result"]["tones"] == {
+        "Hit": "ok", "Miss": "warn", "Error": "err", "Parked": "err",
+        "Forced edit": "warn", "Forced delete": "warn",
+    }  # fmt: skip
+    cell = columns["match"]
+    assert cell["kind"] == "cell" and cell["title"] == "Matched by"
+    assert str(cell["render"]).count("rail") == 5
+    assert {r["result"] for r in table_rows(tab)} <= {"Hit", "Miss", "Error", "Parked"}
+    assert all(f"rail{i}" in table_rows(tab)[0] for i in range(5))
+    assert "Select a call to see which tier answered it." in str(list(tab.nodes()))

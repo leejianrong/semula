@@ -7,26 +7,33 @@ import json
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 
+# One vocabulary for how a call ended: Hit, Miss, Error, Parked (SEM-134). What kind of hit it
+# was (recorded by an agent, forwarded to a provider) is said in the Matched-by cell. Parked is
+# the design's red ("needs you"); the theme folds that red into ``err``, so it is told apart
+# from Error by its word. A forced edit or delete is a change to an entry, not a call, and keeps
+# its own name.
 OUTCOMES = {
     "hit": "Hit",
+    "recorded": "Hit",
+    "forwarded": "Hit",
     "miss": "Miss",
-    "recorded": "Recorded",
-    "forwarded": "Forwarded",
-    "dry_run": "Dry run",
-    "record_timeout": "Timed out",
+    "dry_run": "Miss",
+    "record_timeout": "Error",
+    "error": "Error",
+    "parked": "Parked",
     "forced_write": "Forced edit",
     "forced_delete": "Forced delete",
 }
 OUTCOME_TONES = {
     "Hit": "ok",
     "Miss": "warn",
-    "Recorded": "info",
-    "Forwarded": "info",
-    "Dry run": "warn",
-    "Timed out": "err",
+    "Error": "err",
+    "Parked": "err",
     "Forced edit": "warn",
     "Forced delete": "warn",
 }
+# What fills the Matched-by cell when no tier answered.
+UNMATCHED_NOTES = {"recorded": "Recorded", "forwarded": "Forwarded", "dry_run": "Dry run"}
 TIERS = {
     "exact": "Exact",
     "normalised": "Normalised",
@@ -83,19 +90,26 @@ def match_text(tier: str | None, score: float | None) -> str:
     )
 
 
-def call_row(call: dict[str, Any], tz: tzinfo | None = None) -> dict[str, Any]:
+def call_row(
+    call: dict[str, Any], tz: tzinfo | None = None, meaning_on: bool = False
+) -> dict[str, Any]:
     """One log row as the table shows it, from a ``list_calls`` item or a live ``call`` event."""
     moment = parse_ts(call["ts"])
+    rail = rail_for(call, meaning_on=meaning_on)
+    match = match_text(call.get("tier"), call.get("score")) or UNMATCHED_NOTES.get(
+        call["outcome"], ""
+    )
     return {
         "id": str(call["id"]),
         "at": int(moment.timestamp() * 1000),
         "when": clock(moment, tz),
         "project": call["project"],
         "outcome": call["outcome"],
-        "result": OUTCOMES.get(call["outcome"], call["outcome"]),
+        "result": OUTCOMES.get(call["outcome"], call["outcome"].capitalize()),
         "tier": call.get("tier"),
         "score": call.get("score"),
-        "match": match_text(call.get("tier"), call.get("score")),
+        "match": match,
+        **{f"rail{i}": _row_dot(step) for i, step in enumerate(rail)},
         "took": took(call.get("latency_ms")),
         "prompt": short(call.get("preview") or ""),
         "preview": call.get("preview") or "",
@@ -173,6 +187,14 @@ DOT_STYLES = {
     "skipped": _DOT + "border:2px dashed var(--outline-soft)",
     "off": _DOT + "border:2px dotted var(--outline-soft)",
 }
+
+
+def _row_dot(step: dict[str, str]) -> str:
+    """A rail station small enough for a table row; the one that answered carries a ring."""
+    style = DOT_STYLES[step["verdict"]].replace(".7rem", ".5rem")
+    if step["verdict"] == "match":
+        style += ";box-shadow:0 0 0 2px var(--surface),0 0 0 3.5px var(--primary)"
+    return style
 
 
 def pending_row(item: dict[str, Any], tz: tzinfo | None = None) -> dict[str, Any]:

@@ -25,6 +25,17 @@ RAIL_ROW: dict[str, Any] = {
         {"tag": "span", "attrs": {"style": "color:var(--muted)"}, "text": "text"},
     ],
 }
+# The Matched-by cell: the five tiers as small stations (the one that answered ringed), then
+# the words. The dots are styled by fields of the row (see ``rows.call_row``).
+MATCH_CELL: dict[str, Any] = {
+    "tag": "span",
+    "attrs": {"style": "display:inline-flex;align-items:center;gap:.28rem"},
+    "children": [
+        *({"tag": "span", "bind": {"style": f"rail{i}"}} for i in range(5)),
+        {"tag": "span", "attrs": {"style": "margin-left:.45rem"}, "text": "match"},
+    ],
+}
+SELECT_HINT = "Select a call to see which tier answered it."
 MESSAGE: dict[str, Any] = {
     "tag": "div",
     "attrs": {"style": "margin:.45rem 0"},
@@ -131,7 +142,7 @@ def log_page(tab: Tab) -> indah.Component:
     def heading() -> str:
         d = detail.value
         if not d:
-            return ""
+            return SELECT_HINT
         row = d["row"]
         return f"**{row['result']}**  {row['when']}  ·  {row['project']}"
 
@@ -162,7 +173,7 @@ def log_page(tab: Tab) -> indah.Component:
     )
     stat_median = indah.computed(
         lambda: (
-            f"{tab.stats.value['median_latency_ms']:.0f} ms"
+            f"{tab.stats.value['median_latency_ms']:.0f}\u00a0ms"
             if tab.stats.value["median_latency_ms"] is not None
             else "-"
         )
@@ -191,10 +202,11 @@ def log_page(tab: Tab) -> indah.Component:
         follow=True,
         density="compact",
         columns=[
-            indah.Col("when", title="When", kind="mono", width="15ch", sortable=False),
+            # relative ("12s ago"), live; the exact time is the cell's tooltip
+            indah.Col("at", title="When", kind="time", width="11ch", sortable=False),
             indah.Col("prompt", title="Prompt", sortable=False),
             indah.Col("result", title="Result", kind="badge", tones=OUTCOME_TONES, sortable=False),
-            indah.Col("match", title="Match", sortable=False),
+            indah.Col("match", title="Matched by", kind="cell", render=MATCH_CELL, sortable=False),
             indah.Col("took", title="Took", kind="mono", sortable=False),
         ],
     )
