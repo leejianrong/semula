@@ -83,19 +83,25 @@ def log_page(tab: Tab) -> indah.Component:
     shown: indah.Stream = indah.Stream(limit=1000)
     chip: indah.Signal[str] = indah.Signal("All")
     live: indah.Signal[bool] = indah.Signal(True)
+    held: indah.Signal[int] = indah.Signal(0)  # calls that arrived while paused
     picked: indah.Signal[Any] = indah.Signal(None)
     detail: indah.Signal[dict[str, Any] | None] = indah.Signal(None)
 
     def refilter() -> None:
         project, which = tab.project.value, chip.value
         if live.value:
+            held.set(0)
             shown.set([r for r in ring.peek() if keeps(r, project, which)])
 
     def on_ring(kind: str, rows: list[Any]) -> None:
         if kind == "replace":
             refilter()
-        elif live.peek():
-            shown.append(*[r for r in rows if keeps(r, tab.project.peek(), chip.peek())])
+        else:
+            mine = [r for r in rows if keeps(r, tab.project.peek(), chip.peek())]
+            if live.peek():
+                shown.append(*mine)
+            else:
+                held.set(held.peek() + len(mine))
 
     ring.listen(on_ring)
     indah.effect(refilter)
@@ -165,6 +171,16 @@ def log_page(tab: Tab) -> indah.Component:
     stat_forwarded = indah.computed(lambda: str(tab.stats.value["totals"]["forwarded"]))
     stat_upstream = indah.computed(lambda: str(tab.stats.value["upstream"]["calls"]))
 
+    def toggle_live() -> None:
+        live.set(not live.peek())
+
+    state = indah.computed(
+        lambda: "Live" if live.value else (f"Paused, {held.value} new" if held.value else "Paused")
+    )
+    pause = indah.Button(
+        indah.computed(lambda: "Pause" if live.value else "Resume"), toggle_live, variant="ghost"
+    )
+
     table = indah.Table(
         rows=shown,
         key="id",
@@ -195,8 +211,6 @@ def log_page(tab: Tab) -> indah.Component:
             indah.Row(
                 children=[
                     indah.Text("# Live log", markdown=True),
-                    indah.Switch(live, label="Live"),
-                    indah.Select(chip, options=list(FILTERS), label="Show"),
                 ],
                 align="center",
             ),
@@ -214,6 +228,17 @@ def log_page(tab: Tab) -> indah.Component:
                     indah.Stat(stat_forwarded, label="Forwarded"),
                     indah.Stat(stat_upstream, label="Upstream calls"),
                 ]
+            ),
+            indah.Row(
+                children=[
+                    indah.Text(state, markdown=False, size="body"),
+                    indah.Row(
+                        children=[pause, indah.Select(chip, options=list(FILTERS), label="Show")],
+                        align="end",
+                    ),
+                ],
+                justify="between",
+                align="center",
             ),
             table,
             indah.Card(children=[pane]),

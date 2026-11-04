@@ -196,15 +196,25 @@ def test_the_show_menu_filters_the_table(server: str, tab: Tab) -> None:
 
 
 def test_pausing_stops_the_table_and_resuming_catches_up(server: str, tab: Tab) -> None:
-    live = tab.find("switch", label="Live")
-    tab.send(live, "change", {"value": False})
+    labels = {n["props"].get("label") for n in tab.nodes() if n["type"] == "switch"}
+    assert not labels & {"Live", "Record"}  # neither is a switch any more
+    pause = tab.find("button", label="Pause")
+    before = tab.mark()
+    tab.send(pause, "click")
+    tab.wait_for(lambda m: "Paused" in str(m), 3, before)
+    tab.wait_for(lambda m: "Resume" in str(m), 3, before)  # the same button now reads Resume
     time.sleep(0.3)
     mark = tab.mark()
     httpx.post(server + "/v1/chat/completions", json=ask("while paused"))
     time.sleep(0.8)
     calls = tab.find("table", label="Calls")
     assert "while paused" not in tab.changes_to(calls, mark)
-    tab.send(live, "change", {"value": True})
+    mark2 = tab.mark()
+    httpx.post(server + "/v1/chat/completions", json=ask("a second while paused"))
+    tab.wait_for(lambda m: "2 new" in str(m), 3, mark2)  # the pause counts what it holds back
+    mark3 = tab.mark()
+    tab.send(pause, "click")
+    tab.wait_for(lambda m: "'Live'" in str(m), 3, mark3)
     tab.wait_for(
         lambda m: (
             m["type"] == "patch"
@@ -228,18 +238,19 @@ def test_the_record_switch_sets_the_projects_mode_and_every_tab_follows(
 ) -> None:
     second = Tab(server)
     try:
-        flag = second.find("switch", label="Record")
+        flag = second.find("segmented", label="Mode")
 
         def checked(value: bool) -> Any:
+            want = "record" if value else "replay"
             return lambda m: (
                 m["type"] == "patch"
                 and any(
-                    c["target"] == flag["id"] and c["props"].get("checked") is value
+                    c["target"] == flag["id"] and c["props"].get("value") == want
                     for c in m["changes"]
                 )
             )
 
-        tab.send(tab.find("switch", label="Record"), "change", {"value": True})
+        tab.send(tab.find("segmented", label="Mode"), "change", {"value": "record"})
         second.wait_for(checked(True), 3)
         project = httpx.get(server + "/api/v1/projects/default").json()
         assert project["mode"] == "record" and project["settings"]["mode"] == "record"  # kept
@@ -254,7 +265,7 @@ def test_the_record_switch_sets_the_projects_mode_and_every_tab_follows(
 
 
 def test_the_switch_follows_the_projects_not_the_other_ones(server: str, tab: Tab) -> None:
-    flag = tab.find("switch", label="Record")
+    flag = tab.find("segmented", label="Mode")
     mark = tab.mark()
     httpx.patch(server + "/api/v1/projects/other", json={"settings": {"mode": "record"}})
     try:

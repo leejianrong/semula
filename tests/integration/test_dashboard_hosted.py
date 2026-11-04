@@ -141,9 +141,9 @@ def test_a_viewer_can_read_but_the_edit_controls_are_not_even_sent(
         for label in ("Send answer", "New entry", "Approve", "Reject"):
             with pytest.raises(LookupError):
                 tab.find("button", label=label)
-        for label in ("Record",):
-            with pytest.raises(LookupError):
-                tab.find("switch", label=label)
+        with pytest.raises(LookupError):
+            tab.find("segmented", label="Mode")  # not even sent
+        assert "Replay mode" in str(list(tab.nodes()))  # but the mode reads as plain text
         assert "Playground" not in str(list(tab.nodes()))
         assert "Sign out" in str(list(tab.nodes()))
     finally:
@@ -157,7 +157,7 @@ def test_an_editor_gets_the_editing_controls_and_not_the_admin_screens(
     try:
         tab.wait_for(lambda m: "held for a person" in str(m), 5)
         tab.find("button", label="Send answer")
-        tab.find("switch", label="Record")
+        tab.find("segmented", label="Mode")
         assert "Playground" in str(list(tab.nodes()))
         for admin_screen in ("Members", "Tokens", "Audit"):
             assert admin_screen not in str(list(tab.nodes())), admin_screen

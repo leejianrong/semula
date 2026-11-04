@@ -144,7 +144,7 @@ The whole path for a person with an invite code and a coding agent, nothing inst
 semula login --url https://semula.example.com --project myapp
 # 3. Connect the agent. The token stays in the CLI's login file, not in the command.
 semula mcp-config --install claude        # or: semula mcp-config   to print the line
-# 4. Create the project, then put it in record mode (the dashboard's Record switch, or):
+# 4. Create the project, then put it in record mode (the dashboard's Replay | Record control, or):
 semula project create myapp
 semula mode record --project myapp
 ```

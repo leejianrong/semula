@@ -108,6 +108,36 @@ def test_the_sign_in_pages_fit_a_phone_too(site: Site, new_page: Callable[..., A
         assert page.evaluate("document.documentElement.scrollWidth") <= PHONE[0], path
 
 
+def test_the_mode_sits_in_the_top_bar_and_pause_in_the_logs_own_toolbar(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """Record has one home (beside the project switcher), Live is Pause/Resume above the table,
+    and neither is a switch (SEM-132)."""
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + SCREENS["log"])
+    page.get_by_text("Replay", exact=True).first.wait_for(timeout=30000)
+    assert page.get_by_role("switch").count() == 0
+    replay = page.get_by_text("Replay", exact=True).first.bounding_box()
+    heading = page.get_by_text("Live log", exact=True).last.bounding_box()
+    assert replay and heading and replay["y"] < heading["y"], (
+        "mode is above the page, in the top bar"
+    )
+    pause = page.get_by_role("button", name="Pause")
+    pause.wait_for()
+    table = page.get_by_label("Calls").first.bounding_box()
+    box = pause.bounding_box()
+    assert box and table and box["y"] < table["y"], "Pause sits above the table it controls"
+    pause.click()
+    page.get_by_text("Paused", exact=False).first.wait_for()
+    page.get_by_role("button", name="Resume").click()
+    page.get_by_text("Record", exact=True).first.click()
+    for _ in range(50):
+        if site.acme.mode_of("shop") == "record":
+            break
+        page.wait_for_timeout(100)
+    assert site.acme.mode_of("shop") == "record"
+
+
 def see(page: Any, text: str) -> None:
     """Wait for ``text`` on the page, and show what the page said instead if it never comes."""
     try:
