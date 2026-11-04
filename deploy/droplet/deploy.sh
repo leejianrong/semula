@@ -45,7 +45,7 @@ healthy() {
   return 1
 }
 
-up() { docker compose pull --quiet && docker compose up -d --wait --remove-orphans; }
+up() { docker compose pull --quiet --ignore-buildable && docker compose up -d --wait --build --remove-orphans; }
 
 echo "deploy: $image"
 set_image "$image"

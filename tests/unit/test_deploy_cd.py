@@ -84,3 +84,10 @@ def test_a_release_deploys_only_after_the_image_exists_and_never_on_a_dry_run() 
     block = RELEASE.split("\n  deploy:\n", 1)[1]
     assert "needs: [verify, release, image]" in block
     assert "needs.verify.outputs.publish == 'true'" in block
+
+
+def test_the_deploy_builds_what_is_built_and_pulls_only_what_is_pulled() -> None:
+    # the backup service is built from the checkout; a plain `pull` would fail on its image name
+    text = SCRIPT.read_text()
+    assert "pull --quiet --ignore-buildable" in text
+    assert "up -d --wait --build" in text

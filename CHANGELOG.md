@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Fixed
+
+- `deploy/droplet/deploy.sh` pulls with `--ignore-buildable` and starts with `--build`, so a stack that includes the backup overlay (built from the checkout) deploys instead of failing on a pull.
+
 ## [0.5.0] - 2026-11-02
 
 ### Fixed
