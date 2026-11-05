@@ -91,6 +91,41 @@ def test_approving_makes_the_prompt_hit_and_leaves_the_queue(server: str) -> Non
         tab.close()
 
 
+def press(tab: Tab, keys: str) -> None:
+    node = next(
+        n
+        for n in tab.nodes()
+        if n["type"] == "shortcuts" and any(k["keys"] == keys for k in n["props"]["keys"])
+    )
+    tab.send(node, "press", {"keys": keys})
+
+
+def test_a_and_r_decide_the_selected_near_miss_and_do_nothing_with_none(server: str) -> None:
+    miss(server)
+    (found,) = candidates(server)
+    tab = Tab(server, "/projects/default/review")
+    try:
+        tab.wait_for(listed(), 5)
+        press(tab, "a")  # nothing selected: the buttons are disabled, so is the key
+        press(tab, "r")
+        assert len(candidates(server)) == 1
+        tab.send(queue(tab), "select", {"key": found["id"]})
+        tab.wait_for(said("the recorded answer"), 5)
+        mark = tab.mark()
+        press(tab, "r")
+        tab.wait_for(said("will not come back"), 5, mark)
+        assert [c["status"] for c in candidates(server, "rejected")] == ["rejected"]
+        miss(server, OTHER_WEAK)
+        (second,) = candidates(server)
+        tab.send(queue(tab), "select", {"key": second["id"]})
+        tab.wait_for(said("the recorded answer"), 5, mark)
+        mark = tab.mark()
+        press(tab, "a")
+        tab.wait_for(said("now served from the entry"), 5, mark)
+    finally:
+        tab.close()
+
+
 def test_rejecting_removes_it_and_it_stays_a_miss(server: str) -> None:
     miss(server)
     (found,) = candidates(server)
@@ -115,12 +150,16 @@ def test_the_nav_counts_the_queue_and_a_decision_elsewhere_clears_the_row(server
     try:
         miss(server)
         miss(server, OTHER_WEAK)
-        badge_ids = [n["id"] for n in tab.nodes() if n["type"] == "badge"]
+        review_item = next(
+            n["id"]
+            for n in tab.nodes()
+            if n["type"] == "navitem" and n["props"]["label"] == "Review"
+        )
         tab.wait_for(
             lambda m: (
                 m["type"] == "patch"
                 and any(
-                    c.get("target") in badge_ids and c["props"].get("text") == "2"
+                    c.get("target") == review_item and c["props"].get("badge") == "2"
                     for c in m["changes"]
                 )
             ),

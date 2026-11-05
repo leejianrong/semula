@@ -165,14 +165,14 @@ def test_a_call_answered_elsewhere_leaves_the_list(server: str) -> None:
 def test_the_nav_counts_parked_calls_live(server: str) -> None:
     tab = Tab(server, "/projects/default/pending")
     try:
-        badge = tab.find("badge")
-        assert badge["props"]["text"] == "0"
+        badge = tab.find("navitem", label="Pending")
+        assert badge["props"].get("badge", "") == ""  # indah hides a count of zero
         held = park(server, "Count me")
         tab.wait_for(
             lambda m: (
                 m["type"] == "patch"
                 and any(
-                    c.get("target") == badge["id"] and c["props"].get("text") == "1"
+                    c.get("target") == badge["id"] and c["props"].get("badge") == "1"
                     for c in m["changes"]
                 )
             ),

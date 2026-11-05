@@ -160,6 +160,15 @@ def review_page(tab: Tab) -> indah.Component:
                     indah.Text(lambda: problem.value, size="body"),
                     *tab.only(
                         "edit",
+                        lambda: indah.Shortcuts(  # `decide` does nothing with none selected
+                            {
+                                "a": (approve, "Approve the selected near miss"),
+                                "r": (reject, "Reject the selected near miss"),
+                            }
+                        ),
+                    ),
+                    *tab.only(
+                        "edit",
                         lambda: indah.Row(
                             children=[
                                 indah.Button("Approve", approve, disabled=nothing_picked),
@@ -169,6 +178,10 @@ def review_page(tab: Tab) -> indah.Component:
                             ],
                             align="center",
                         ),
+                    ),
+                    *tab.only(
+                        "edit",
+                        lambda: indah.Text("Keys: A approves, R rejects.", size="body"),
                     ),
                 ]
             ),
