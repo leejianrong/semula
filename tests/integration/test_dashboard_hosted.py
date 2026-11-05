@@ -228,25 +228,35 @@ def test_signing_out_ends_the_session_for_good(server: str, world: World) -> Non
 
 
 def test_a_person_with_no_workspace_sees_only_the_waiting_page(server: str, world: World) -> None:
+    """It is one of the site's own pages (SEM-150), not the dashboard: the same card, wordmark and
+    footer as sign-in, no script, and a Sign out that ends the sign-in."""
     drifter = world.service.sign_in_identity(
         Identity("https://idp.test", "drift", "drift@example.com", True, "D")
     )
     secret, _ = world.service.create_session(drifter["id"])
-    tab = Tab(server, "/projects/shop/pending", cookies={COOKIE: secret})
-    try:
-        tab.wait_for(lambda m: m["type"] == "init", 5)
-        text = str(list(tab.nodes()))
-        assert "No workspace yet" in text or tab.saw("No workspace yet")
-        assert "/auth/signup" in text or tab.saw("/auth/signup")  # where an invite code goes
-        assert "held for a person" not in str(tab.messages) and "Send answer" not in text
-        # the way out: signing out ends this sign-in, so the next page load is the sign-in page
-        tab.send(tab.find("button", label="Sign out"), "click")
-        gone = httpx.get(
-            server + "/ui/projects/shop/pending", cookies={COOKIE: secret}, follow_redirects=False
-        )
-        assert gone.status_code == 302 and gone.headers["location"].startswith("/auth/login")
-    finally:
-        tab.close()
+    page = httpx.get(server + "/ui/projects/shop/pending", cookies={COOKIE: secret})
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    assert "No workspace yet" in page.text and "drift@example.com" in page.text
+    assert "/auth/signup" in page.text  # where an invite code goes
+    assert "class='card" in page.text and "class=brand" in page.text  # the public page's frame
+    assert (
+        "<script" not in page.text and "script-src" not in page.headers["content-security-policy"]
+    )
+    assert "Send answer" not in page.text and "Pending" not in page.text.split("<footer>")[0]
+    # the way out: signing out ends this sign-in, so the next page load is the sign-in page
+    csrf = world.service.authenticate_session(secret)["csrf"]  # type: ignore[index]
+    assert "action=/auth/logout" in page.text.replace('"', "") and csrf in page.text
+    out = httpx.post(
+        server + "/auth/logout",
+        data={"csrf": csrf},
+        cookies={COOKIE: secret},
+        follow_redirects=False,
+    )
+    assert out.status_code == 303 and out.headers["location"] == "/auth/login"
+    gone = httpx.get(
+        server + "/ui/projects/shop/pending", cookies={COOKIE: secret}, follow_redirects=False
+    )
+    assert gone.status_code == 302 and gone.headers["location"].startswith("/auth/login")
 
 
 def test_the_shell_is_served_with_a_strict_content_security_policy(

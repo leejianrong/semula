@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import html
 import logging
 import threading
 from typing import Any
@@ -13,6 +14,7 @@ from starlette.types import Receive, Scope, Send
 
 from ..api_auth import Cookies
 from ..config import Settings
+from ..public_page import page as public_page
 from ..schema import DEFAULT_PROJECT
 from ..service import Service
 
@@ -49,6 +51,41 @@ async def _redirect(send: Send, location: str, status: int = 307) -> None:
         }
     )
     await send({"type": "http.response.body", "body": b""})
+
+
+def waiting_page(
+    email: str, csrf: str, suspended: list[str], abuse_contact: str, signup_open: bool
+) -> Any:
+    """What a signed-in person sees who cannot use any workspace: the site's own page (as sign-in
+    and the terms), not the dashboard. It tells them why, and Sign out is the way out, for
+    signing in as someone else. Every value is escaped; nothing here runs script."""
+    way_out = (
+        '<form method=post action="/auth/logout">'
+        f'<input type=hidden name=csrf value="{html.escape(csrf)}">'
+        "<button class=alt>Sign out</button></form>"
+    )
+    if suspended:
+        names = html.escape(", ".join(suspended))
+        where = (
+            f"Write to {html.escape(abuse_contact)}." if abuse_contact else "Contact the operator."
+        )
+        body = (
+            f"<p>The workspace {names} is suspended, so nothing in it can be used for now. "
+            f"Its data is kept. {where}</p><p><small>The <a href=/terms>terms</a>.</small></p>"
+        )
+        return public_page("Workspace suspended", body + way_out)
+    more = (
+        "<a href=/auth/signup>Create a workspace of your own</a>, or open the invitation link "
+        "you were sent."
+        if signup_open
+        else "Or, if you were sent an invite code, <a href=/auth/signup>enter it here</a>."
+    )
+    body = (
+        f"<p>You are signed in as <b>{html.escape(email)}</b>, but you do not belong to a "
+        "workspace. Ask an admin to invite you, and open the link they send.</p>"
+        f"<p>{more}</p>"
+    )
+    return public_page("No workspace yet", body + way_out)
 
 
 class Locked:
@@ -127,29 +164,50 @@ class LazyDashboard:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._bridge_task
 
-    async def _signed_in(self, scope: Scope) -> bool:
-        """Does this page request carry a live sign-in? (The app's own ``/api`` calls answer 401
-        themselves; a page load is sent to the sign-in page instead.)"""
+    async def _session(self, scope: Scope) -> dict[str, Any] | None:
+        """The live sign-in this page request carries, if any. (The app's own ``/api`` calls
+        answer 401 themselves; a page load is sent to the sign-in page instead.)"""
         cookies = {
             k.strip(): v
             for part in dict(scope["headers"]).get(b"cookie", b"").decode().split(";")
             if "=" in part
             for k, v in [part.split("=", 1)]
         }
-        found = await asyncio.to_thread(
+        return await asyncio.to_thread(
             self._service.authenticate_session, cookies.get(self._cookie, "")
         )
-        return found is not None
+
+    async def _waiting(self, session: dict[str, Any]) -> Any:
+        """The page for a person who belongs to no usable workspace, else None."""
+        found = await asyncio.to_thread(self._service.principal_for_session, session)
+        if found is not None and found.role and found.workspace_id:
+            return None
+        suspended = await asyncio.to_thread(
+            self._service.suspended_workspaces_of, session["person_id"]
+        )
+        settings = self._settings
+        return waiting_page(
+            session["email"],
+            session["csrf"],
+            [w["workspace_id"] for w in suspended],
+            settings.abuse_contact if settings else "",
+            settings is not None and settings.signup == "open",
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if (
             self._hosted
             and scope["type"] == "http"
             and not scope["path"].startswith(f"{scope.get('root_path', '')}/api/")
-            and not await self._signed_in(scope)
         ):
-            await _redirect(send, "/auth/login?" + urlencode({"next": scope["path"]}), 302)
-            return
+            session = await self._session(scope)
+            if session is None:
+                await _redirect(send, "/auth/login?" + urlencode({"next": scope["path"]}), 302)
+                return
+            waiting = await self._waiting(session)
+            if waiting is not None:
+                await waiting(scope, receive, send)
+                return
         if scope["type"] == "http" and scope["path"].rstrip("/") == scope.get("root_path", ""):
             project = (
                 DEFAULT_PROJECT if self._hosted else await asyncio.to_thread(self._landing_project)
