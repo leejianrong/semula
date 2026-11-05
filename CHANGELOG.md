@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Added
+
+- Dashboard keyboard use: a "Skip to content" link is the first Tab stop and moves focus into the page; the navigation links take the same 2 px accent ring as every button and input (they were the browser's thin default) and show the Review and Pending counts as indah's own badge, which hides at zero; `g` then `l`, `e`, `p` or `r` goes to the log, entries, pending or review, `A` and `R` approve or reject the selected near miss, and `?` lists them. The sidebar and the Review screen say so (SEM-137).
+
 ## [0.5.1] - 2026-11-05
 
 ### Changed

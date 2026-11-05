@@ -142,34 +142,34 @@ def nav(tab: Tab) -> indah.Component:
     def to(page: str) -> Any:
         return lambda: f"/projects/{tab.project.value}/{page}"
 
+    def item(label: str, page: str, badge: str | None = None) -> indah.Component:
+        count = (lambda: tab.counts.value[badge]) if badge else None
+        return indah.NavItem(tab.ctx, label, to=to(page), badge=count, match="prefix")
+
     return indah.Column(
         children=[
-            indah.Link(tab.ctx, "Live log", to=to("log"), match="prefix"),
-            indah.Link(tab.ctx, "Entries", to=to("entries"), match="prefix"),
-            *tab.only(
-                "edit",
-                lambda: indah.Link(tab.ctx, "Playground", to=to("playground"), match="prefix"),
-            ),
-            indah.Row(
-                children=[
-                    indah.Link(tab.ctx, "Review", to=to("review"), match="prefix"),
-                    indah.Badge(
-                        indah.computed(lambda: str(tab.counts.value["review"])), tone="warn"
-                    ),
-                ],
-                align="center",
-            ),
-            indah.Row(
-                children=[
-                    indah.Link(tab.ctx, "Pending", to=to("pending"), match="prefix"),
-                    indah.Badge(
-                        indah.computed(lambda: str(tab.counts.value["pending"])), tone="warn"
-                    ),
-                ],
-                align="center",
-            ),
+            item("Live log", "log"),
+            item("Entries", "entries"),
+            *tab.only("edit", lambda: item("Playground", "playground")),
+            item("Review", "review", "review"),
+            item("Pending", "pending", "pending"),
             *workspace_links(tab),
+            go_keys(tab),
+            indah.Text("Press ? for shortcuts", size="body"),
         ]
+    )
+
+
+def go_keys(tab: Tab) -> indah.Component:
+    """``g`` then a letter goes to a screen, from anywhere but a text box; ``?`` lists them."""
+
+    def go(page: str) -> tuple[Callable[[], None], str]:
+        return (lambda: tab.ctx.navigate(f"/projects/{tab.project.peek()}/{page}")), (
+            f"Go to {page}"
+        )
+
+    return indah.Shortcuts(
+        {"g l": go("log"), "g e": go("entries"), "g p": go("pending"), "g r": go("review")}
     )
 
 
@@ -200,10 +200,10 @@ def workspace_links(tab: Tab) -> list[indah.Component]:
         return []
     return [
         indah.Text("**Workspace**", markdown=True, size="body"),
-        indah.Link(tab.ctx, "Members", to="/workspace/members", match="prefix"),
-        indah.Link(tab.ctx, "Tokens", to="/workspace/tokens", match="prefix"),
-        indah.Link(tab.ctx, "Audit", to="/workspace/audit", match="prefix"),
-        indah.Link(tab.ctx, "Usage", to="/workspace/usage", match="prefix"),
+        indah.NavItem(tab.ctx, "Members", to="/workspace/members", match="prefix"),
+        indah.NavItem(tab.ctx, "Tokens", to="/workspace/tokens", match="prefix"),
+        indah.NavItem(tab.ctx, "Audit", to="/workspace/audit", match="prefix"),
+        indah.NavItem(tab.ctx, "Usage", to="/workspace/usage", match="prefix"),
     ]
 
 
@@ -256,6 +256,7 @@ def build_session(
         not_found=indah.Text("### There is nothing at this address.", markdown=True),
     )
     side = [account(tab, who), nav(tab)] if who is not None else [nav(tab)]
+    side.insert(0, indah.custom("skip-link"))
     return indah.Session(
         indah.AppShell(rail=indah.Column(children=side), top=top_bar(tab), main=pages)
     )

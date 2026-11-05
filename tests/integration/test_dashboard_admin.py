@@ -116,7 +116,7 @@ def test_an_admin_sees_the_links_and_the_people_of_their_workspace_only(
     try:
         until(lambda: "edd@example.com" in json.dumps(tab.messages), "members listed")
         for link in ("Members", "Tokens", "Audit", "Usage"):
-            tab.find("link", label=link)
+            tab.find("navitem", label=link)
         assert "vi@example.com" in json.dumps(tab.messages)
     finally:
         tab.close()

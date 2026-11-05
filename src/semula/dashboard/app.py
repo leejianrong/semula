@@ -20,6 +20,7 @@ from .state import Dash
 from .theme import build_theme
 
 LOGO = Path(__file__).with_name("semula-mark.svg")
+SKIP_LINK = Path(__file__).with_name("skip-link.js")
 
 
 class Dashes:
@@ -66,6 +67,7 @@ def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
     do follows their role in the workspace they are working in (ADR-0010)."""
     hosted = settings is not None and settings.hosted
     dashes = Dashes(service)
+    indah.register_component("skip-link", module=SKIP_LINK)
 
     def build(ctx: indah.Context) -> indah.Session:
         if not hosted:

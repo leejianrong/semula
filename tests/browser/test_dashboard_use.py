@@ -254,3 +254,63 @@ def test_a_parked_call_is_answered_and_a_token_made_with_the_keyboard_alone(
     page.keyboard.press("Enter")
     see(page, "smla_live_")
     assert "by keyboard" in [t["name"] for t in site.acme.list_tokens()]
+
+
+def test_the_skip_link_is_the_first_stop_and_moves_focus_into_the_page(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """One keypress passes the navigation (SEM-137): the link shows when focused, then Enter
+    lands focus in the main region, so the next Tab is the first control of the screen."""
+    page = open_on_phone(new_page, site, SCREENS["log"])
+    page.keyboard.press("Tab")
+    link = page.get_by_role("link", name="Skip to content")
+    box = link.bounding_box()
+    assert box and 0 <= box["x"] < PHONE[0] and 0 <= box["y"] < PHONE[1], "it is on screen"
+    page.keyboard.press("Enter")
+    assert page.evaluate("document.activeElement.id") == "main"
+    assert page.evaluate("location.hash") == "", "a hash would be read as an app path"
+    page.keyboard.press("Tab")
+    assert page.evaluate("!!document.activeElement.closest('.main')"), "the next Tab is in the page"
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Shift+Tab")
+    assert page.get_by_role("link", name="Skip to content").bounding_box() is not None
+
+
+RING = """() => { const c = getComputedStyle(document.activeElement);
+  return { outline: c.outlineStyle, width: parseFloat(c.outlineWidth),
+           glow: c.boxShadow !== 'none', color: c.outlineColor }; }"""
+
+
+def test_every_control_shows_the_same_focus_ring(site: Site, new_page: Callable[..., Any]) -> None:
+    """Navigation links, buttons and the table all show a ring of 2 px or more in the accent
+    colour, never the browser's thin default (SEM-137)."""
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + SCREENS["tokens"])
+    page.get_by_text("Tokens", exact=True).first.wait_for(timeout=30000)
+    seen = {}
+    for _ in range(40):
+        page.keyboard.press("Tab")
+        tag = page.evaluate("document.activeElement.tagName.toLowerCase()")
+        if tag == "body":
+            break
+        ring = page.evaluate(RING)
+        label = page.evaluate("document.activeElement.innerText || ''")[:20]
+        seen[f"{tag}:{label}"] = ring
+        if tag in ("a", "button"):
+            assert ring["outline"] == "solid" and ring["width"] >= 2, (tag, label, ring)
+        elif tag in ("input", "select", "textarea"):
+            assert ring["glow"] or ring["width"] >= 2, (tag, label, ring)
+    assert any(k.startswith("a:Members") for k in seen), seen  # the nav links were walked
+
+
+def test_g_then_a_letter_goes_there_and_question_mark_lists_the_keys(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + SCREENS["log"])
+    page.get_by_text("Press ? for shortcuts").wait_for(timeout=30000)
+    page.keyboard.press("g")
+    page.keyboard.press("p")
+    page.wait_for_url("**/projects/shop/pending")
+    page.keyboard.press("?")
+    page.get_by_text("Go to review").wait_for(timeout=5000)
