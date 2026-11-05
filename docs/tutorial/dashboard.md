@@ -42,6 +42,10 @@ The same page edits the entry. Change the text in **Edit answer** and press **Sa
 
 The **Review** screen lists near misses (the badge in the sidebar counts them). Select one to see the new prompt next to the recorded one, with the changed words marked, and the recorded answer underneath. **Approve** serves that prompt from the entry from now on; **Reject** keeps the pairing from ever coming back. With a near miss selected, **A** approves and **R** rejects.
 
+## On a phone
+
+Below 560 px wide the navigation folds behind the menu button, tables show each row as a card with its columns named, and a review diff opens in its unified layout (Split is one tap away).
+
 ## With the keyboard
 
 The first **Tab** stop is "Skip to content", which jumps past the navigation. Tables take one Tab stop: the arrow keys move between rows and **Enter** selects. Outside a text box, **g** then **l**, **e**, **p** or **r** opens the log, entries, pending or review, and **?** lists every key.
