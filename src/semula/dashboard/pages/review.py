@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import indah
 
 from ...errors import SemulaError
+from ..problems import line, sentence
 from ..rows import candidate_row, request_text
 from ..state import blocking
 from ..state import spawn as spawn_task
@@ -89,7 +90,7 @@ def review_page(tab: Tab) -> indah.Component:
         try:
             await blocking(act, found["id"])
         except SemulaError as exc:
-            problem.set(f"{exc.code}: {exc.message}")
+            problem.set(sentence(exc))
             return
         problem.set("")
         done.set(
@@ -157,7 +158,7 @@ def review_page(tab: Tab) -> indah.Component:
                             )
                         ],
                     ),
-                    indah.Text(lambda: problem.value, size="body"),
+                    line(lambda: problem.value),
                     *tab.only(
                         "edit",
                         lambda: indah.Shortcuts(  # `decide` does nothing with none selected

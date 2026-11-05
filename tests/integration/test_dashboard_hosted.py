@@ -203,7 +203,8 @@ def test_a_role_taken_away_while_the_dashboard_is_open_fails_closed_at_the_next_
         tab.send(tab.find("codeeditor", label="Answer"), "input", {"value": "too late"})
         mark = tab.mark()
         tab.send(tab.find("button", label="Send answer"), "click")
-        tab.wait_for(lambda m: "insufficient_role" in str(m), 5, mark)
+        tab.wait_for(lambda m: "needs the editor role" in str(m), 5, mark)
+        assert "insufficient_role" not in tab.since(mark)
         assert world.acme.get_pending(world.pending)["status"] == "pending"
     finally:
         tab.close()

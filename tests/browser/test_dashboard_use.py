@@ -157,6 +157,32 @@ def test_a_workspace_screen_has_no_project_switcher_and_no_mode(
     assert not page.get_by_text("Record", exact=True).first.is_visible()
 
 
+def test_a_refusal_is_a_sentence_in_the_error_colour_with_no_code_and_no_trace_when_none(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """An empty error line takes no room, a refused invitation marks its field and says what
+    to fix, and the code (invalid_email) never reaches the screen (SEM-149)."""
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + SCREENS["members"])
+    page.get_by_label("Email", exact=True).wait_for(timeout=30000)
+    page.wait_for_timeout(500)
+    assert (
+        page.locator(".badge.tone-err").evaluate_all(
+            "els => els.filter(e => e.getBoundingClientRect().height > 0).length"
+        )
+        == 0
+    ), "an empty error line is drawn"
+    page.get_by_label("Email", exact=True).fill("not-an-address")
+    page.get_by_role("button", name="Send invitation").click()
+    page.get_by_text("That is not an email address.").wait_for(timeout=10000)
+    body = page.inner_text("body")
+    assert "invalid_email" not in body and "(at email)" not in body
+    assert page.get_by_label("Email", exact=True).get_attribute("aria-invalid") == "true"
+    page.get_by_role("button", name="Make viewer").first.click()
+    page.get_by_text("Make someone else an admin first.", exact=False).wait_for(timeout=10000)
+    assert "last_admin" not in page.inner_text("body")
+
+
 def test_the_connection_is_silent_until_it_is_lost_and_then_says_so_in_the_header(
     site: Site, new_page: Callable[..., Any]
 ) -> None:

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import indah
 
 from ...errors import SemulaError
+from ..problems import Problem, line
 from ..rows import (
     ALL_ACTIONS,
     ALL_PROJECTS,
@@ -35,13 +36,6 @@ if TYPE_CHECKING:
     from ..shell import Tab
 
 
-def describe(exc: SemulaError) -> str:
-    """An error as plain text beside the control (a plain ``Text``: codes have underscores,
-    which markdown would turn into emphasis)."""
-    where = f" (at {exc.param})" if exc.param else ""
-    return f"{exc.code}: {exc.message}{where}"
-
-
 class Screen:
     """What every admin screen needs: a task helper, an error line, and a reload that runs
     whenever the person opens the screen, so it is never older than the visit."""
@@ -49,7 +43,7 @@ class Screen:
     def __init__(self, tab: Tab, prefix: str) -> None:
         self.tab = tab
         self.prefix = prefix
-        self.error: indah.Signal[str] = indah.Signal("")
+        self.problem = Problem()
         self.note: indah.Signal[str] = indah.Signal("")
 
     def spawn(self, coro: Coroutine[Any, Any, None]) -> None:
@@ -69,17 +63,18 @@ class Screen:
         try:
             result = await blocking(work, *args)
         except SemulaError as exc:
-            self.error.set(describe(exc))
+            self.problem.refused(exc)
             self.note.set("")
             return None
-        self.error.set("")
+        self.problem.clear()
         return result if result is not None else True
 
 
-def _lines(screen: Screen) -> list[indah.Component]:
+def _lines(screen: Screen, *fields: str) -> list[indah.Component]:
+    """The note, and a refusal that none of this screen's ``fields`` shows."""
     return [
         indah.Text(lambda: screen.note.value, size="body"),
-        indah.Text(lambda: screen.error.value, size="body"),
+        line(screen.problem.elsewhere(*fields)),
     ]
 
 
@@ -96,7 +91,7 @@ def members_page(tab: Tab) -> indah.Component:
             found = await blocking(tab.service.list_members)
             waiting = await blocking(tab.service.list_invitations)
         except SemulaError as exc:
-            screen.error.set(describe(exc))
+            screen.problem.refused(exc)
             return
         members.set([member_row(m) for m in found])
         invitations.set([invitation_row(i) for i in waiting if i["status"] == "open"])
@@ -171,13 +166,20 @@ def members_page(tab: Tab) -> indah.Component:
     return indah.Column(
         children=[
             indah.Text("# Members", markdown=True),
-            *_lines(screen),
+            *_lines(screen, "email", "role"),
             members_table,
             indah.Text("## Invite someone", markdown=True),
             indah.Row(
                 children=[
-                    indah.TextInput(email, label="Email", placeholder="name@example.com"),
-                    indah.Select(role, options=list(ROLES), label="Role"),
+                    indah.TextInput(
+                        email,
+                        label="Email",
+                        placeholder="name@example.com",
+                        error=screen.problem.at("email"),
+                    ),
+                    indah.Select(
+                        role, options=list(ROLES), label="Role", error=screen.problem.at("role")
+                    ),
                     indah.Button("Send invitation", on_click=invite),
                 ],
                 align="end",
@@ -201,7 +203,7 @@ def tokens_page(tab: Tab) -> indah.Component:
         try:
             found = await blocking(tab.service.list_tokens)
         except SemulaError as exc:
-            screen.error.set(describe(exc))
+            screen.problem.refused(exc)
             return
         tokens.set([token_row(t) for t in found])
 
@@ -270,18 +272,29 @@ def tokens_page(tab: Tab) -> indah.Component:
                 "token can change settings. Bind one to a project to keep it out of the rest.",
                 size="body",
             ),
-            *_lines(screen),
+            *_lines(screen, "name", "scope", "project"),
             indah.SecretReveal(secret, label="New token"),
             table,
             indah.Text("## New token", markdown=True),
             indah.Row(
                 children=[
-                    indah.TextInput(name, label="Name", placeholder="ci runner"),
-                    indah.Select(scope, options=list(TOKEN_SCOPES), label="Scope"),
+                    indah.TextInput(
+                        name,
+                        label="Name",
+                        placeholder="ci runner",
+                        error=screen.problem.at("name"),
+                    ),
+                    indah.Select(
+                        scope,
+                        options=list(TOKEN_SCOPES),
+                        label="Scope",
+                        error=screen.problem.at("scope"),
+                    ),
                     indah.Select(
                         project,
                         options=[ALL_PROJECTS, *tab.dash.project_ids()],
                         label="Limit to project",
+                        error=screen.problem.at("project"),
                     ),
                     indah.Button("Create token", on_click=create),
                 ],
@@ -309,9 +322,9 @@ def audit_page(tab: Tab) -> indah.Component:
                 partial(tab.service.list_audit, AUDIT_PAGE + 1, before_id=before, action=which)
             )
         except SemulaError as exc:
-            screen.error.set(describe(exc))
+            screen.problem.refused(exc)
             return
-        screen.error.set("")
+        screen.problem.clear()
         shown = found[:AUDIT_PAGE]
         more.set(len(found) > AUDIT_PAGE)
         oldest_shown = int(shown[-1]["id"]) if shown else 0
@@ -364,7 +377,7 @@ def audit_page(tab: Tab) -> indah.Component:
                 "nobody can edit it.",
                 size="body",
             ),
-            indah.Text(lambda: screen.error.value, size="body"),
+            line(screen.problem.elsewhere()),
             indah.Select(action, options=[ALL_ACTIONS, *AUDIT_ACTIONS], label="Action"),
             table,
             indah.Row(
@@ -391,7 +404,7 @@ def usage_page(tab: Tab) -> indah.Component:
             usage = await blocking(tab.service.usage)
             state = await blocking(tab.service.workspace_status)
         except SemulaError as exc:
-            screen.error.set(describe(exc))
+            screen.problem.refused(exc)
             return
         lines.set(usage_lines(usage))
         deleted.set(bool(state["deleted_at"]))

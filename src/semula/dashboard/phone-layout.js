@@ -2,7 +2,10 @@
 // screens, tables drawn as cards, and the diff in its unified layout. Replace this with indah's
 // own support when it has it (see docs/INDAH-REQUESTS-PROMPT.md). 560 px is indah's breakpoint.
 const NARROW = "(max-width: 560px)";
-const CSS = `@media ${NARROW} {
+// An error line is a Badge (indah's Text has no error tone, IND-260); a Badge cannot be hidden,
+// so an empty one would be a pink sliver. This rule is not for phones only.
+const CSS = `.badge.tone-err:empty { display: none; }
+@media ${NARROW} {
   button, select, input[type="text"], input[type="search"], input[type="number"], textarea,
   a.navitem, .choice-opt { min-height: 44px; }
   button, .choice-opt { min-width: 44px; }
