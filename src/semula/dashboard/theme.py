@@ -8,7 +8,10 @@ logo red (``record``) is indah's ``err``. A test keeps these values equal to the
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+FONTS = Path(__file__).with_name("fonts")
 
 LIGHT = {
     "bg": "#F6FAF7",
@@ -79,4 +82,20 @@ SOURCES: dict[str, tuple[str, str]] = {
 def build_theme() -> Any:
     import indah
 
-    return indah.Theme(light=LIGHT, dark=DARK, radius="12px")
+    return indah.Theme(
+        light=LIGHT,
+        dark=DARK,
+        radius="12px",
+        # The design's faces (docs/design/README.md). Display and data are bundled in indah's page;
+        # Hanken Grotesk is our file, served from the dashboard's own origin, so the policy is
+        # unchanged and no font is fetched from another host.
+        font_display='"Bricolage Grotesque", system-ui, sans-serif',
+        font_body=(
+            '"Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, '
+            "Arial, sans-serif"
+        ),
+        font_mono='"IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace',
+        fonts=[
+            indah.Font("Hanken Grotesk", FONTS / "HankenGrotesk-latin-wght.woff2", weight="100 900")
+        ],
+    )
