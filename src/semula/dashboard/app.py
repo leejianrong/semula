@@ -124,6 +124,7 @@ def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
         spa=True,
         proxy_flush=False,  # a local container has no buffering proxy in front
         density="compact",
+        quiet_status=True,
         logo=LOGO,
         **options,
     )
