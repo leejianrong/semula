@@ -971,7 +971,7 @@ wheels = [
 
 [[package]]
 name = "indah"
-version = "0.11.0"
+version = "0.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -979,9 +979,9 @@ dependencies = [
     { name = "starlette" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/60/c5/b44ce89944491a646122c04f3af2537b03e0e877eb71dc0395ecfb0bffe8/indah-0.11.0.tar.gz", hash = "sha256:d43def866bfe58812cf94bae403c93d2832b0b52cb9cbd34a1ff9ba9ef5774de", size = 1733742, upload-time = "2026-10-31T18:33:43.834Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/c5/c490b28da37ca57e99cbb0de762ee6196819dd1899b45b52337b0f2c1bec/indah-0.13.0.tar.gz", hash = "sha256:251168f123c7788c0f328eaaacf70b98692bffc08d78b182eb76857ed64bf804", size = 1800254, upload-time = "2026-11-05T03:23:33.051Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/40/2d/89c0616475f11efeadbb9d49274840ebbb0d3f3b00da0cbbbab6df2c4eb0/indah-0.11.0-py3-none-any.whl", hash = "sha256:cb254f9d3cdad602fffca35ac5a64aa7a3774b1e370b553da3432d53699a3b15", size = 591701, upload-time = "2026-10-31T18:33:41.758Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/75/4e59f3fdd81be2b66ee3d13996d920576de30384154147ae13d140ee08ec/indah-0.13.0-py3-none-any.whl", hash = "sha256:7a4641bf6a91cc3cf94deb76afdc1cb3e0a3fbc5587721b44e71bf76d8322cb7", size = 604963, upload-time = "2026-11-05T03:23:31.061Z" },
 ]
 
 [[package]]
@@ -3420,7 +3420,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.4" },
     { name = "fastmcp", specifier = ">=2.10" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "indah", specifier = ">=0.11,<0.12" },
+    { name = "indah", specifier = ">=0.13,<0.14" },
     { name = "jsonschema", specifier = ">=4.20" },
     { name = "langchain-openai", marker = "extra == 'e2e'", specifier = ">=0.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
