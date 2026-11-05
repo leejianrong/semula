@@ -36,3 +36,31 @@ def test_the_packaged_logo_keeps_the_record_dot() -> None:
     packaged = (ROOT / "src/semula/dashboard/semula-mark.svg").read_text()
     original = (ROOT / "docs/design/logo/semula-mark.svg").read_text()
     assert "#C8271F" in packaged and "#C8271F" in original
+
+
+FONTS = ROOT / "src/semula/dashboard/fonts"
+
+
+def test_the_theme_sets_the_design_type_faces_and_serves_hanken_itself() -> None:
+    """Display Bricolage Grotesque, body Hanken Grotesk, data IBM Plex Mono (docs/design). The
+    first and last ship inside indah's page; Hanken is our file, served from our own origin."""
+    from semula.dashboard.theme import build_theme
+
+    theme = build_theme()
+    css = theme.css()
+    assert '--font-display: "Bricolage Grotesque"' in css
+    assert '--font-body: "Hanken Grotesk"' in css
+    assert '--font-mono: "IBM Plex Mono"' in css
+    assert "font-display: swap" in css and "url(" in css
+    assert "http" not in css.split("@font-face", 1)[1].split("}", 1)[0], "no remote font"
+    assert len(theme.font_files) == 1
+
+
+def test_the_font_file_is_a_small_woff2_with_its_licence_beside_it() -> None:
+    (font,) = FONTS.glob("*.woff2")
+    data = font.read_bytes()
+    assert data[:4] == b"wOF2"
+    assert len(data) < 60_000, "a latin subset, not the whole family"
+    assert "SIL Open Font License" in (FONTS / "OFL.txt").read_text()
+    readme = (FONTS / "README.md").read_text()
+    assert "OFL-1.1" in readme and "fontsource" in readme

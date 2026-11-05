@@ -233,6 +233,50 @@ def test_delete_entry_is_a_danger_button_apart_from_save(
     assert "danger" in (button.get_attribute("class") or "").split()
 
 
+def test_the_design_faces_render_and_no_font_comes_from_another_host(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """Body is Hanken Grotesk, headings Bricolage Grotesque, data IBM Plex Mono, each really
+    loaded; every request goes to our own origin (SEM-135)."""
+    page = new_page(site.url, site.cookies)
+    requests: list[str] = []
+    page.on("request", lambda r: requests.append(r.url))
+    response = page.goto(site.url + SCREENS["log"])
+    policy = response.headers.get("content-security-policy", "")
+    assert "font-src 'self' data:;" in policy, "the policy still allows fonts from nowhere else"
+    page.get_by_text("Replay", exact=True).first.wait_for(timeout=30000)
+    page.get_by_text("Calls", exact=True).first.wait_for(timeout=30000)
+    for _ in range(150):  # the strict policy forbids wait_for_function's string eval
+        if page.evaluate(
+            "[...document.fonts].some(f => f.family.includes('Hanken') && f.status === 'loaded')"
+        ):
+            break
+        page.wait_for_timeout(100)
+    first = page.evaluate(
+        """() => {
+          const family = (el) => getComputedStyle(el).fontFamily.split(',')[0].replace(/"/g, '');
+          const heading = [...document.querySelectorAll('h1, h2')].find(h => h.offsetParent);
+          const mono = document.querySelector('th, td.mono, .t-mono');
+          return {
+            body: family(document.body),
+            heading: heading && family(heading),
+            mono: mono && family(mono),
+            loaded: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family),
+          };
+        }"""
+    )
+    assert first["body"] == "Hanken Grotesk", first
+    assert first["heading"] == "Bricolage Grotesque", first
+    assert first["mono"] == "IBM Plex Mono", first
+    assert any("Hanken" in f for f in first["loaded"]), first
+    assert any("Bricolage" in f for f in first["loaded"]), first
+    assert any("Plex Mono" in f for f in first["loaded"]), first
+    own = site.url.split("//", 1)[1]
+    elsewhere = [u for u in requests if not u.startswith(("data:", "blob:")) and own not in u]
+    assert elsewhere == [], f"requests to another host: {elsewhere}"
+    assert any(u.endswith(".woff2") and "/api/fonts/" in u for u in requests), requests
+
+
 FILLED = """() => [...document.querySelectorAll('button')]
   .filter(b => !b.closest(
       '.theme-toggle, .segmented, [role=radiogroup], table, header, .select, .field')
