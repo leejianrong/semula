@@ -139,6 +139,24 @@ def test_the_mode_sits_in_the_top_bar_and_pause_in_the_logs_own_toolbar(
     assert site.acme.mode_of("shop") == "record"
 
 
+@pytest.mark.parametrize("screen", ["members", "tokens", "audit", "usage"])
+def test_a_workspace_screen_has_no_project_switcher_and_no_mode(
+    screen: str, site: Site, new_page: Callable[..., Any]
+) -> None:
+    """Members, tokens, audit and usage belong to the workspace, so the project and the mode
+    (which would change a project by accident) are for project screens only (SEM-148)."""
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + SCREENS["log"])
+    page.get_by_label("Project", exact=True).wait_for(timeout=30000)
+    page.get_by_text("Replay", exact=True).first.wait_for()
+    page.goto(site.url + SCREENS[screen])
+    page.get_by_role("heading", name=screen.capitalize()).first.wait_for(timeout=30000)
+    page.wait_for_timeout(500)
+    assert not page.get_by_label("Project", exact=True).is_visible()
+    assert not page.get_by_text("Replay", exact=True).first.is_visible()
+    assert not page.get_by_text("Record", exact=True).first.is_visible()
+
+
 def test_the_connection_is_silent_until_it_is_lost_and_then_says_so_in_the_header(
     site: Site, new_page: Callable[..., Any]
 ) -> None:

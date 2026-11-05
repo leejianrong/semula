@@ -6,7 +6,7 @@ In this tutorial we open the dashboard and use it to watch calls, answer parked 
 
 ![The live log: hit rate, median latency, parked calls and a table of calls](../assets/dashboard-log.png)
 
-Every call appears as it happens, in every open tab, the newest at the top. The three numbers above the table cover the last 30 minutes. Times read as "just now" or "12s ago" (hover for the exact time). Each call ends as **Hit**, **Miss**, **Error** or **Parked**, and the *Matched by* column draws the five tiers as dots, with a ring on the one that answered. Pick a row to see the request, the answer, and which tiers said yes or no. The **Replay | Record** control in the top bar, next to the project switcher, sets the mode of the project you are looking at, and it is kept across restarts (red means Record: unknown prompts wait for you). **Pause** above the table stops new calls from being added while you read; it counts what arrived, and **Resume** catches up.
+Every call appears as it happens, in every open tab, the newest at the top. The three numbers above the table cover the last 30 minutes. Times read as "just now" or "12s ago" (hover for the exact time). Each call ends as **Hit**, **Miss**, **Error** or **Parked**, and the *Matched by* column draws the five tiers as dots, with a ring on the one that answered. Pick a row to see the request, the answer, and which tiers said yes or no. The **Replay | Record** control above the page, next to the project switcher, sets the mode of the project you are looking at, and it is kept across restarts (red means Record: unknown prompts wait for you). **Pause** above the table stops new calls from being added while you read; it counts what arrived, and **Resume** catches up.
 
 ## The Pending screen
 
