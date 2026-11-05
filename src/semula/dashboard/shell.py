@@ -173,8 +173,15 @@ def go_keys(tab: Tab) -> indah.Component:
     )
 
 
-def top_bar(tab: Tab) -> indah.Component:
-    """The project and its mode, on every screen. The mode is per project and changes what the
+def project_screen(tab: Tab, chosen: indah.Signal[str], page: indah.Component) -> indah.Component:
+    """A project's screen with the project and its mode above it. Members, tokens, audit and usage
+    are the workspace's, so they have neither: a mode there would be one slip from changing a
+    project (SEM-148). A session has one Router, so the bar is part of each project page."""
+    return indah.Column(children=[top_bar(tab, chosen), page])
+
+
+def top_bar(tab: Tab, chosen: indah.Signal[str]) -> indah.Component:
+    """The project and its mode. The mode is per project and changes what the
     server does with an unknown prompt, so it sits beside the project it belongs to; red is
     the design's ``record`` colour (needs you). Someone who may not edit reads it as text."""
     if tab.can("edit"):
@@ -189,7 +196,7 @@ def top_bar(tab: Tab) -> indah.Component:
             indah.computed(lambda: f"{tab.mode.value.capitalize()} mode"), size="body"
         )
     return indah.Row(
-        children=[indah.Select(_chosen(tab), options=tab.projects, label="Project"), mode],
+        children=[indah.Select(chosen, options=tab.projects, label="Project"), mode],
         align="end",
     )
 
@@ -236,15 +243,20 @@ def build_session(
     public_url: str = "",
 ) -> indah.Session:
     tab = Tab(ctx, dash, service, who, public_url)
+    chosen = _chosen(tab)
+
+    def project_page(page: indah.Component) -> indah.Component:
+        return project_screen(tab, chosen, page)
+
     routes: dict[str, indah.Component] = {
-        "/projects/{project}/log": log_page(tab),
-        "/projects/{project}/pending": pending_page(tab),
-        "/projects/{project}/review": review_page(tab),
-        "/projects/{project}/entries": entries_page(tab),
-        "/projects/{project}/entries/{entry}": entry_page(tab),
+        "/projects/{project}/log": project_page(log_page(tab)),
+        "/projects/{project}/pending": project_page(pending_page(tab)),
+        "/projects/{project}/review": project_page(review_page(tab)),
+        "/projects/{project}/entries": project_page(entries_page(tab)),
+        "/projects/{project}/entries/{entry}": project_page(entry_page(tab)),
     }
     if tab.can("edit"):  # test_match is an editor's tool
-        routes["/projects/{project}/playground"] = playground_page(tab)
+        routes["/projects/{project}/playground"] = project_page(playground_page(tab))
     if tab.administers:  # an admin's, and only built for one
         routes["/workspace/members"] = members_page(tab)
         routes["/workspace/tokens"] = tokens_page(tab)
@@ -258,9 +270,7 @@ def build_session(
     side = [account(tab, who), nav(tab)] if who is not None else [nav(tab)]
     side.insert(0, indah.custom("skip-link"))
     side.insert(1, indah.custom("phone-layout"))
-    return indah.Session(
-        indah.AppShell(rail=indah.Column(children=side), top=top_bar(tab), main=pages)
-    )
+    return indah.Session(indah.AppShell(rail=indah.Column(children=side), main=pages))
 
 
 def account(tab: Tab, who: indah.Principal) -> indah.Component:
