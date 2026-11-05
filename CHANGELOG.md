@@ -8,6 +8,8 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-05
+
 ### Changed
 
 - The dashboard runs on indah 0.13 (was 0.11). Nothing on screen changes yet; it brings the font files and font slots, the danger button, the newest-first table and the quiet connection status that the next dashboard changes use.
