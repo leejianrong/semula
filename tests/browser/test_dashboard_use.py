@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from semula import canonical
@@ -172,6 +173,64 @@ def test_the_connection_is_silent_until_it_is_lost_and_then_says_so_in_the_heade
             break
         page.wait_for_timeout(100)
     assert not status.inner_text().strip(), "silent again once reconnected"
+
+
+def call_in(site: Site, token: str, text: str) -> None:
+    httpx.post(
+        site.url + "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"model": "m", "messages": [{"role": "user", "content": text}]},
+        timeout=30,
+    )
+
+
+def test_the_live_log_has_the_newest_call_at_the_top(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """A log reads newest first, for the calls already there and for each one that arrives
+    while the page is open (SEM-141, indah `newest_first`)."""
+    token = site.acme.create_token("probe", "replay", project="shop")["token"]
+    for text in ("zero call", "one call", "two call"):
+        call_in(site, token, text)
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + SCREENS["log"])
+    rows = page.locator("tbody tr")
+    rows.first.wait_for(timeout=30000)
+    page.wait_for_timeout(500)
+    assert "two call" in rows.first.inner_text()
+    assert "zero call" in rows.last.inner_text()
+    call_in(site, token, "three call")
+    page.get_by_text("three call").first.wait_for(timeout=15000)
+    assert "three call" in rows.first.inner_text()
+
+
+@pytest.mark.parametrize(
+    ("path", "name"),
+    [
+        (SCREENS["review"], "Reject"),
+        (SCREENS["usage"], "Delete workspace"),
+    ],
+)
+def test_reject_and_delete_are_set_apart_as_danger_buttons(
+    path: str, name: str, site: Site, new_page: Callable[..., Any]
+) -> None:
+    """Reject and Delete are the dashboard's two ways to throw something away; they use indah's
+    danger button, and no screen still hand-styles them as ghost buttons (SEM-141)."""
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + path)
+    page.get_by_role("button", name=name).wait_for(timeout=30000)
+    classes = page.get_by_role("button", name=name).first.get_attribute("class") or ""
+    assert "danger" in classes.split(), classes
+
+
+def test_delete_entry_is_a_danger_button_apart_from_save(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + entry_path(site))
+    button = page.get_by_role("button", name="Delete entry")
+    button.wait_for(timeout=30000)
+    assert "danger" in (button.get_attribute("class") or "").split()
 
 
 FILLED = """() => [...document.querySelectorAll('button')]

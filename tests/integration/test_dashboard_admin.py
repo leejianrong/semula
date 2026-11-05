@@ -372,7 +372,7 @@ def test_deleting_the_workspace_needs_its_id_typed_back(server: str, world: Worl
         until(lambda: tab.find("button", label="Delete workspace"), "page built")
         delete = tab.find("button", label="Delete workspace")
         # not filled (it is not the safe choice), and off until the id is typed back
-        assert delete["props"]["variant"] == "ghost" and delete["props"]["disabled"] is True
+        assert delete["props"]["variant"] == "danger" and delete["props"]["disabled"] is True
         type_into(tab, "textinput", "Workspace id", "acm")
         tab.send(delete, "click")  # a disabled button drops its click
         with pytest.raises(SemulaError) as refused:  # and the service refuses a wrong id anyway

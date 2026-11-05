@@ -173,7 +173,7 @@ def review_page(tab: Tab) -> indah.Component:
                             children=[
                                 indah.Button("Approve", approve, disabled=nothing_picked),
                                 indah.Button(
-                                    "Reject", reject, variant="ghost", disabled=nothing_picked
+                                    "Reject", reject, variant="danger", disabled=nothing_picked
                                 ),
                             ],
                             align="center",
