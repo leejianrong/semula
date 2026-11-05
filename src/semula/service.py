@@ -1165,7 +1165,11 @@ class Service:
             if current is None:
                 raise SemulaError(404, "member_not_found", f"No member {person_id}.")
             if current["role"] == "admin" and role != "admin" and self._admins(conn) == {person_id}:
-                raise SemulaError(409, "last_admin", "The last admin cannot be demoted.")
+                raise SemulaError(
+                    409,
+                    "last_admin",
+                    "The last admin cannot be demoted. Make someone else an admin first.",
+                )
             db.execute(
                 sa.update(MB)
                 .where(MB.c.workspace_id == self.workspace_id, MB.c.person_id == person_id)
@@ -1191,7 +1195,11 @@ class Service:
             if current is None:
                 raise SemulaError(404, "member_not_found", f"No member {person_id}.")
             if current["role"] == "admin" and self._admins(conn) == {person_id}:
-                raise SemulaError(409, "last_admin", "The last admin cannot leave.")
+                raise SemulaError(
+                    409,
+                    "last_admin",
+                    "The last admin cannot leave. Make someone else an admin first.",
+                )
             db.execute(
                 sa.delete(MB).where(
                     MB.c.workspace_id == self.workspace_id, MB.c.person_id == person_id

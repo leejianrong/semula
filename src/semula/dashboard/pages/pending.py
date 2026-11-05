@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import indah
 
 from ...errors import SemulaError
+from ..problems import line, sentence
 from ..rows import answer_from_text, pending_row
 from ..state import blocking
 from ..state import spawn as spawn_task
@@ -92,8 +93,7 @@ def pending_page(tab: Tab) -> indah.Component:
         try:
             await blocking(_answer, tab, key, payload)
         except SemulaError as exc:
-            where = f" (at {exc.param})" if exc.param else ""
-            error.set(f"{exc.code}: {exc.message}{where}")
+            error.set(sentence(exc))
             return
         error.set("")
         done.set(f"Answered {key}. The held call is released.")
@@ -180,9 +180,7 @@ def pending_page(tab: Tab) -> indah.Component:
                             placeholder="Select a parked call, then write what the model would say",
                             on_save=send,
                         ),
-                        indah.Text(
-                            lambda: error.value, size="body"
-                        ),  # plain: codes have underscores
+                        line(lambda: error.value),
                         indah.Text(HINT, markdown=True),
                         indah.Button(
                             "Send answer",

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import indah
 
 from ...errors import SemulaError
+from ..problems import line, sentence
 from ..rows import (
     ENTRY_FILTERS,
     ENTRY_PAGE,
@@ -144,8 +145,7 @@ def entries_page(tab: Tab) -> indah.Component:
                     "list to change its answer."
                 )
             else:
-                where = f" (at {exc.param})" if exc.param else ""
-                problem.set(f"{exc.code}: {exc.message}{where}")
+                problem.set(sentence(exc))
             return
         for field in (prompt, system, tools, answer):
             field.set("")
@@ -173,7 +173,7 @@ def entries_page(tab: Tab) -> indah.Component:
                 placeholder="What the real model would say. Start with { for a tool call or stream",
             ),
             indah.Switch(pin, label="Pin it, so agents cannot overwrite it"),
-            indah.Text(lambda: problem.value, size="body"),  # plain: codes have underscores
+            line(lambda: problem.value),
             indah.Row(
                 children=[
                     indah.Button("Create entry", create),

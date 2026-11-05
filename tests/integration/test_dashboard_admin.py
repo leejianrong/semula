@@ -90,8 +90,16 @@ def revealed(tab: Tab, mark: int, label: str) -> str:
     return hits[-1] if hits else ""
 
 
-def error_shown(tab: Tab, mark: int, code: str) -> bool:
-    return code in tab.since(mark)
+def error_shown(tab: Tab, mark: int, message: str, code: str) -> bool:
+    """The refusal's own sentence is on screen and its code (a log's word) is not (SEM-149)."""
+    seen = tab.since(mark)
+    assert code not in seen, f"the code {code} leaked into the screen"
+    return message in seen
+
+
+def field_error(tab: Tab, mark: int, field: str, label: str) -> str:
+    """What the field itself shows as its error, read from the patches aimed at it."""
+    return tab.changes_to(tab.find(field, label=label), mark)
 
 
 # --- who gets the screens ------------------------------------------------------------------
@@ -140,7 +148,10 @@ def test_the_last_admin_cannot_demote_themselves_and_is_told_why(server: str, wo
         until(lambda: "ada@example.com" in json.dumps(tab.messages), "members listed")
         mark = tab.mark()
         act(tab, "Members", "a0", world.people["ada"])  # Make viewer
-        until(lambda: error_shown(tab, mark, "last_admin"), "the refusal")
+        until(
+            lambda: error_shown(tab, mark, "Make someone else an admin first.", "last_admin"),
+            "the refusal",
+        )
         assert world.service.membership_of(world.people["ada"], "acme") == "admin"
     finally:
         tab.close()
@@ -200,7 +211,7 @@ def test_an_invitation_link_is_shown_once_to_this_tab_and_works_once(
         tab.close()
 
 
-def test_a_bad_invitation_is_refused_with_its_code_and_nothing_is_created(
+def test_a_bad_invitation_is_refused_in_its_field_and_nothing_is_created(
     server: str, world: World
 ) -> None:
     tab = admin_on(server, world, "members")
@@ -210,7 +221,12 @@ def test_a_bad_invitation_is_refused_with_its_code_and_nothing_is_created(
         type_into(tab, "textinput", "Email", "not-an-address")
         mark = tab.mark()
         tab.send(tab.find("button", label="Send invitation"), "click")
-        until(lambda: error_shown(tab, mark, "invalid_email"), "the refusal")
+        until(
+            lambda: "That is not an email address." in field_error(tab, mark, "textinput", "Email"),
+            "the refusal, under the Email field",
+        )
+        assert error_shown(tab, mark, "That is not an email address.", "invalid_email")
+        assert "(at email)" not in tab.since(mark)
         assert world.acme.list_invitations() == before
     finally:
         tab.close()
@@ -258,7 +274,11 @@ def test_a_token_needs_a_name_and_the_refusal_is_shown(server: str, world: World
         until(lambda: tab.find("table", label="Tokens"), "page built")
         mark = tab.mark()
         tab.send(tab.find("button", label="Create token"), "click")
-        until(lambda: error_shown(tab, mark, "invalid_name"), "the refusal")
+        until(
+            lambda: "1 to 80 characters" in field_error(tab, mark, "textinput", "Name"),
+            "the refusal, under the Name field",
+        )
+        assert error_shown(tab, mark, "A token needs a name", "invalid_name")
         assert world.acme.list_tokens() == []
     finally:
         tab.close()

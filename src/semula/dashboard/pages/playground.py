@@ -9,6 +9,7 @@ import indah
 
 from ... import canonical
 from ...errors import SemulaError
+from ..problems import line, sentence
 from ..rows import near_text, new_entry_request, rail_from_tests, verdict_text
 from ..state import blocking
 from .log import RAIL_ROW
@@ -40,7 +41,7 @@ def playground_page(tab: Tab) -> indah.Component:
                 )
             )
         except SemulaError as exc:
-            problem.set(f"{exc.code}: {exc.message}")
+            problem.set(sentence(exc))
             return
         problem.set("")
         result.set(found)
@@ -74,7 +75,7 @@ def playground_page(tab: Tab) -> indah.Component:
             indah.CodeEditor(
                 tools, language="json", lint=False, height="5rem", label="Test tools (optional)"
             ),
-            indah.Text(lambda: problem.value, size="body"),
+            line(lambda: problem.value),
             indah.Button("Test it", ask),
             indah.Card(
                 children=[

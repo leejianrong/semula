@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import indah
 
 from ...errors import SemulaError
+from ..problems import line, sentence
 from ..rows import answers_from_editor, editor_text, revision_row
 from ..state import blocking
 from ..state import spawn as spawn_task
@@ -125,8 +126,7 @@ def entry_page(tab: Tab) -> indah.Component:
                 f"Someone changed this entry; it is now at version {current}. Your text is kept "
                 "above. Press Reload to see their version (that discards your text)."
             )
-        where = f" (at {exc.param})" if exc.param else ""
-        return f"{exc.code}: {exc.message}{where}"
+        return sentence(exc)
 
     async def save() -> None:
         found = entry.peek()
@@ -302,9 +302,7 @@ def entry_page(tab: Tab) -> indah.Component:
                                 indah.Select(
                                     selection, options=["first", "sequence", "cycle"], label="Pick"
                                 ),
-                                indah.Text(
-                                    lambda: problem.value, size="body"
-                                ),  # plain: codes have underscores
+                                line(lambda: problem.value),
                                 indah.Text(lambda: saved.value, markdown=True, size="body"),
                                 indah.Row(
                                     children=[

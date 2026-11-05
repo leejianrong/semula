@@ -189,7 +189,8 @@ def test_a_bad_answer_is_explained_in_the_form_and_nothing_is_created(server: st
         )
         mark = tab.mark()
         tab.send(tab.find("button", label="Create entry"), "click")
-        tab.wait_for(lambda m: m["type"] == "patch" and "invalid_answer: " in str(m), 5, mark)
+        tab.wait_for(lambda m: m["type"] == "patch" and "offered no tools" in str(m), 5, mark)
+        assert "invalid_answer" not in tab.since(mark)
         assert httpx.get(f"{server}/api/v1/projects/default/entries").json()["total"] == 0
         fill(tab, "New answer", "")
         mark = tab.mark()
