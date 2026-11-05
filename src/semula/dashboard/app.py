@@ -21,6 +21,7 @@ from .theme import build_theme
 
 LOGO = Path(__file__).with_name("semula-mark.svg")
 SKIP_LINK = Path(__file__).with_name("skip-link.js")
+PHONE_LAYOUT = Path(__file__).with_name("phone-layout.js")
 
 
 class Dashes:
@@ -68,6 +69,7 @@ def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
     hosted = settings is not None and settings.hosted
     dashes = Dashes(service)
     indah.register_component("skip-link", module=SKIP_LINK)
+    indah.register_component("phone-layout", module=PHONE_LAYOUT)
 
     def build(ctx: indah.Context) -> indah.Session:
         if not hosted:

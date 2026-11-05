@@ -314,3 +314,83 @@ def test_g_then_a_letter_goes_there_and_question_mark_lists_the_keys(
     page.wait_for_url("**/projects/shop/pending")
     page.keyboard.press("?")
     page.get_by_text("Go to review").wait_for(timeout=5000)
+
+
+# --- the phone layout (SEM-136) -------------------------------------------------------------
+
+SMALL = """() => [...document.querySelectorAll('a,button,input,select,textarea')]
+  .filter(e => !e.closest('select'))  // a select's inner button is drawn by the select itself
+  .map(e => [e, e.getBoundingClientRect()])
+  .filter(([e, r]) => r.width && r.height && r.right > 0 && r.left < innerWidth
+                      && getComputedStyle(e).visibility !== 'hidden')
+  .filter(([e, r]) => r.width < 44 || r.height < 44)
+  .map(([e, r]) => (e.innerText || e.getAttribute('aria-label') || e.tagName).trim().slice(0, 20)
+                   + ' ' + Math.round(r.width) + 'x' + Math.round(r.height))"""
+
+
+@pytest.mark.parametrize("screen", list(SCREENS))
+def test_every_control_on_a_phone_is_at_least_44_px(
+    screen: str, site: Site, new_page: Callable[..., Any]
+) -> None:
+    page = open_on_phone(new_page, site, SCREENS[screen])
+    small = page.evaluate(SMALL)
+    assert small == [], f"{screen}: controls under 44 px: {small}"
+
+
+def entry_path(site: Site) -> str:
+    (found,) = [e for e in site.acme.list_entries("shop")["entries"]]
+    return f"/ui/projects/shop/entries/{found['id']}"
+
+
+def test_the_entry_editor_does_not_scroll_sideways_on_a_phone(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    page = new_page(site.url, site.cookies, PHONE)
+    page.goto(site.url + entry_path(site))
+    see(page, "Save answer")
+    page.wait_for_timeout(800)
+    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE[0]
+
+
+def test_tables_are_cards_on_a_phone_and_tables_on_a_desktop(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """Every value is labelled with its column and nothing is cut off at 390 px; at 1440 px the
+    same table is a table again."""
+    site.acme.create_token("deploy", "replay")
+    page = open_on_phone(new_page, site, SCREENS["tokens"])
+    page.wait_for_selector("tbody tr td[data-label]", timeout=15000)
+    cell = page.locator("tbody tr td[data-label='Scope']").first
+    assert cell.evaluate("e => getComputedStyle(e).display") == "flex"
+    assert page.evaluate("getComputedStyle(document.querySelector('thead')).display") == "none"
+    off = page.evaluate(
+        "[...document.querySelectorAll('tbody button')].filter(b => "
+        "b.getBoundingClientRect().right > innerWidth).map(b => b.innerText)"
+    )
+    assert off == [], f"cut off at the right: {off}"
+    desktop = new_page(site.url, site.cookies)
+    desktop.goto(site.url + SCREENS["tokens"])
+    desktop.wait_for_selector("tbody tr", timeout=30000)
+    assert desktop.evaluate("getComputedStyle(document.querySelector('thead')).display") != "none"
+
+
+def test_the_diff_opens_unified_on_a_phone_and_split_on_a_desktop(
+    tmp_path: Path, new_page: Callable[..., Any]
+) -> None:
+    import httpx
+
+    from tests.integration.test_lexical_match import BASE, WEAK, ask
+
+    with running_server(tmp_path, mode="replay") as url:
+        base = url + "/api/v1/projects/default/entries"
+        httpx.post(base, json={"request": ask(BASE), "response": {"content": "recorded"}})
+        httpx.post(url + "/v1/chat/completions", json=ask(WEAK))
+        for size, want in ((PHONE, "Unified"), ((1440, 900), "Split")):
+            page = new_page(url, None, size)
+            page.goto(url + "/ui/projects/default/review")
+            page.locator("tbody tr").first.click()
+            pressed = page.locator(".diff-mode button[aria-pressed=true]")
+            pressed.wait_for(timeout=30000)
+            assert pressed.inner_text() == want, size
+            page.wait_for_timeout(300)  # the choice is made once, not on every patch
+            assert pressed.inner_text() == want, size

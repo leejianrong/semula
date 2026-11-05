@@ -257,6 +257,7 @@ def build_session(
     )
     side = [account(tab, who), nav(tab)] if who is not None else [nav(tab)]
     side.insert(0, indah.custom("skip-link"))
+    side.insert(1, indah.custom("phone-layout"))
     return indah.Session(
         indah.AppShell(rail=indah.Column(children=side), top=top_bar(tab), main=pages)
     )
