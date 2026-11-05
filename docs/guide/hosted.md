@@ -330,7 +330,7 @@ An **admin** also gets a *Workspace* section in the sidebar:
 - **Members.** Everyone in the workspace with their role, to change or remove (the last admin cannot be demoted or removed, and the screen says why), and the open invitations to revoke. *Invite someone* takes an email and a role and shows the link once, in a box with a Copy button: `https://<your host>/auth/invite/<token>`. Reloading the page, or opening another tab, never shows it again; make a new invitation instead.
 - **Tokens.** Every API token with its scope, project, the start of its secret and when it was last used. *New token* takes a name, a scope and, optionally, one project; the secret is shown once, like an invitation link. *Rotate* makes a successor and lets the old token run for 24 hours; *Revoke* stops one now (immediately on the replica that serves the click, within 30 seconds on the others).
 - **Audit.** The [audit log](#the-audit-log), newest first, 50 to a page, filterable by action.
-- **Usage.** What the workspace holds against its [limits](#limits), and *Delete this workspace*, which needs the workspace id typed back and can be undone with *Restore* during the 30 days.
+- **Usage.** What the workspace holds against its [limits](#limits), and *Delete this workspace*, whose button stays off until the workspace id is typed back and can be undone with *Restore* during the 30 days.
 
 Every one of these calls the same service as the REST API and the CLI, so the rules do not differ by surface: an editor who crafts the request by hand gets `insufficient_role` from the service, not from the screen.
 

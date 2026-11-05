@@ -443,8 +443,14 @@ def usage_page(tab: Tab) -> indah.Component:
             indah.Row(
                 children=[
                     indah.TextInput(confirm, label="Workspace id", placeholder=workspace or ""),
+                    # ghost, not filled: nothing here is the screen's main action, and a green
+                    # filled button reads as the safe one. Off until the id is typed back.
                     indah.Button(
-                        "Delete workspace", on_click=delete, confirm="Delete this workspace?"
+                        "Delete workspace",
+                        on_click=delete,
+                        variant="ghost",
+                        confirm="Delete this workspace?",
+                        disabled=indah.computed(lambda: confirm.value.strip() != workspace),
                     ),
                     indah.Button("Restore workspace", on_click=restore, variant="ghost"),
                 ],
