@@ -90,7 +90,7 @@ def test_approve_and_reject_are_disabled_until_a_near_miss_is_selected(server: s
         assert disabled(tab, "Approve") and disabled(tab, "Reject")
         # the one filled button is Approve; Reject is set apart from it
         assert "variant" not in approve["props"]
-        assert tab.find("button", label="Reject")["props"]["variant"] == "ghost"
+        assert tab.find("button", label="Reject")["props"]["variant"] == "danger"
         key = httpx.get(server + "/api/v1/candidates", params={"status": "open"}).json()[
             "candidates"
         ][0]["id"]
@@ -114,7 +114,7 @@ def test_the_entry_editor_shows_the_answer_once_and_goes_back_with_a_link(server
         ]
         # Save is the filled button; Delete is not drawn like it
         assert "variant" not in tab.find("button", label="Save answer")["props"]
-        assert tab.find("button", label="Delete entry")["props"]["variant"] == "ghost"
+        assert tab.find("button", label="Delete entry")["props"]["variant"] == "danger"
     finally:
         tab.close()
 

@@ -323,7 +323,7 @@ def entry_page(tab: Tab) -> indah.Component:
                                         indah.Button(
                                             "Delete entry",
                                             delete,
-                                            variant="ghost",
+                                            variant="danger",
                                             confirm="Delete this entry? Its history goes with it.",
                                         ),
                                     ],

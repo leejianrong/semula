@@ -200,6 +200,7 @@ def log_page(tab: Tab) -> indah.Component:
         height="26rem",
         label="Calls",
         follow=True,
+        newest_first=True,  # a log reads newest first; rows still arrive oldest first
         density="compact",
         columns=[
             # relative ("12s ago"), live; the exact time is the cell's tooltip
