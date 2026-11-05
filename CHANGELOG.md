@@ -19,6 +19,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 ### Changed
 
 - The dashboard on a phone (under 560 px): every button, field, menu and switch is at least 44 px; tables become cards, each value labelled with its column and the row actions wrapping inside the card instead of being cut off; the project switcher and the Replay or Record control take the full width; the entry editor no longer scrolls sideways (the long id wraps); and a review diff opens unified, with whole words, though Split is one tap away. It is a stylesheet and a small script served by the dashboard itself until indah has its own support (IND-257, IND-258, IND-259; SEM-136). Desktop layout is unchanged.
+- The dashboard's connection status is silent while connected (the always-on "live" line is gone). When the connection is lost it appears in the top bar beside the theme switch, a red dot and "reconnecting…" (SEM-139, indah `quiet_status`).
 - The page for a signed-in person with no workspace, and the one for a suspended workspace, have a **Sign out** button. *Delete workspace* on the Usage screen is a ghost button, off until the workspace id is typed back (the service still refuses a wrong id). The review of the hosted screens (members, tokens, audit, usage, new entry, sign-up, device approval) is in `docs/design/screens-review-2.md` (SEM-138).
 
 ## [0.5.1] - 2026-11-05

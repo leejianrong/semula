@@ -138,6 +138,42 @@ def test_the_mode_sits_in_the_top_bar_and_pause_in_the_logs_own_toolbar(
     assert site.acme.mode_of("shop") == "record"
 
 
+def test_the_connection_is_silent_until_it_is_lost_and_then_says_so_in_the_header(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """Nothing about the connection shows while it is up; when it drops, a status with words
+    appears in the top bar beside the theme switch, and it goes again on reconnect (SEM-139)."""
+    page = new_page(site.url, site.cookies)
+    page.add_init_script(
+        "window.__streams = []; const ES = window.EventSource;"
+        "window.EventSource = class extends ES { constructor(...a) "
+        "{ super(...a); window.__streams.push(this); } };"
+    )
+    page.goto(site.url + SCREENS["log"])
+    page.get_by_text("Replay", exact=True).first.wait_for(timeout=30000)
+    page.wait_for_timeout(1500)
+    assert page.locator(".status:not(.status-head)").count() == 0, "no always-on footer line"
+    assert page.locator(".status-head").inner_text().strip() == "", "silent while connected"
+    # Cut the live stream the way a dropped network does: new attempts fail and the open one errors.
+    page.route("**/api/stream*", lambda route: route.abort())
+    page.evaluate("window.__streams.forEach(s => s.dispatchEvent(new Event('error')))")
+    status = page.locator(".status-head")
+    for _ in range(300):
+        if status.inner_text().strip():
+            break
+        page.wait_for_timeout(100)
+    assert status.inner_text().strip(), "the lost status has words"
+    head = page.locator(".theme-toggle").bounding_box()
+    mine = status.bounding_box()
+    assert head and mine and mine["y"] < 80 and abs(mine["y"] - head["y"]) < 40, "in the header"
+    page.unroute("**/api/stream*")
+    for _ in range(300):
+        if not status.inner_text().strip():
+            break
+        page.wait_for_timeout(100)
+    assert not status.inner_text().strip(), "silent again once reconnected"
+
+
 FILLED = """() => [...document.querySelectorAll('button')]
   .filter(b => !b.closest(
       '.theme-toggle, .segmented, [role=radiogroup], table, header, .select, .field')
