@@ -15,7 +15,7 @@ from ..schema import DEFAULT_WORKSPACE
 from ..scope import Principal, Scope
 from ..service import Service
 from .auth import POLICY, authenticator
-from .shell import build_session, build_waiting_session
+from .shell import build_session
 from .state import Dash
 from .theme import build_theme
 
@@ -76,16 +76,9 @@ def build_dashboard(service: Service, settings: Settings | None = None) -> Any:
             return build_session(ctx, dashes.get(DEFAULT_WORKSPACE), service)
         user = ctx.user
         if user is None or user.workspace is None or not user.roles:
-            return build_waiting_session(
-                ctx,
-                user,
-                [w["workspace_id"] for w in service.suspended_workspaces_of(user.id)]
-                if user is not None
-                else [],
-                settings.abuse_contact if settings else "",
-                settings is not None and settings.signup == "open",
-                service,
-            )
+            # A page load never gets here: the mount answers a person with no usable workspace
+            # with the site's own page (SEM-150). This is for a call straight to the app.
+            return indah.Session(indah.Text("You do not belong to a workspace."))
         role = next(iter(user.roles))
         workspace = user.workspace
         person = Principal(

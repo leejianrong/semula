@@ -267,31 +267,43 @@ def build_session(
         routes=routes,
         not_found=indah.Text("### There is nothing at this address.", markdown=True),
     )
-    side = [account(tab, who), nav(tab)] if who is not None else [nav(tab)]
+    side = [account(tab, who), nav(tab), sign_out(tab, who)] if who is not None else [nav(tab)]
     side.insert(0, indah.custom("skip-link"))
     side.insert(1, indah.custom("phone-layout"))
     return indah.Session(indah.AppShell(rail=indah.Column(children=side), main=pages))
 
 
 def account(tab: Tab, who: indah.Principal) -> indah.Component:
-    """Who is signed in, where, in which role, and the way out."""
+    """Who is signed in and in which role: one quiet row above the navigation."""
     role = next(iter(who.roles), "")
+    return indah.Column(
+        children=[
+            indah.Row(
+                children=[
+                    # plain text: a name is chosen at the sign-in provider, so it is never markdown
+                    # (a link in it would be a live link in this person's sidebar on every screen)
+                    indah.Text(who.name or who.email, variant="label"),
+                    indah.Text(f"{role} in {who.workspace}", variant="caption"),
+                ],
+                gap=".5rem",
+                justify="start",
+                align="center",
+            ),
+            *workspace_switcher(tab, who),
+        ]
+    )
 
-    async def sign_out() -> None:
+
+def sign_out(tab: Tab, who: indah.Principal) -> indah.Component:
+    """The way out, at the foot of the rail. The stylesheet draws this, the rail's one button,
+    as a text link (phone-layout.js)."""
+
+    async def end() -> None:
         # End this device's sign-in, then every open tab of it; the next request is not signed in.
         await blocking(tab.service.end_session_id, str(who.claims.get("session_id", "")))
         tab.ctx.sign_out()
 
-    return indah.Column(
-        children=[
-            # plain text: a name is chosen at the sign-in provider, so it is never markdown (a link
-            # in it would be a live link in this person's sidebar on every screen)
-            indah.Text(who.name or who.email, size="body"),
-            indah.Text(f"{role} in {who.workspace}", size="body"),
-            *workspace_switcher(tab, who),
-            indah.Button("Sign out", sign_out, variant="ghost"),
-        ]
-    )
+    return indah.Button("Sign out", end, variant="ghost")
 
 
 def workspace_switcher(tab: Tab, who: indah.Principal) -> list[indah.Component]:
@@ -327,61 +339,3 @@ def workspace_switcher(tab: Tab, who: indah.Principal) -> list[indah.Component]:
         indah.Select(chosen, options=mine, label="Workspace"),
         indah.Text(lambda: note.value, size="body"),
     ]
-
-
-def build_waiting_session(
-    ctx: indah.Context,
-    who: indah.Principal | None,
-    suspended: list[str] | None = None,
-    abuse_contact: str = "",
-    signup_open: bool = False,
-    service: Service | None = None,
-) -> indah.Session:
-    """A signed-in person who belongs to no workspace yet can do nothing but wait for a link.
-    One whose workspace the operator suspended is told so, and where to appeal."""
-    name = who.email if who is not None else ""
-
-    async def sign_out() -> None:
-        if service is not None and who is not None:
-            await blocking(service.end_session_id, str(who.claims.get("session_id", "")))
-        ctx.sign_out()
-
-    # someone who belongs nowhere still needs the way out (to sign in as another person)
-    way_out = indah.Button("Sign out", sign_out, variant="ghost") if who is not None else None
-    if suspended:
-        names = ", ".join(suspended)
-        where = f" Write to {abuse_contact}." if abuse_contact else " Contact the operator."
-        return indah.Session(
-            indah.Column(
-                children=[
-                    indah.Text("# Workspace suspended", markdown=True),
-                    indah.Text(
-                        f"The workspace {names} is suspended, so nothing in it can be used for "
-                        f"now. Its data is kept.{where} The terms are at /terms.",
-                        size="body",
-                    ),
-                    *([way_out] if way_out else []),
-                ]
-            )
-        )
-    return indah.Session(
-        indah.Column(
-            children=[
-                indah.Text("# No workspace yet", markdown=True),
-                indah.Text(
-                    f"You are signed in as {name}, but you do not belong to a workspace. Ask an "
-                    "admin to invite you, and open the link they send.",
-                    size="body",
-                ),
-                indah.Text(
-                    "[Create a workspace of your own](/auth/signup), or open the invitation link "
-                    "you were sent."
-                    if signup_open
-                    else "Or, if you were sent an invite code, [enter it here](/auth/signup).",
-                    markdown=True,
-                    size="body",
-                ),
-                *([way_out] if way_out else []),
-            ]
-        )
-    )

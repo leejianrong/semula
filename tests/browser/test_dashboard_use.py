@@ -183,6 +183,39 @@ def test_a_refusal_is_a_sentence_in_the_error_colour_with_no_code_and_no_trace_w
     assert "last_admin" not in page.inner_text("body")
 
 
+def test_the_account_is_one_quiet_row_and_sign_out_is_a_link_at_the_bottom_of_the_rail(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """Name and role sit on one line above the navigation; Sign out is plain text under it, not
+    the biggest control in the rail (SEM-150)."""
+    page = new_page(site.url, site.cookies)
+    page.goto(site.url + SCREENS["log"])
+    rail = page.locator("aside.rail")
+    rail.get_by_text("Ada", exact=True).wait_for(timeout=30000)
+    who = rail.get_by_text("Ada", exact=True).bounding_box()
+    role = rail.get_by_text("admin in acme", exact=True).bounding_box()
+    live = rail.get_by_role("link", name="Live log").bounding_box()
+    out = rail.get_by_role("button", name="Sign out")
+    box = out.bounding_box()
+    last = rail.get_by_role("link", name="Usage").bounding_box()
+    assert who and role and live and box and last
+    assert abs(who["y"] - role["y"]) < 12, "the name and the role are one row"
+    assert who["y"] + who["height"] < live["y"], "the account row is above the navigation"
+    assert box["y"] > last["y"], "Sign out is under the navigation"
+    look = out.evaluate(
+        "e => { const c = getComputedStyle(e); return [c.borderTopWidth, c.backgroundColor,"
+        " c.textDecorationLine]; }"
+    )
+    assert look[0] == "0px" and look[2] == "underline", f"Sign out is not a text link: {look}"
+    assert look[1] in ("rgba(0, 0, 0, 0)", "transparent")
+    out.click()
+    page.wait_for_timeout(
+        1000
+    )  # the sign-in ends on the server; the next page load is not signed in
+    page.goto(site.url + SCREENS["log"])
+    assert "/auth/login" in page.url
+
+
 def test_the_connection_is_silent_until_it_is_lost_and_then_says_so_in_the_header(
     site: Site, new_page: Callable[..., Any]
 ) -> None:

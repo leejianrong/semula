@@ -18,7 +18,6 @@ from semula.oidc import Identity, Provider
 from semula.scope import Principal, Scope
 from semula.service import Service
 from tests.support.db import fresh_database_url
-from tests.support.ui import Tab
 
 pytestmark = pytest.mark.integration
 
@@ -193,15 +192,13 @@ def test_a_suspended_workspaces_person_is_told_why_on_the_dashboard(
         database_url=world.url,
         abuse_contact="abuse@semula.example",
     ) as url:
-        tab = Tab(url, "/projects/shop/log", cookies={COOKIE: world.cookie})
-        try:
-            tab.wait_for(lambda m: m["type"] == "init", 5)
-            text = str(list(tab.nodes()))
-            assert "suspended" in text.lower() or tab.saw("suspended")
-            assert "abuse@semula.example" in text or tab.saw("abuse@semula.example")
-            assert "Send answer" not in text
-        finally:
-            tab.close()
+        page = httpx.get(url + "/ui/projects/shop/log", cookies={COOKIE: world.cookie})
+    assert page.status_code == 200 and "suspended" in page.text.lower()
+    assert "abuse@semula.example" in page.text
+    assert (
+        "class='card" in page.text and "<script" not in page.text
+    )  # the site's own page (SEM-150)
+    assert "Send answer" not in page.text and "action=/auth/logout" in page.text.replace('"', "")
 
 
 def test_the_cli_suspends_and_resumes(

@@ -2,9 +2,14 @@
 // screens, tables drawn as cards, and the diff in its unified layout. Replace this with indah's
 // own support when it has it (see docs/INDAH-REQUESTS-PROMPT.md). 560 px is indah's breakpoint.
 const NARROW = "(max-width: 560px)";
-// An error line is a Badge (indah's Text has no error tone, IND-260); a Badge cannot be hidden,
-// so an empty one would be a pink sliver. This rule is not for phones only.
+// Not for phones only. An error line is a Badge (indah's Text has no error tone, IND-260); a Badge
+// cannot be hidden, so an empty one would be a pink sliver. Sign out is the one button in the
+// rail; it is drawn as a quiet text link, which indah's Button has no variant for.
 const CSS = `.badge.tone-err:empty { display: none; }
+aside.rail button.ghost { border: 0; background: none; color: var(--muted);
+  padding-inline: 0; justify-content: flex-start; text-decoration: underline;
+  text-underline-offset: .2em; }
+aside.rail button.ghost:hover { color: var(--text); background: none; }
 @media ${NARROW} {
   button, select, input[type="text"], input[type="search"], input[type="number"], textarea,
   a.navitem, .choice-opt { min-height: 44px; }
