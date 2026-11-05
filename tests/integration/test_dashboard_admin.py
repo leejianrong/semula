@@ -370,14 +370,30 @@ def test_deleting_the_workspace_needs_its_id_typed_back(server: str, world: Worl
     tab = admin_on(server, world, "usage")
     try:
         until(lambda: tab.find("button", label="Delete workspace"), "page built")
+        delete = tab.find("button", label="Delete workspace")
+        # not filled (it is not the safe choice), and off until the id is typed back
+        assert delete["props"]["variant"] == "ghost" and delete["props"]["disabled"] is True
         type_into(tab, "textinput", "Workspace id", "acm")
-        mark = tab.mark()
-        tab.send(tab.find("button", label="Delete workspace"), "click")
-        until(lambda: error_shown(tab, mark, "confirmation_mismatch"), "the refusal")
+        tab.send(delete, "click")  # a disabled button drops its click
+        with pytest.raises(SemulaError) as refused:  # and the service refuses a wrong id anyway
+            world.acme.delete_workspace("acm")
+        assert refused.value.code == "confirmation_mismatch"
         assert world.acme.workspace_status()["deleted_at"] is None
         assert verify(world, token["token"]) is not None
 
+        mark = tab.mark()
         type_into(tab, "textinput", "Workspace id", "acme")
+        tab.wait_for(
+            lambda m: (
+                m["type"] == "patch"
+                and any(
+                    c.get("target") == delete["id"] and c.get("props", {}).get("disabled") is False
+                    for c in m["changes"]
+                )
+            ),
+            5,
+            mark,
+        )
         tab.send(tab.find("button", label="Delete workspace"), "click")
         until(lambda: world.acme.workspace_status()["deleted_at"], "deleted")
         assert verify(world, token["token"]) is None  # its tokens stopped

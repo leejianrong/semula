@@ -12,6 +12,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 - Dashboard keyboard use: a "Skip to content" link is the first Tab stop and moves focus into the page; the navigation links take the same 2 px accent ring as every button and input (they were the browser's thin default) and show the Review and Pending counts as indah's own badge, which hides at zero; `g` then `l`, `e`, `p` or `r` goes to the log, entries, pending or review, `A` and `R` approve or reject the selected near miss, and `?` lists them. The sidebar and the Review screen say so (SEM-137).
 
+### Changed
+
+- The page for a signed-in person with no workspace, and the one for a suspended workspace, have a **Sign out** button. *Delete workspace* on the Usage screen is a ghost button, off until the workspace id is typed back (the service still refuses a wrong id). The review of the hosted screens (members, tokens, audit, usage, new entry, sign-up, device approval) is in `docs/design/screens-review-2.md` (SEM-138).
+
 ## [0.5.1] - 2026-11-05
 
 ### Changed

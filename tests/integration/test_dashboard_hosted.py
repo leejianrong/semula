@@ -238,6 +238,12 @@ def test_a_person_with_no_workspace_sees_only_the_waiting_page(server: str, worl
         assert "No workspace yet" in text or tab.saw("No workspace yet")
         assert "/auth/signup" in text or tab.saw("/auth/signup")  # where an invite code goes
         assert "held for a person" not in str(tab.messages) and "Send answer" not in text
+        # the way out: signing out ends this sign-in, so the next page load is the sign-in page
+        tab.send(tab.find("button", label="Sign out"), "click")
+        gone = httpx.get(
+            server + "/ui/projects/shop/pending", cookies={COOKIE: secret}, follow_redirects=False
+        )
+        assert gone.status_code == 302 and gone.headers["location"].startswith("/auth/login")
     finally:
         tab.close()
 

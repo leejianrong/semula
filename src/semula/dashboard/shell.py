@@ -324,10 +324,19 @@ def build_waiting_session(
     suspended: list[str] | None = None,
     abuse_contact: str = "",
     signup_open: bool = False,
+    service: Service | None = None,
 ) -> indah.Session:
     """A signed-in person who belongs to no workspace yet can do nothing but wait for a link.
     One whose workspace the operator suspended is told so, and where to appeal."""
     name = who.email if who is not None else ""
+
+    async def sign_out() -> None:
+        if service is not None and who is not None:
+            await blocking(service.end_session_id, str(who.claims.get("session_id", "")))
+        ctx.sign_out()
+
+    # someone who belongs nowhere still needs the way out (to sign in as another person)
+    way_out = indah.Button("Sign out", sign_out, variant="ghost") if who is not None else None
     if suspended:
         names = ", ".join(suspended)
         where = f" Write to {abuse_contact}." if abuse_contact else " Contact the operator."
@@ -340,6 +349,7 @@ def build_waiting_session(
                         f"now. Its data is kept.{where} The terms are at /terms.",
                         size="body",
                     ),
+                    *([way_out] if way_out else []),
                 ]
             )
         )
@@ -360,6 +370,7 @@ def build_waiting_session(
                     markdown=True,
                     size="body",
                 ),
+                *([way_out] if way_out else []),
             ]
         )
     )
