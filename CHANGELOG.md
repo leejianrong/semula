@@ -13,6 +13,7 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 - The project switcher and the Replay or Record control show on a project's screens only. Members, tokens, audit and usage belong to the workspace, so they no longer carry a mode that is one slip from changing a project (SEM-148).
 - Errors on the dashboard's forms say what went wrong and how to fix it, and nothing else: the error code (`invalid_email`) and the `(at email)` tail are gone from the sentence (the API's error body keeps them). A refusal about a field (the invitation email, a token's name, scope or project) shows under that field in the error colour, through indah's `error=`; one that belongs to no field is an error-coloured line, and takes no room when there is nothing to say. The last-admin refusals now say to make someone else an admin first (SEM-149).
 - The sidebar's account block is quieter: your name and role in the workspace on one line above the navigation, and Sign out as a plain text link at the foot of the rail instead of the largest control in it. The page for someone who belongs to no workspace (or only to a suspended one) is now one of the site's own pages, with the same card, wordmark and footer as sign-in, the terms and the 404, and still has a Sign out (SEM-150).
+- Remove (a member) and Revoke (an invitation or a token) in the Members and Tokens tables are indah's danger button, like Reject and Delete, so the ways to throw something away read the same on every screen. They keep the 44 px target on a phone (SEM-152).
 
 ### Fixed
 

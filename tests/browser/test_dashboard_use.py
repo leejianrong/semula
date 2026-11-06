@@ -590,6 +590,29 @@ def test_every_control_on_a_phone_is_at_least_44_px(
     assert small == [], f"{screen}: controls under 44 px: {small}"
 
 
+@pytest.mark.parametrize(
+    ("screen", "names"),
+    [("members", ["Remove", "Revoke"]), ("tokens", ["Revoke"])],
+)
+def test_remove_and_revoke_rows_are_danger_buttons_and_still_44_px_on_a_phone(
+    screen: str, names: list[str], site: Site, new_page: Callable[..., Any]
+) -> None:
+    """Remove (a member) and Revoke (an invitation, a token) throw something away, so they are
+    indah's danger button; as card rows at 390 px they keep the 44 px target (SEM-152)."""
+    site.acme.create_invitation("new@example.com", "viewer")
+    site.acme.create_token("ci", "replay")
+    page = open_on_phone(new_page, site, SCREENS[screen])
+    page.wait_for_selector("tbody tr", timeout=30000)
+    for name in names:
+        buttons = page.get_by_role("button", name=name)
+        assert buttons.count() >= 1, name
+        for i in range(buttons.count()):
+            classes = (buttons.nth(i).get_attribute("class") or "").split()
+            assert "danger" in classes, (name, classes)
+    assert page.evaluate(SMALL) == []
+    assert len(page.evaluate(FILLED)) <= 1
+
+
 def entry_path(site: Site) -> str:
     (found,) = [e for e in site.acme.list_entries("shop")["entries"]]
     return f"/ui/projects/shop/entries/{found['id']}"

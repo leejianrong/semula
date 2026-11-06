@@ -148,6 +148,7 @@ def members_page(tab: Tab) -> indah.Component:
                 "Remove",
                 remove,
                 confirm="Remove this person from the workspace? Their sign-ins here end now.",
+                variant="danger",
             ),
         ],
     )
@@ -161,7 +162,9 @@ def members_page(tab: Tab) -> indah.Component:
             indah.Col("role", title="Role", sortable=False),
             indah.Col("expires", title="Expires", kind="mono", sortable=False),
         ],
-        actions=[indah.RowAction("Revoke", revoke, confirm="Revoke this invitation?")],
+        actions=[
+            indah.RowAction("Revoke", revoke, confirm="Revoke this invitation?", variant="danger")
+        ],
     )
     return indah.Column(
         children=[
@@ -260,7 +263,12 @@ def tokens_page(tab: Tab) -> indah.Component:
                 rotate,
                 confirm="Make a new token like this one? The old one stops in 24 h.",
             ),
-            indah.RowAction("Revoke", revoke, confirm="Revoke this token? It stops working now."),
+            indah.RowAction(
+                "Revoke",
+                revoke,
+                confirm="Revoke this token? It stops working now.",
+                variant="danger",
+            ),
         ],
     )
     return indah.Column(
