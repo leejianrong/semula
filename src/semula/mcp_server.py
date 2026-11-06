@@ -90,7 +90,8 @@ def _scoped(fn: Callable[..., T]) -> Callable[..., T]:
         if level < LEVEL[needed]:
             raise _refuse(
                 "insufficient_scope",
-                f"This token has scope '{who.scope}'; this tool needs '{needed}'.",
+                f"This token has scope '{who.scope}'; this tool needs '{needed}'. "
+                f"Use a token with scope '{needed}'.",
             )
         if kwargs.get("force") and who.scope != "admin":
             raise _refuse("insufficient_scope", "Forcing past a pin needs an admin token.")

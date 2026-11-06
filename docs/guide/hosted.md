@@ -198,7 +198,7 @@ A replay token asking for something it has not got fails fast, in a recording pr
 A scope that is too low names what is needed:
 
 ```json
-{"error": {"message": "This token has scope 'record'; this call needs 'admin'.", "type": "authentication_error", "param": null, "code": "insufficient_scope"}}
+{"error": {"message": "This token has scope 'record'; this call needs 'admin'. Use a token with scope 'admin'.", "type": "authentication_error", "param": null, "code": "insufficient_scope"}}
 ```
 
 ## Rotating and revoking

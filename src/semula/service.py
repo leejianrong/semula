@@ -278,7 +278,9 @@ class Service:
             raise SemulaError(
                 403,
                 "insufficient_role",
-                f"This needs the {role} role" + (f"; you are a {current}." if current else "."),
+                f"This needs the {role} role"
+                + (f"; you are a {current}. " if current else ". ")
+                + f"Ask an admin of this workspace for the {role} role.",
                 err_type="authentication_error",
             )
 
@@ -286,7 +288,10 @@ class Service:
         """Tokens, bound or not, never manage tokens or the operator's settings (ADR-0010)."""
         if self.acting_as_token:
             raise SemulaError(
-                403, "forbidden", "Tokens cannot manage tokens.", err_type="authentication_error"
+                403,
+                "forbidden",
+                "Tokens cannot manage tokens. Sign in as an admin, or use the operator's CLI.",
+                err_type="authentication_error",
             )
 
     def _pk(self, table: sa.Table, slug: str) -> tuple[Any, Any]:
@@ -1821,7 +1826,10 @@ class Service:
     def create_project(self, slug: str, name: str | None = None) -> dict[str, Any]:
         if self.project_limit is not None:
             raise SemulaError(
-                403, "forbidden", "A token bound to a project cannot create projects."
+                403,
+                "forbidden",
+                "A token bound to a project cannot create projects. Use an unbound token, "
+                "or sign in as an admin.",
             )
         if not SLUG.fullmatch(slug):
             raise SemulaError(
