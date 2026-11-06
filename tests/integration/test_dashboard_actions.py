@@ -50,7 +50,9 @@ def becomes(tab: Tab, button: dict[str, Any], flag: bool, after: int) -> None:
     )
 
 
-def test_send_answer_is_disabled_until_a_parked_call_is_selected(server: str) -> None:
+def test_send_answer_is_disabled_until_a_call_is_selected_and_text_has_reached_the_server(
+    server: str,
+) -> None:
     httpx.put(server + "/api/v1/mode", json={"mode": "record"})
     tab = Tab(server, "/projects/default/pending")
     try:
@@ -73,6 +75,17 @@ def test_send_answer_is_disabled_until_a_parked_call_is_selected(server: str) ->
         tab.wait_for(lambda m: m["type"] == "patch" and "held" in str(m), 5)
         mark = tab.mark()
         tab.send(tab.find("table", label="Parked calls"), "select", {"key": key})
+        tab.wait_for(lambda m: "held" in str(m), 5, mark)
+        enabled = [  # a call is picked but nothing is written: Send must not have enabled (SEM-151)
+            c
+            for m in tab.messages[mark:]
+            if m["type"] == "patch"
+            for c in m["changes"]
+            if c.get("target") == send["id"] and c.get("props", {}).get("disabled") is False
+        ]
+        assert enabled == []
+        mark = tab.mark()
+        tab.send(tab.find("codeeditor", label="Answer"), "input", {"value": "ok"})
         becomes(tab, send, False, mark)
         mark = tab.mark()
         tab.send(tab.find("table", label="Parked calls"), "select", {"key": None})

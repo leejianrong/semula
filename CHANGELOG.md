@@ -14,6 +14,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 - Errors on the dashboard's forms say what went wrong and how to fix it, and nothing else: the error code (`invalid_email`) and the `(at email)` tail are gone from the sentence (the API's error body keeps them). A refusal about a field (the invitation email, a token's name, scope or project) shows under that field in the error colour, through indah's `error=`; one that belongs to no field is an error-coloured line, and takes no room when there is nothing to say. The last-admin refusals now say to make someone else an admin first (SEM-149).
 - The sidebar's account block is quieter: your name and role in the workspace on one line above the navigation, and Sign out as a plain text link at the foot of the rail instead of the largest control in it. The page for someone who belongs to no workspace (or only to a suspended one) is now one of the site's own pages, with the same card, wordmark and footer as sign-in, the terms and the 404, and still has a Sign out (SEM-150).
 
+### Fixed
+
+- On the Pending screen, Send answer stays disabled until the server holds the text you typed. The editor's text and the click travel as separate requests with no order between them, so a quick click could be answered "Write an answer first." beside text the page showed (SEM-151).
+
 ## [0.6.0] - 2026-11-05
 
 ### Changed

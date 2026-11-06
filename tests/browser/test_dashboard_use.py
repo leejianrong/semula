@@ -24,6 +24,7 @@ from tests.support.db import fresh_database_url
 from tests.support.server import running_server
 
 pytestmark = pytest.mark.browser
+playwright_sync = pytest.importorskip("playwright.sync_api")
 
 PROVIDER = Provider("google", "oidc", "client", "secret", issuer="https://idp.test")
 SECRET = "a-secret-of-at-least-sixteen-bytes"  # noqa: S105
@@ -390,7 +391,9 @@ def answer_by_mouse(page: Any, text: str) -> None:
     page.locator("tbody tr").first.click()
     editor = page.locator("[contenteditable=true], textarea").first
     editor.click()
-    page.keyboard.insert_text(text)  # typed key by key, the box's own send can race the click
+    page.keyboard.insert_text(text)
+    # Send is disabled until the server holds the text (the editor's input and a click are two
+    # requests with no order); click() waits for it to enable, as a person would.
     page.get_by_role("button", name="Send answer").click()
 
 
@@ -411,6 +414,38 @@ def test_a_parked_call_is_answered_and_a_token_made_at_phone_width(
     mint_by_mouse(page, "from a phone")
     see(page, "smla_live_")
     assert "from a phone" in [t["name"] for t in site.acme.list_tokens()]
+
+
+SLOW_INPUT = """
+const send = window.fetch;
+window.fetch = (url, init) => {
+  if (init && typeof init.body === 'string' && init.body.includes('"event":"input"'))
+    return new Promise((done) => setTimeout(() => done(send(url, init)), 700));
+  return send(url, init);
+};
+"""
+
+
+def test_send_waits_for_the_typed_text_to_reach_the_server(
+    site: Site, new_page: Callable[..., Any]
+) -> None:
+    """The editor's text and the Send click travel as separate requests (SEM-151). With the text
+    held back for 700 ms, Send must stay disabled until it lands, then send it: never answer
+    "Write an answer first." beside text the page shows."""
+    site.park("what is two plus two")
+    page = open_on_phone(new_page, site, SCREENS["pending"])
+    page.context.add_init_script(SLOW_INPUT)
+    page.reload()
+    page.wait_for_selector("tbody tr", timeout=30000)
+    page.locator("tbody tr").first.click()
+    page.locator("[contenteditable=true], textarea").first.click()
+    send = page.get_by_role("button", name="Send answer")
+    assert send.is_disabled(), "nothing written yet"
+    page.keyboard.insert_text("four")
+    send.click()  # waits until the server has the text and enables the button
+    see(page, "Answered")
+    assert "Write an answer first" not in page.inner_text("body")
+    assert site.acme.list_pending("pending", "shop") == []
 
 
 TAB_UNTIL = """(want) => {
@@ -457,6 +492,8 @@ def test_a_parked_call_is_answered_and_a_token_made_with_the_keyboard_alone(
     page.get_by_text("Select a parked call to read it.").wait_for(state="detached", timeout=15000)
     tab_to(page, "div", "Answer")  # the editor
     page.keyboard.insert_text("four")
+    # Send enables once the server holds the text; Tab skips it until then
+    playwright_sync.expect(page.get_by_role("button", name="Send answer")).to_be_enabled()
     page.keyboard.press("Control+m")  # Tab indents in the editor: this is how a keyboard leaves
     tab_to(page, "button", "Send answer")
     page.keyboard.press("Enter")

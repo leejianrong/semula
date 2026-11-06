@@ -185,7 +185,12 @@ def pending_page(tab: Tab) -> indah.Component:
                         indah.Button(
                             "Send answer",
                             on_click=send,
-                            disabled=indah.computed(lambda: picked.value is None),
+                            # The editor's text reaches the server by its own request (debounced,
+                            # flushed on blur) and a click is another, with no order between them.
+                            # Enabled only once the server holds text, so a click cannot outrun it.
+                            disabled=indah.computed(
+                                lambda: picked.value is None or not answer.value.strip()
+                            ),
                         ),
                     ]
                 ),
