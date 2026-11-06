@@ -241,13 +241,17 @@ class TokenAuthMiddleware:
             )  # fmt: skip
         if PEOPLE_ONLY.fullmatch(path.rstrip("/")):
             return SemulaError(
-                403, "forbidden", "Tokens cannot manage tokens.", err_type="authentication_error"
+                403,
+                "forbidden",
+                "Tokens cannot manage tokens. Sign in as an admin, or use the operator's CLI.",
+                err_type="authentication_error",
             )
         needed = required_scope(method, path)
         if not allows(principal.scope, needed):
             return SemulaError(
                 403, "insufficient_scope",
-                f"This token has scope '{principal.scope}'; this call needs '{needed}'."
+                f"This token has scope '{principal.scope}'; this call needs '{needed}'. "
+                f"Use a token with scope '{needed}'."
                 if needed
                 else "No token may call this route.",
                 err_type="authentication_error",

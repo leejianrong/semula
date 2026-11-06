@@ -114,6 +114,26 @@ def test_a_viewer_reads_and_nothing_more(team: Team) -> None:
     refused(lambda: vi.set_mode("record", "shop"), 403, "insufficient_role")
 
 
+def message_of(call: Any) -> str:
+    with pytest.raises(SemulaError) as caught:
+        call()
+    return caught.value.message
+
+
+def test_refusals_for_a_role_or_a_token_say_what_to_do_about_it(team: Team) -> None:
+    """Each refusal names the way out, not only the problem (SEM-154)."""
+    vi = team.as_("vi")
+    said = message_of(lambda: vi.set_mode("record", "shop"))
+    assert said.startswith("This needs the editor role; you are a viewer. ")
+    assert "Ask an admin of this workspace for the editor role." in said
+    token = Principal(kind="token", id="T", workspace_id="acme", scope="admin")
+    svc = team.service.for_scope(Scope("acme", token))
+    assert "operator's CLI" in message_of(lambda: svc.remove_member(team.people["vi"]))
+    bound = Principal(kind="token", id="T", workspace_id="acme", scope="admin", project="shop")
+    bound_svc = team.service.for_scope(Scope("acme", bound))
+    assert "Use an unbound token" in message_of(lambda: bound_svc.create_project("new"))
+
+
 def test_an_editor_does_the_recording_and_review_work_but_not_the_admin_work(team: Team) -> None:
     ada, edd = team.as_("ada"), team.as_("edd")
     entry, _ = ada.upsert_entry("shop", body("hello"), {"content": "hi"})

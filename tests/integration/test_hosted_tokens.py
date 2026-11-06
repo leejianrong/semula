@@ -127,6 +127,7 @@ async def test_a_replay_token_reaches_nothing_under_api(hosted: Hosted) -> None:
     ):
         resp = await hosted.client.request(method, path, headers=hosted.h("replay"))
         assert resp.status_code == 403 and resp.json()["error"]["code"] == "insufficient_scope"
+        assert "Use a token with scope" in resp.json()["error"]["message"]
 
 
 async def test_a_record_token_records_but_cannot_destroy_approve_or_reconfigure(
@@ -202,6 +203,7 @@ async def test_an_admin_token_deletes_but_still_cannot_manage_tokens(hosted: Hos
     ):
         resp = await hosted.client.request(method, path, json={}, headers=hosted.h("admin"))
         assert resp.status_code == 403 and resp.json()["error"]["code"] == "forbidden", path
+        assert "operator's CLI" in resp.json()["error"]["message"], path
     gone = await hosted.client.delete(
         f"/api/v1/entries/{entry}?version=1", headers=hosted.h("admin")
     )

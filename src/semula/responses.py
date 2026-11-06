@@ -194,7 +194,9 @@ def validate_tool_calls(stored: Mapping[str, Any], tools: list[dict[str, Any]]) 
             by_name[str(fn["name"])] = fn.get("parameters") or {}
     if not by_name:
         raise AnswerInvalid(
-            "The request offered no tools, so the answer cannot call one.", "message.tool_calls"
+            "The request offered no tools, so the answer cannot call one. Write a plain answer, "
+            "or have the app send the tool with the request.",
+            "message.tool_calls",
         )
     for i, call in enumerate(calls):
         name = call["function"]["name"]

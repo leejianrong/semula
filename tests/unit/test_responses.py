@@ -147,8 +147,9 @@ def test_bad_tool_calls_name_the_path(name: str, args: str, param: str, fragment
 def test_tool_call_without_offered_tools_is_rejected() -> None:
     from semula.responses import validate_tool_calls
 
-    with pytest.raises(AnswerInvalid, match="offered no tools"):
+    with pytest.raises(AnswerInvalid, match="offered no tools") as exc:
         validate_tool_calls(call("anything", "{}"), [])
+    assert "Write a plain answer, or have the app send the tool" in exc.value.message
 
 
 def test_text_answers_skip_tool_validation() -> None:
