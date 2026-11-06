@@ -8,6 +8,8 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-06
+
 ### Changed
 
 - The project switcher and the Replay or Record control show on a project's screens only. Members, tokens, audit and usage belong to the workspace, so they no longer carry a mode that is one slip from changing a project (SEM-148).
