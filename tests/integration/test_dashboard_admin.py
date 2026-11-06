@@ -420,3 +420,24 @@ def test_deleting_the_workspace_needs_its_id_typed_back(server: str, world: Worl
         assert any(e["action"] == "workspace.delete" for e in world.acme.list_audit())
     finally:
         tab.close()
+
+
+def test_the_destructive_row_actions_are_danger_buttons_and_the_rest_stay_ghost(
+    server: str, world: World
+) -> None:
+    """Remove, and Revoke of an invitation or a token, throw something away (SEM-152)."""
+    world.acme.create_invitation("new@example.com", "viewer")
+    world.acme.create_token("ci", "replay")
+    want = {
+        ("members", "Members"): {"Remove": "danger", "Make editor": "ghost"},
+        ("members", "Open invitations"): {"Revoke": "danger"},
+        ("tokens", "Tokens"): {"Revoke": "danger", "Rotate": "ghost"},
+    }
+    for (screen, table), expected in want.items():
+        tab = admin_on(server, world, screen)
+        try:
+            actions = tab.find("table", label=table)["props"]["actions"]
+            got = {a["label"]: a["variant"] for a in actions if a["label"]}
+            assert {k: got[k] for k in expected} == expected, (table, got)
+        finally:
+            tab.close()
