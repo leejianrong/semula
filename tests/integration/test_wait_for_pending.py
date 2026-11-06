@@ -10,6 +10,7 @@ import httpx
 import pytest
 from fastmcp import Client
 
+from semula import canonical
 from semula.cli import main
 from tests.integration.conftest import chat
 from tests.support.server import running_server
@@ -29,6 +30,30 @@ async def test_a_parked_call_wakes_a_waiter_within_a_second(record: httpx.AsyncC
     assert [p["status"] for p in items] == ["pending"]
     await record.post(f"/api/v1/pending/{items[0]['id']}/answer", json={"content": "ok"})
     await call
+
+
+async def test_a_call_parked_between_the_first_look_and_the_wait_is_not_missed(
+    record: httpx.AsyncClient,
+) -> None:
+    """SEM-153: park the call right after the waiter's first look found nothing, by ordering
+    (the look itself parks it) and no sleeps. The waiter subscribed before looking, so the
+    wake-up is already queued; a waiter that subscribed after its look would sleep to timeout."""
+    service = record._transport.app.state.service  # type: ignore[attr-defined]
+    real = service.list_pending
+    looked = 0
+
+    def look_then_park(*args: Any, **kwargs: Any) -> Any:
+        nonlocal looked
+        found = real(*args, **kwargs)
+        looked += 1
+        if looked == 1:
+            assert found == []
+            service.open_pending(canonical.from_openai(chat("between")), "default")
+        return found
+
+    service.list_pending = look_then_park
+    found = await asyncio.wait_for(service.wait_for_pending(None, 30), 5)
+    assert [p["status"] for p in found] == ["pending"]
 
 
 async def test_what_already_waits_is_returned_at_once(record: httpx.AsyncClient) -> None:
@@ -98,15 +123,20 @@ async def test_a_waiting_request_holds_no_database_connection(
 def test_the_mcp_tool_waits(tmp_path: Path) -> None:
     async def go(url: str) -> None:
         async with Client(url + "/mcp/") as client:
-            started = time.monotonic()
             waiter = asyncio.create_task(
                 client.call_tool("wait_for_pending", {"timeout_seconds": 30})
             )
             await asyncio.sleep(0.3)
             async with httpx.AsyncClient(base_url=url, timeout=10) as http:
                 call = asyncio.create_task(http.post("/v1/chat/completions", json=chat("via mcp")))
+                # The clock starts when the call is seen parked, not when the POST is sent: how
+                # long parking takes on a slow runner or Postgres is not what this measures
+                # (SEM-153). Whether the waiter registered before or after, it must return.
+                while not (await http.get("/api/v1/pending")).json()["pending"]:
+                    await asyncio.sleep(0.02)
+                parked_at = time.monotonic()
                 result = await asyncio.wait_for(waiter, 5)
-                assert time.monotonic() - started < 2
+                assert time.monotonic() - parked_at < 2
                 items = _data(result)
                 assert len(items) == 1
                 await http.post(f"/api/v1/pending/{items[0]['id']}/answer", json={"content": "ok"})

@@ -650,9 +650,19 @@ def test_tables_are_cards_on_a_phone_and_tables_on_a_desktop(
     assert desktop.evaluate("getComputedStyle(document.querySelector('thead')).display") != "none"
 
 
+SLOW_FRAMES = """
+const frame = window.requestAnimationFrame.bind(window);
+window.requestAnimationFrame = (run) => frame(() => setTimeout(() => run(performance.now()), 400));
+"""
+
+
+@pytest.mark.parametrize("slow", [False, True], ids=["prompt", "slow-frames"])
 def test_the_diff_opens_unified_on_a_phone_and_split_on_a_desktop(
-    tmp_path: Path, new_page: Callable[..., Any]
+    tmp_path: Path, new_page: Callable[..., Any], slow: bool
 ) -> None:
+    """On a phone the page clicks Unified on the frame after the diff is drawn, so Split is on
+    screen first. The test waits for the mode it wants, not for any pressed button (SEM-153).
+    Slow frames (a busy WebKit) make that gap long enough to always show."""
     import httpx
 
     from tests.integration.test_lexical_match import BASE, WEAK, ask
@@ -663,10 +673,11 @@ def test_the_diff_opens_unified_on_a_phone_and_split_on_a_desktop(
         httpx.post(url + "/v1/chat/completions", json=ask(WEAK))
         for size, want in ((PHONE, "Unified"), ((1440, 900), "Split")):
             page = new_page(url, None, size)
+            if slow:
+                page.context.add_init_script(SLOW_FRAMES)
             page.goto(url + "/ui/projects/default/review")
             page.locator("tbody tr").first.click()
             pressed = page.locator(".diff-mode button[aria-pressed=true]")
-            pressed.wait_for(timeout=30000)
-            assert pressed.inner_text() == want, size
+            playwright_sync.expect(pressed).to_have_text(want, timeout=30000)
             page.wait_for_timeout(300)  # the choice is made once, not on every patch
             assert pressed.inner_text() == want, size
