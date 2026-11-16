@@ -24,6 +24,9 @@ htmlcov/
 *.db-wal
 *.db-shm
 
+# Personal scratch notes
+scratch.md
+
 # Local Claude Code state
 .claude/settings.local.json
 

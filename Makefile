@@ -5,7 +5,7 @@
 PORT ?= 8080
 FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted droplet-smoke chart-check chart-smoke test-browser release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted droplet-smoke selfhost-check chart-check chart-smoke test-browser release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -58,6 +58,9 @@ chart-check: ## Lint and render the Helm chart for every value set in deploy/hel
 
 chart-smoke: ## Install the chart into a new namespace (semula-test) on the cluster kubectl points at and prove it, then remove it (VARIANT=postgres for the bundled Postgres; HELM_ARGS for a local image)
 	scripts/smoke_chart.sh $(or $(VARIANT),sqlite)
+
+selfhost-check: ## Bring up deploy/selfhost (Caddy, API key, SQLite or, with VARIANT=postgres, Postgres) and check it (IMAGE, default semula:selfhost-check; postgres needs an image built with the hosted and postgres extras)
+	scripts/smoke_selfhost.sh $(or $(IMAGE),semula:selfhost-check) $(or $(VARIANT),sqlite)
 
 PLAYWRIGHT ?= playwright==1.64.1
 test-browser: ## Real browsers against the real dashboard: stored text never runs, it fits a phone, the keyboard works (an engine that cannot start here is skipped). First: uv run --with $(PLAYWRIGHT) playwright install chromium firefox webkit

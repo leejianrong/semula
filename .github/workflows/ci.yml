@@ -182,6 +182,24 @@ jobs:
       - if: failure()
         run: kubectl get pods -A && kubectl describe pods -A | tail -80
 
+  # The self-host path (deploy/selfhost): published-image compose behind Caddy with an API key, on
+  # SQLite and on Postgres, checked by scripts/smoke_selfhost.sh.
+  selfhost:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          if [ "${{ matrix.variant }}" = postgres ]; then
+            docker build --build-arg UV_EXTRAS="--extra hosted --extra postgres" -t semula:selfhost-ci-hosted .
+          else
+            docker build -t semula:selfhost-ci .
+          fi
+      - run: scripts/smoke_selfhost.sh semula:selfhost-ci${{ matrix.variant == 'postgres' && '-hosted' || '' }} ${{ matrix.variant }}
+
   # Stored text must never run in another person's dashboard, and the dashboard must work on a
   # phone and by keyboard: the real dashboard in Chromium, Firefox and WebKit (tests/browser).
   browser:

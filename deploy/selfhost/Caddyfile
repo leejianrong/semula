@@ -1,0 +1,25 @@
+# TLS for semula. Certificates come from Let's Encrypt for {$SEMULA_DOMAIN} (a name that resolves
+# to this machine, with ports 80 and 443 open). SEMULA_DOMAIN=localhost makes Caddy use its own CA.
+{$SEMULA_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Caddy replaces any X-Forwarded-For a client sends, and semula believes the header only from
+	# Caddy's address (SEMULA_TRUSTED_PROXIES), so a client cannot choose the address it is seen as.
+	reverse_proxy semula:8080 {
+		# a parked call is held until an agent answers (up to 5 minutes) and streams stay open:
+		# never buffer a response and never cut one off for being slow
+		flush_interval -1
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 0
+			read_timeout 0
+		}
+		health_uri /health
+		health_interval 15s
+	}
+}
