@@ -247,7 +247,9 @@ jobs:
 
   deploy:
     needs: [verify, release, image]
-    if: needs.verify.outputs.publish == 'true'
+    # Only where a server is set up: a fork that has not set DEPLOY_DOMAIN publishes and stops
+    # here, instead of failing on the missing deploy secrets after everything is published.
+    if: needs.verify.outputs.publish == 'true' && vars.DEPLOY_DOMAIN != ''
     runs-on: ubuntu-latest
     environment: production # waits for your approval
     timeout-minutes: 15

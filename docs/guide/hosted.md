@@ -39,7 +39,7 @@ Only a hash of the token is stored, so a lost token cannot be recovered, only re
 
 People sign in with a provider you set up, and semula keeps no passwords. Register an application with the provider, with the redirect URI `https://<your host>/auth/callback/<name>` exactly (a different one is refused), and give semula its client id and secret:
 
-Install the `hosted` extra (`pip install 'semula[hosted]'`), or use the hosted image, `ghcr.io/leejianrong/semula:<version>-hosted`, which has it and the Postgres driver (releases after 0.2.0; to build it yourself, `--build-arg UV_EXTRAS="--extra hosted --extra postgres"`), then:
+Install the `hosted` extra (`pip install 'semula[hosted]'`), or use the hosted image, `ghcr.io/leejianrong/semula:<version>-hosted`, which has it and the Postgres driver (published with every release; to build it yourself, `--build-arg UV_EXTRAS="--extra hosted --extra postgres"`), then:
 
 ```bash
 SEMULA_PUBLIC_URL=https://semula.example.com

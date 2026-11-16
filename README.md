@@ -84,6 +84,7 @@ Full docs, with a tutorial: **<https://leejianrong.github.io/semula/>**
 | [Tutorial](https://leejianrong.github.io/semula/tutorial/first-recording/) | Nine short pages, from the first recording to the dashboard |
 | [Install](https://leejianrong.github.io/semula/guide/install/) | Docker, the CLI binary, the Python package |
 | [Run it as a service](deploy/laptop/README.md) | One always-on semula for every project on your machine |
+| [Self-host it](https://leejianrong.github.io/semula/guide/self-host/) | Docker Compose with HTTPS and an API key, or a Helm chart |
 | [Upgrade and back up](https://leejianrong.github.io/semula/guide/upgrade-and-backup/) | What is stored, upgrading, backing up |
 | [Reference](https://leejianrong.github.io/semula/reference/cli/) | CLI, MCP tools, REST, settings, errors |
 | [`docs/adr/`](docs/adr/) | Why it is built the way it is |
