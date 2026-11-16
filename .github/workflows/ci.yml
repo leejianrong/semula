@@ -117,7 +117,7 @@ jobs:
       SEMULA_TEST_MODEL_DIR: ${{ github.workspace }}/.models
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .models
           key: embedding-model-bge-small-en-v1.5
