@@ -109,6 +109,6 @@ def test_a_chart_that_runs_another_version_is_named(tmp_path: Path) -> None:
 
 
 def test_the_chart_runs_the_version_in_pyproject() -> None:
-    """A release bumps the chart's appVersion with pyproject.toml, or the chart pulls an old image."""
+    """A release bumps the chart's appVersion with pyproject.toml, or it pulls an old image."""
     text = (ROOT / "deploy" / "helm" / "semula" / "Chart.yaml").read_text()
     assert f'appVersion: "{release.pyproject_version()}"' in text
