@@ -149,6 +149,39 @@ jobs:
       # the restore drill: back up, lose the database volume, restore from the file, serve it
       - run: scripts/smoke_backup.sh semula:droplet-ci ${{ matrix.variant }}
 
+  # The Helm chart (deploy/helm/semula): lint and render every value set, refuse the bad ones.
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: helm version --short # the runner image ships helm
+      - run: scripts/check_chart.sh
+
+  # The chart on a real cluster (k3d, k3s in Docker), running images built from this commit:
+  # install, the API key, a held call answered and replayed, a pod restart, upgrade, rollback and
+  # uninstall (scripts/smoke_chart.sh), on SQLite and on the bundled Postgres.
+  chart-cluster:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t semula:chart-ci .
+      - run: docker build --build-arg UV_EXTRAS="--extra hosted --extra postgres" -t semula:chart-ci-hosted .
+      - name: A k3d cluster
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/v5.9.0/install.sh | TAG=v5.9.0 bash
+          k3d cluster create chart-ci --wait --timeout 180s
+          k3d image import semula:chart-ci semula:chart-ci-hosted -c chart-ci
+      - name: SQLite
+        env:
+          HELM_ARGS: --set image.repository=semula --set image.tag=chart-ci --set image.pullPolicy=Never
+        run: scripts/smoke_chart.sh sqlite
+      - name: Postgres
+        env:
+          HELM_ARGS: --set image.repository=semula --set image.tag=chart-ci --set image.pullPolicy=Never
+        run: scripts/smoke_chart.sh postgres
+      - if: failure()
+        run: kubectl get pods -A && kubectl describe pods -A | tail -80
+
   # The self-host path (deploy/selfhost): published-image compose behind Caddy with an API key, on
   # SQLite and on Postgres, checked by scripts/smoke_selfhost.sh.
   selfhost:

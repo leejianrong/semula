@@ -1,0 +1,4 @@
+postgresql:
+  enabled: true
+externalDatabase:
+  url: postgresql://u:p@h:5432/d

@@ -5,7 +5,7 @@
 PORT ?= 8080
 FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted droplet-smoke selfhost-check test-browser release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted droplet-smoke selfhost-check chart-check chart-smoke test-browser release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -52,6 +52,12 @@ image-smoke-hosted: ## Check a hosted image (IMAGE, default semula:hosted-check,
 
 droplet-smoke: ## Bring up deploy/droplet (Caddy, app, Postgres or, with VARIANT=sqlite, SQLite) on a throwaway name and check it (IMAGE, default semula:hosted-check; needs Docker)
 	scripts/smoke_droplet.sh $(or $(IMAGE),semula:hosted-check) $(or $(VARIANT),postgres)
+
+chart-check: ## Lint and render the Helm chart for every value set in deploy/helm/semula/ci, and check the bad ones are refused (needs helm)
+	scripts/check_chart.sh
+
+chart-smoke: ## Install the chart into a new namespace (semula-test) on the cluster kubectl points at and prove it, then remove it (VARIANT=postgres for the bundled Postgres; HELM_ARGS for a local image)
+	scripts/smoke_chart.sh $(or $(VARIANT),sqlite)
 
 selfhost-check: ## Bring up deploy/selfhost (Caddy, API key, SQLite or, with VARIANT=postgres, Postgres) and check it (IMAGE, default semula:selfhost-check; postgres needs an image built with the hosted and postgres extras)
 	scripts/smoke_selfhost.sh $(or $(IMAGE),semula:selfhost-check) $(or $(VARIANT),sqlite)

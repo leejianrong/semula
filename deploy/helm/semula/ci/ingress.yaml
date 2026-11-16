@@ -1,0 +1,14 @@
+publicUrl: https://semula.example.com
+trustedProxies: 10.42.0.0/16
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+  hosts:
+    - host: semula.example.com
+      paths:
+        - {path: /, pathType: Prefix}
+  tls:
+    - secretName: semula-tls
+      hosts: [semula.example.com]

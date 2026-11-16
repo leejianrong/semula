@@ -95,3 +95,20 @@ def test_the_repository_is_releasable_as_it_stands_once_dated() -> None:
     declared = release.pyproject_version()
     assert release.locked_version() == declared
     assert (ROOT / "CHANGELOG.md").read_text().startswith("# Changelog")
+
+
+def test_a_chart_that_runs_another_version_is_named(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    chart = root / "deploy" / "helm" / "semula"
+    chart.mkdir(parents=True)
+    (chart / "Chart.yaml").write_text('name: semula\nversion: 0.1.0\nappVersion: "0.0.9"\n')
+    with pytest.raises(release.ReleaseError, match=r"Chart.yaml appVersion says 0.0.9"):
+        release.check("v0.1.0", root)
+    (chart / "Chart.yaml").write_text('name: semula\nversion: 0.1.0\nappVersion: "0.1.0"\n')
+    assert release.check("v0.1.0", root) == "0.1.0"
+
+
+def test_the_chart_runs_the_version_in_pyproject() -> None:
+    """A release bumps the chart's appVersion with pyproject.toml, or it pulls an old image."""
+    text = (ROOT / "deploy" / "helm" / "semula" / "Chart.yaml").read_text()
+    assert f'appVersion: "{release.pyproject_version()}"' in text

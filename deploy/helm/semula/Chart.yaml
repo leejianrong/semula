@@ -1,0 +1,10 @@
+apiVersion: v2
+name: semula
+description: A mock LLM server powered by your AI subscription (OpenAI-compatible, record and replay)
+type: application
+version: 0.1.0 # the chart; bump on any change to the chart itself
+appVersion: "0.6.0" # the semula release this chart runs by default; scripts/release.py checks it
+home: https://leejianrong.github.io/semula
+sources:
+  - https://github.com/leejianrong/semula
+keywords: [llm, mock, openai, testing, record-replay]

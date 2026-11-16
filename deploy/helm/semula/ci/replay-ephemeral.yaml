@@ -1,0 +1,5 @@
+mode: replay
+auth:
+  disabled: true
+persistence:
+  enabled: false

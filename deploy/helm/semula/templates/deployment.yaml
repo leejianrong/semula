@@ -1,0 +1,127 @@
+{{- if and (gt (int .Values.replicaCount) 1) (not (include "semula.usesPostgres" .)) }}
+{{- fail "replicaCount above 1 needs Postgres: SQLite has one writer. Set postgresql.enabled or externalDatabase." }}
+{{- end }}
+{{- if and .Values.postgresql.enabled (or .Values.externalDatabase.url .Values.externalDatabase.existingSecret) }}
+{{- fail "Set postgresql.enabled or externalDatabase, not both." }}
+{{- end }}
+{{- if and .Values.auth.disabled (or .Values.auth.apiKey .Values.auth.existingSecret) }}
+{{- fail "auth.disabled is set along with a key: pick one." }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "semula.fullname" . }}
+  labels: {{- include "semula.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # SQLite on a ReadWriteOnce volume: the old pod must let go before the new one starts.
+  strategy:
+    type: {{ ternary "RollingUpdate" "Recreate" (eq (include "semula.usesPostgres" .) "true") }}
+  selector:
+    matchLabels: {{- include "semula.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "semula.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}{{ toYaml . | nindent 8 }}{{ end }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "semula.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      # A Service called semula would inject SEMULA_PORT=tcp://... and break the SEMULA_* settings.
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.postgresql.enabled }}
+      initContainers:
+        # The database's Service only resolves once its pod is ready; without this the app starts
+        # first, cannot connect, and restarts a few times before it settles.
+        - name: wait-for-database
+          image: {{ .Values.postgresql.image | quote }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - until pg_isready -q -h {{ include "semula.fullname" . }}-postgresql -p 5432 -U semula -d semula; do echo waiting for the database; sleep 2; done
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+      {{- end }}
+      containers:
+        - name: semula
+          image: {{ include "semula.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          env:
+            - {name: SEMULA_MODE, value: {{ .Values.mode | quote }}}
+            {{- if .Values.publicUrl }}
+            - {name: SEMULA_PUBLIC_URL, value: {{ .Values.publicUrl | quote }}}
+            {{- end }}
+            {{- if .Values.trustedProxies }}
+            - {name: SEMULA_TRUSTED_PROXIES, value: {{ .Values.trustedProxies | quote }}}
+            {{- end }}
+            {{- if not .Values.auth.disabled }}
+            - name: SEMULA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "semula.authSecretName" . }}
+                  key: {{ ternary .Values.auth.existingSecretKey "api-key" (not (empty .Values.auth.existingSecret)) }}
+            {{- end }}
+            {{- if include "semula.usesPostgres" . }}
+            - name: SEMULA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "semula.dbSecretName" . }}
+                  key: {{ include "semula.dbSecretKey" . }}
+            {{- end }}
+            {{- range $name, $value := .Values.env }}
+            - {name: {{ $name }}, value: {{ $value | quote }}}
+            {{- end }}
+            {{- with .Values.extraEnv }}{{ toYaml . | nindent 12 }}{{ end }}
+          {{- with .Values.envFrom }}
+          envFrom: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # The image's own check, as probes: /health stays open when a key is set.
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 20
+            failureThreshold: 3
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            {{- if not (include "semula.usesPostgres" .) }}
+            - {name: data, mountPath: /data}
+            {{- end }}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        {{- if not (include "semula.usesPostgres" .) }}
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "semula.fullname" .) .Values.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
