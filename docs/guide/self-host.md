@@ -35,7 +35,9 @@ Point an app at the server with the key as its API key, and keep each app in its
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="https://semula.example.com/v1/projects/my-app", api_key="<SEMULA_API_KEY>")
+client = OpenAI(
+    base_url="https://semula.example.com/v1/projects/my-app", api_key="<SEMULA_API_KEY>"
+)
 ```
 
 Connect a coding agent to the MCP endpoint, sending the key as a header:
