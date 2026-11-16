@@ -1,0 +1,65 @@
+# semula for your own server: Caddy (automatic TLS) -> semula, data in a volume.
+#
+#   ./init.sh semula.example.com     writes .env with a fresh API key (never commit .env)
+#   docker compose up -d --wait      pulls the published image and starts it
+#   curl https://semula.example.com/health
+#
+# This is the plain server: one API key, no sign-in, SQLite. For several teams with sign-in and
+# roles use ../droplet (hosted mode). For Postgres add the overlay:
+#   docker compose -f compose.yaml -f compose.postgres.yaml up -d --wait
+#
+# Only Caddy publishes ports. The key is required: the compose file refuses to start without one.
+name: semula
+
+x-image: &image ${SEMULA_REPO:-ghcr.io/leejianrong/semula}:${SEMULA_VERSION:-latest}
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
+services:
+  semula:
+    image: *image
+    restart: unless-stopped
+    <<: *hardening
+    environment:
+      SEMULA_MODE: ${SEMULA_MODE:-record} # record lets an agent answer misses; replay never waits
+      SEMULA_API_KEY: ${SEMULA_API_KEY:?run ./init.sh, or set SEMULA_API_KEY in .env}
+      SEMULA_PUBLIC_URL: https://${SEMULA_DOMAIN:?run ./init.sh <your domain>, or set SEMULA_DOMAIN in .env}
+      SEMULA_TRUSTED_PROXIES: 172.30.0.2 # Caddy's fixed address, and nothing else on the network
+    volumes:
+      - data:/data # the database; the container runs as uid 10001
+    expose: ["8080"]
+    mem_limit: 768m
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    <<: *hardening
+    cap_add: [NET_BIND_SERVICE]
+    networks:
+      default:
+        ipv4_address: 172.30.0.2 # fixed, so semula can trust this one address
+    ports:
+      - "${HTTP_PORT:-80}:80" # Let's Encrypt's challenge, and the redirect to https
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      SEMULA_DOMAIN: ${SEMULA_DOMAIN:?run ./init.sh <your domain>, or set SEMULA_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates: losing this re-issues them, which is rate limited
+      - caddy-config:/config
+    depends_on:
+      semula: {condition: service_healthy}
+    mem_limit: 128m
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24 # fixed, so Caddy can have a fixed address in it
+          ip_range: 172.30.0.128/25 # everything else is handed out from here, never .2
+
+volumes:
+  data:
+  caddy-data:
+  caddy-config:
