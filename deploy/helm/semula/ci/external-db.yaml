@@ -1,0 +1,7 @@
+externalDatabase:
+  existingSecret: my-db
+  existingSecretKey: url
+auth:
+  existingSecret: my-key
+env:
+  SEMULA_LOG_RETENTION_DAYS: "7"

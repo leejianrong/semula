@@ -1,0 +1,17 @@
+{{- if and (not (include "semula.usesPostgres" .)) .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "semula.fullname" . }}
+  labels: {{- include "semula.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep # recordings outlive `helm uninstall`; delete the claim yourself to drop them
+spec:
+  accessModes: {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

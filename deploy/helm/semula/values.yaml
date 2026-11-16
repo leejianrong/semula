@@ -1,0 +1,110 @@
+# Defaults run semula as a single replica on SQLite with one API key the chart generates.
+# `helm show values` is the reference; deploy/helm/semula/README.md explains the choices.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/leejianrong/semula # a fork sets its own
+  tag: "" # default: the chart's appVersion (with -hosted added when Postgres is used)
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# record: a call semula has not seen waits for an agent to answer it. replay: it never waits.
+mode: record
+
+# Every call to /v1, /api and /mcp needs this key. With a key set the dashboard is off.
+auth:
+  # Name of an existing Secret holding the key. Empty: the chart makes one and keeps it across upgrades.
+  existingSecret: ""
+  existingSecretKey: api-key
+  # Set only to choose the key yourself. Prefer existingSecret: a value here lands in Helm's release history.
+  apiKey: ""
+  # Turn the key off. Only for a cluster where nothing else can reach the Service.
+  disabled: false
+
+# The URL people reach it at. Used in links semula prints (sign-in, MCP setup hints).
+publicUrl: ""
+
+# SQLite on a volume (the default), or Postgres. SQLite allows exactly one replica.
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClass: "" # empty: the cluster's default
+  accessModes: [ReadWriteOnce]
+  existingClaim: ""
+
+# Postgres in the chart (a single StatefulSet, fine for a team server) ...
+postgresql:
+  enabled: false
+  image: postgres:16-alpine
+  persistence:
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+
+# ... or your own. Give the whole URL in a Secret, or here for a trial.
+externalDatabase:
+  existingSecret: ""
+  existingSecretKey: database-url
+  url: "" # postgresql://user:pass@host:5432/db
+
+replicaCount: 1 # more than one needs Postgres
+
+# Extra SEMULA_* settings (docs/reference/configuration.md), as name: value.
+env: {}
+# Extra environment from Secrets or ConfigMaps, e.g. SEMULA_UPSTREAM_KEY for record-through.
+envFrom: []
+extraEnv: []
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  # A parked call is held until an agent answers (up to 5 minutes) and streams stay open, so the
+  # proxy must not buffer or time out early. ingress-nginx, for example:
+  #   nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+  #   nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  annotations: {}
+  hosts:
+    - host: semula.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: semula-tls
+  #    hosts: [semula.example.com]
+
+# Addresses semula believes X-Forwarded-For from (comma-separated, CIDR ranges work). Set it to
+# your ingress controller's pod range, or every client looks like the controller.
+trustedProxies: ""
+
+resources:
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {memory: 768Mi}
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+serviceAccount:
+  create: true
+  name: ""
+
+# The image runs as uid 10001. These keep it that way and take everything else away.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities: {drop: [ALL]}
+  readOnlyRootFilesystem: true

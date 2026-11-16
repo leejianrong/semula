@@ -5,7 +5,7 @@
 PORT ?= 8080
 FREE_PORT := python3 scripts/free_port.py $(PORT)
 
-.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted droplet-smoke test-browser release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
+.PHONY: demo-video docs docs-serve run demo docker image-check image-smoke image-smoke-hosted droplet-smoke chart-check test-browser release-check cli-binary bench test-embeddings help setup hooks fmt lint typecheck test-fast test-postgres test-e2e test check audit secrets clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -52,6 +52,9 @@ image-smoke-hosted: ## Check a hosted image (IMAGE, default semula:hosted-check,
 
 droplet-smoke: ## Bring up deploy/droplet (Caddy, app, Postgres or, with VARIANT=sqlite, SQLite) on a throwaway name and check it (IMAGE, default semula:hosted-check; needs Docker)
 	scripts/smoke_droplet.sh $(or $(IMAGE),semula:hosted-check) $(or $(VARIANT),postgres)
+
+chart-check: ## Lint and render the Helm chart for every value set in deploy/helm/semula/ci, and check the bad ones are refused (needs helm)
+	scripts/check_chart.sh
 
 PLAYWRIGHT ?= playwright==1.64.1
 test-browser: ## Real browsers against the real dashboard: stored text never runs, it fits a phone, the keyboard works (an engine that cannot start here is skipped). First: uv run --with $(PLAYWRIGHT) playwright install chromium firefox webkit

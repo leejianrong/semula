@@ -1,0 +1,17 @@
+semula {{ .Chart.AppVersion }} is installing as {{ include "semula.fullname" . }}.
+{{ if not .Values.auth.disabled }}
+The API key:
+  kubectl get secret {{ include "semula.authSecretName" . }} -n {{ .Release.Namespace }} -o jsonpath='{.data.{{ ternary .Values.auth.existingSecretKey "api-key" (not (empty .Values.auth.existingSecret)) }}}' | base64 -d
+{{ end }}
+Reach it from your machine:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "semula.fullname" . }} 8080:{{ .Values.service.port }}
+  curl http://127.0.0.1:8080/health
+{{- if include "semula.usesPostgres" . }}
+{{ else }}
+This install keeps its data in a SQLite file on a volume, so it runs one replica and restarts
+(not rolls) on an upgrade. For several replicas use postgresql.enabled=true.
+{{- end }}
+{{- if and (not .Values.ingress.enabled) (not .Values.auth.disabled) }}
+
+Nothing is exposed outside the cluster. Before you enable an Ingress, keep the API key on (it is).
+{{- end }}

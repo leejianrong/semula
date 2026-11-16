@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks and notes for a release. Stdlib only, so the release workflow runs it before installing.
 
-    release.py check vX.Y.Z    the tag, pyproject, the lockfile and the CHANGELOG agree
+    release.py check vX.Y.Z    the tag, pyproject, the lockfile, the Helm chart and the CHANGELOG agree
     release.py notes vX.Y.Z    print that version's CHANGELOG section (the GitHub Release body)
     release.py flags vX.Y.Z    print KEY=VALUE lines for the workflow: version, prerelease, latest
 
@@ -57,6 +57,12 @@ def check(tag: str, root: Path = ROOT) -> str:
         problems.append(f"pyproject.toml says {declared}, the tag says {version}")
     if (locked := locked_version(root)) != version:
         problems.append(f"uv.lock says {locked}, the tag says {version}: run `uv lock`")
+    if (chart := root / "deploy" / "helm" / "semula" / "Chart.yaml").exists():
+        found = re.search(r'^appVersion:\s*"?([^"\s#]+)', chart.read_text(), re.M)
+        if not found or found[1] != version:
+            problems.append(
+                f"Chart.yaml appVersion says {found[1] if found else 'nothing'}, the tag says {version}"
+            )
     try:
         changelog_section(version, root)
         text = (root / "CHANGELOG.md").read_text()

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "nameOverride": {"type": "string"},
+    "fullnameOverride": {"type": "string"},
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string"},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "mode": {"enum": ["record", "replay"]},
+    "replicaCount": {"type": "integer", "minimum": 1},
+    "auth": {
+      "type": "object",
+      "properties": {
+        "existingSecret": {"type": "string"},
+        "existingSecretKey": {"type": "string"},
+        "apiKey": {"type": "string"},
+        "disabled": {"type": "boolean"}
+      }
+    },
+    "publicUrl": {"type": "string", "pattern": "^(https?://.+)?$"},
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "size": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti)?$"},
+        "accessModes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "postgresql": {"type": "object", "properties": {"enabled": {"type": "boolean"}}},
+    "externalDatabase": {
+      "type": "object",
+      "properties": {"url": {"type": "string", "pattern": "^(postgres(ql)?://.+)?$"}}
+    },
+    "env": {"type": "object", "additionalProperties": {"type": "string"}},
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {"enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+      }
+    },
+    "ingress": {"type": "object", "properties": {"enabled": {"type": "boolean"}}}
+  }
+}

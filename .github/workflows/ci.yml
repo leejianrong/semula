@@ -149,6 +149,14 @@ jobs:
       # the restore drill: back up, lose the database volume, restore from the file, serve it
       - run: scripts/smoke_backup.sh semula:droplet-ci ${{ matrix.variant }}
 
+  # The Helm chart (deploy/helm/semula): lint and render every value set, refuse the bad ones.
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: helm version --short # the runner image ships helm
+      - run: scripts/check_chart.sh
+
   # Stored text must never run in another person's dashboard, and the dashboard must work on a
   # phone and by keyboard: the real dashboard in Chromium, Firefox and WebKit (tests/browser).
   browser:

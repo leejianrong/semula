@@ -9,6 +9,7 @@ Release from the CHANGELOG and publishes the container image to
 1. **Release PR.** Off fresh `main`:
    - set `version` in `pyproject.toml`;
    - run `uv lock` (the lockfile records the version, and CI installs it frozen);
+   - set `appVersion` in `deploy/helm/semula/Chart.yaml` to the same version (the chart pulls that image by default; bump the chart's own `version` too if the chart changed);
    - in `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and add a new empty
      `## [Unreleased]` above it;
    - `uv sync --extra dev && make check`, then open the PR and merge it when CI is green.
@@ -22,7 +23,7 @@ Release from the CHANGELOG and publishes the container image to
 4. **Watch the Release run.** It fails, and publishes nothing, unless:
    - the tag is `vMAJOR.MINOR.PATCH` and the commit is on `main`;
    - that commit has a green CI run;
-   - the tag, `pyproject.toml`, `uv.lock` and the CHANGELOG all say the same version
+   - the tag, `pyproject.toml`, `uv.lock`, the Helm chart's `appVersion` and the CHANGELOG all say the same version
      (`scripts/release.py check vX.Y.Z` runs the same test locally).
 5. **After it:** pull the image on a clean machine and run it
    (`docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/leejianrong/semula:X.Y.Z`).
