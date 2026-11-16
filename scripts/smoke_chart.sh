@@ -27,7 +27,9 @@ PF=""
 cleanup() {
   [ -n "$PF" ] && kill "$PF" 2>/dev/null || true
   helm "${CTX[@]}" -n "$NS" uninstall "$REL" >/dev/null 2>&1 || true
-  kubectl "${CTX[@]}" delete ns "$NS" --wait=false >/dev/null 2>&1 || true
+  # Wait until it is really gone (a pod takes up to 30 s to stop): the next run refuses a namespace
+  # that still exists, and must find this one cleared.
+  kubectl "${CTX[@]}" delete ns "$NS" --wait=true --timeout=180s >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 fail() { echo "FAIL: $*"; k get pods 2>&1 | tail -8; k logs deploy/$REL --tail 30 2>&1 | tail -30; exit 1; }
