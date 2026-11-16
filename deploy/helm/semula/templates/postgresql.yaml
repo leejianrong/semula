@@ -9,8 +9,7 @@ spec:
   ports:
     - {name: postgres, port: 5432, targetPort: postgres}
   selector:
-    {{- include "semula.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: postgresql
+    {{- include "semula.postgresSelectorLabels" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -22,13 +21,11 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "semula.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: postgresql
+      {{- include "semula.postgresSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "semula.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: postgresql
+        {{- include "semula.postgresSelectorLabels" . | nindent 8 }}
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -66,7 +63,7 @@ spec:
   volumeClaimTemplates:
     - metadata:
         name: data
-        labels: {{- include "semula.selectorLabels" . | nindent 10 }}
+        labels: {{- include "semula.postgresSelectorLabels" . | nindent 10 }}
       spec:
         accessModes: [ReadWriteOnce]
         {{- with .Values.postgresql.persistence.storageClass }}

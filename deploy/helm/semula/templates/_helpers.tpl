@@ -11,9 +11,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
+{{/* What the app's Deployment and Service select. The component keeps the bundled Postgres pod out of it. */}}
 {{- define "semula.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "semula.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: server
+{{- end -}}
+{{- define "semula.postgresSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "semula.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: postgresql
 {{- end -}}
 {{- define "semula.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}{{ default (include "semula.fullname" .) .Values.serviceAccount.name }}

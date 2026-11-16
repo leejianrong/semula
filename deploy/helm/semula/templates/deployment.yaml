@@ -30,10 +30,27 @@ spec:
     spec:
       serviceAccountName: {{ include "semula.serviceAccountName" . }}
       automountServiceAccountToken: false
+      # A Service called semula would inject SEMULA_PORT=tcp://... and break the SEMULA_* settings.
+      enableServiceLinks: false
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.postgresql.enabled }}
+      initContainers:
+        # The database's Service only resolves once its pod is ready; without this the app starts
+        # first, cannot connect, and restarts a few times before it settles.
+        - name: wait-for-database
+          image: {{ .Values.postgresql.image | quote }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - until pg_isready -q -h {{ include "semula.fullname" . }}-postgresql -p 5432 -U semula -d semula; do echo waiting for the database; sleep 2; done
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+      {{- end }}
       containers:
         - name: semula
           image: {{ include "semula.image" . | quote }}

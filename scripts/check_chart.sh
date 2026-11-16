@@ -32,4 +32,9 @@ render -f "$CHART/ci/postgres-bundled.yaml" | grep -q 'type: RollingUpdate' || {
 render --set image.repository=ghcr.io/me/semula --set image.tag=1.2.3 | grep -q 'ghcr.io/me/semula:1.2.3' || { echo "FAIL: a fork's image is ignored"; exit 1; }
 render -f "$CHART/ci/replay-ephemeral.yaml" | grep -q SEMULA_API_KEY && { echo "FAIL: auth.disabled still sets a key"; exit 1; }
 render | grep -q 'readOnlyRootFilesystem: true' || { echo "FAIL: the root filesystem is writable"; exit 1; }
+render --set env.SEMULA_LOG_RETENTION_DAYS=7 | grep -q 'value: "7"' || { echo "FAIL: a number in env is refused or not quoted"; exit 1; }
+pg=$(render -f "$CHART/ci/postgres-bundled.yaml")
+[ "$(echo "$pg" | grep -c 'app.kubernetes.io/component: server')" -ge 2 ] || { echo "FAIL: the app's Deployment and Service must select component: server"; exit 1; }
+echo "$pg" | grep -q 'name: wait-for-database' || { echo "FAIL: bundled Postgres has no wait-for-database init container"; exit 1; }
+render | grep -q "enableServiceLinks: false" || { echo "FAIL: service links would inject SEMULA_PORT and crash the server"; exit 1; }
 echo "ok: chart"

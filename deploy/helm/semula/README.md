@@ -38,7 +38,8 @@ rate limiter and the log.
 CLI, MCP or REST.
 
 **Data outlives `helm uninstall`.** The SQLite claim is annotated `helm.sh/resource-policy: keep`. Delete it
-yourself to drop the recordings: `kubectl -n semula delete pvc semula`.
+yourself to drop the recordings: `kubectl -n semula delete pvc semula`. The bundled Postgres keeps its claim
+too (a StatefulSet never deletes one): `kubectl -n semula delete pvc data-semula-postgresql-0`.
 
 ## Not covered yet: hosted mode
 
@@ -50,4 +51,11 @@ server only.
 
 ```bash
 make chart-check      # lint and render every values file in ci/, and check each file in ci-fail/ is refused
+make chart-smoke      # install into a new namespace on the cluster kubectl points at, prove it, remove it
 ```
+
+`chart-smoke` creates the namespace `semula-test` (it refuses one that exists) and deletes only that. It
+checks the key, a held call that an agent answers, a replay that survives a pod restart, `helm upgrade` and
+`helm rollback`, and that uninstall keeps the data. CI runs it on a k3d cluster for SQLite and Postgres.
+To run it with an image you built, `HELM_ARGS="--set image.repository=semula --set image.tag=dev --set image.pullPolicy=Never"`
+(import it first: `k3d image import semula:dev -c <cluster>`).

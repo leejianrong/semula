@@ -37,7 +37,7 @@
       "type": "object",
       "properties": {"url": {"type": "string", "pattern": "^(postgres(ql)?://.+)?$"}}
     },
-    "env": {"type": "object", "additionalProperties": {"type": "string"}},
+    "env": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}},
     "service": {
       "type": "object",
       "properties": {
