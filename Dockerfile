@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
+# uv is pinned so a build next month is the build of today; bump it on purpose.
+ARG UV_VERSION=0.13.8
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 FROM python:3.12-slim AS build
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=uv /uv /bin/uv
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock README.md LICENSE ./

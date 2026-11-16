@@ -1,0 +1,35 @@
+# Overlay: the same server on Postgres instead of a SQLite file. The Postgres driver is in the
+# `-hosted` image, which runs as the plain server unless SEMULA_HOSTED=on.
+#
+#   docker compose -f compose.yaml -f compose.postgres.yaml up -d --wait
+#
+# Use the same two -f flags for every later command (or put COMPOSE_FILE in .env).
+services:
+  semula:
+    image: ${SEMULA_REPO:-ghcr.io/leejianrong/semula}:${SEMULA_VERSION:-latest}-hosted
+    environment:
+      SEMULA_DATABASE_URL: postgresql://semula:${POSTGRES_PASSWORD:?run ./init.sh, or set POSTGRES_PASSWORD in .env}@db:5432/semula
+    depends_on:
+      db: {condition: service_healthy}
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID] # what the image's entrypoint needs
+    environment:
+      POSTGRES_USER: semula
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./init.sh, or set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: semula
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U semula -d semula"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+
+volumes:
+  pgdata:

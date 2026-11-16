@@ -10,7 +10,7 @@
 services:
   semula:
     build: .
-    image: semula:local
+    image: ${SEMULA_IMAGE:-semula:local} # set SEMULA_IMAGE to tag a build for your own registry
     ports:
       - "127.0.0.1:${SEMULA_HOST_PORT:-8080}:8080"
     volumes:
