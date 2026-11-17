@@ -64,7 +64,16 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     principal = getattr(request.state, "principal", None)
     never_parks = principal is not None and principal.scope == "replay"
     if never_parks or await offload(service.mode_of, project) == "replay":
-        await offload(partial(service.log_call, "miss", started, project=project, req=req))
+        await offload(
+            partial(
+                service.log_call,
+                "miss",
+                started,
+                project=project,
+                req=req,
+                nearest=found.nearest,
+            )
+        )
         raise SemulaError(
             424,
             "semula_no_match",

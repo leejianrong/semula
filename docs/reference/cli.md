@@ -47,6 +47,7 @@ In the container, run it with `docker exec semula semula ...`.
 | `semula entry set` | `<id>` `--version` `--text` `--file` `--stdin` `--add` `--selection` `--pin` `--unpin` `--force` `--as-human` | Edit an entry (needs its current --version) |
 | `semula entry delete` | `<id>` `--version` `--force` `--as-human` | Delete an entry (needs its current --version) |
 | `semula log` | `--project` `--outcome` `--limit` `--stats` `--window` | Show recent calls, newest first |
+| `semula check` | `--project` `--since` | List every miss in a run with its nearest entry; exit 1 if any |
 | `semula tail` | `--project` `--count` | Follow calls live (one JSON object per line with --json) |
 | `semula embeddings status` |  | Is it on, and how many entries are indexed |
 | `semula embeddings fetch` |  | Download the model once (needs the extra and network) |

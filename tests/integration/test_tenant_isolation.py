@@ -179,6 +179,10 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
         missing(lambda: w.a.list_calls(project="shop"), "project_not_found"),
         nothing_of_b(w.a.list_calls()),
     ),
+    "check": lambda w: (
+        missing(lambda: w.a.check("shop"), "project_not_found"),
+        _equal(w.a.check()["calls"], 0),
+    ),
     "log_stats": lambda w: (
         missing(lambda: w.a.log_stats("shop"), "project_not_found"),
         _equal(w.a.log_stats()["totals"]["calls"], 0),

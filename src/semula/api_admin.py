@@ -349,6 +349,13 @@ def list_calls(
     return {"calls": _service(request).list_calls(project, outcome, limit, before_id)}
 
 
+@router.get("/check")
+def check(request: Request, project: str | None = None, since: str | None = None) -> dict[str, Any]:
+    """The miss report: each call with no recorded answer and its nearest entry; ``ok`` is
+    false when there is any. ``since`` is an ISO time (default: the start of the run)."""
+    return _service(request).check(project, since)
+
+
 @router.get("/log/stats")
 def log_stats(request: Request, project: str | None = None, window: str = "30m") -> dict[str, Any]:
     """Per-minute counts (hits, misses, recorded, timed_out) for the last ``window`` (``30m``,

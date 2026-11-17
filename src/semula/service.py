@@ -136,6 +136,9 @@ class MatchResult:
     nearest: dict[str, Any] | None = None
 
 
+# Calls the report counts as misses: no recorded answer was served.
+MISS_OUTCOMES = ("miss", "record_timeout", "dry_run")
+
 SIGNUP_CODE_PREFIX = "smla_code_"
 INVITATION_DAYS = 7  # an invitation can be accepted for this long, once
 IDLE_SESSION_SECONDS = 12 * 3600  # a sign-in ends after twelve idle hours ...
@@ -4007,6 +4010,7 @@ class Service:
         project: str = DEFAULT_PROJECT,
         count_hit: bool = False,
         req: CanonicalRequest | None = None,
+        nearest: dict[str, Any] | None = None,
     ) -> None:
         """Log one call, tell live subscribers, and now and then enforce retention. With
         ``count_hit`` the entry's hit count moves in the same transaction (one commit, not two).
@@ -4027,6 +4031,8 @@ class Service:
             "entry_id": entry_id,
             "pending_id": pending_id,
             "preview": preview or None,
+            "nearest_entry_id": nearest["entry_id"] if nearest else None,
+            "nearest_score": nearest["score"] if nearest else None,
         }
         with self.db.begin() as conn:
             if count_hit and entry_id:
@@ -4062,6 +4068,43 @@ class Service:
             sa.select(L).where(*conditions).order_by(L.c.id.desc()).limit(max(1, min(limit, 500)))
         )
         return [{"id": r["id"], **_log_view(r)} for r in rows]
+
+    @needs("viewer")
+    def check(self, project: str | None = None, since: str | None = None) -> dict[str, Any]:
+        """The miss report for a run: every call with no recorded answer, with the nearest
+        entry. The run starts at ``since`` (an ISO time), else where ``max_misses`` last began,
+        else the start of the log. ``ok`` is false when anything missed."""
+        project = self._narrow(project) or DEFAULT_PROJECT
+        self.require_project(project)
+        since = since or self.project_settings(project).misses_since
+        conditions = [L.c.workspace_id == self.workspace_id, L.c.project_id == project]
+        if since:
+            conditions.append(L.c.ts >= since)
+        rows = self.db.rows(sa.select(L).where(*conditions).order_by(L.c.id))
+        missed = [
+            {
+                "ts": r["ts"],
+                "outcome": r["outcome"],
+                "preview": r["preview"],
+                "nearest": (
+                    {"entry_id": r["nearest_entry_id"], "score": r["nearest_score"]}
+                    if r["nearest_entry_id"]
+                    else None
+                ),
+            }
+            for r in rows
+            if r["outcome"] in MISS_OUTCOMES
+        ]
+        hits = sum(1 for r in rows if r["outcome"] == "hit")
+        return {
+            "project": project,
+            "since": since,
+            "calls": len(rows),
+            "hits": hits,
+            "misses": len(missed),
+            "ok": not missed,
+            "missed": missed,
+        }
 
     @needs("viewer")
     def log_stats(

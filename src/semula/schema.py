@@ -172,6 +172,9 @@ call_log = sa.Table(
     sa.Column("entry_id", sa.Text),
     sa.Column("pending_id", sa.Text),
     sa.Column("preview", sa.Text),  # redacted, at most 120 characters; null on older rows
+    # On a miss: the most similar recorded entry and how similar (never served; SEM-104).
+    sa.Column("nearest_entry_id", sa.Text),
+    sa.Column("nearest_score", sa.Float),
     sa.Index("idx_call_log_ts", "workspace_id", "project_id", "ts"),
 )
 
