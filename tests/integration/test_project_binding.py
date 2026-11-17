@@ -159,6 +159,10 @@ S: dict[str, Callable[[World], None]] = {
         only_shop(w.bound.list_calls()),
         missing(lambda: w.bound.list_calls(project="other")),
     ),
+    "check": lambda w: (
+        _equal(w.bound.check()["project"], "shop"),
+        missing(lambda: w.bound.check("other")),
+    ),
     "log_stats": lambda w: (
         _equal(w.bound.log_stats()["totals"]["calls"], 1),
         missing(lambda: w.bound.log_stats("other")),
