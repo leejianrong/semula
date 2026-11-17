@@ -38,3 +38,16 @@ Two workers never get the same call. If a worker dies, its lease runs out (defau
 
 - [Concepts](../concepts.md) defines parked call, miss and pending.
 - [REST API](../reference/rest.md) and [MCP tools](../reference/mcp.md) list `claim_next` and `POST /api/v1/pending/claim`.
+
+## Fail a test on any miss
+
+In replay mode a call with no recorded answer gets a 424. `semula check` lists every such call in the run, each with the nearest recorded entry, and exits 1 if there are any:
+
+```console
+$ semula check --project game
+0 hit(s), 1 miss(es) in 1 call(s)
+  miss: what is the capital of Spain
+    nearest ent_01h... (0.62)
+```
+
+Use `--json` for a machine-readable report: `ok`, `hits`, `misses`, `calls`, `since` and `missed`, a list of `{ts, outcome, preview, nearest}` where `nearest` is `{entry_id, score}` or `null`. `--since` takes an ISO time; without it the run is the one `max_misses` last began, or the whole log.

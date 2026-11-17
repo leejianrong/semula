@@ -497,6 +497,23 @@ def _log_stats(args: argparse.Namespace) -> int:
     return _ok(args, out, human)
 
 
+def _check(args: argparse.Namespace) -> int:
+    params = {k: v for k, v in (("project", args.project), ("since", args.since)) if v}
+    resp = _call(args, "GET", "/api/v1/check", params=params)
+    if resp.status_code != 200:
+        return _fail(args, resp)
+    out = resp.json()
+    lines = [f"{out['hits']} hit(s), {out['misses']} miss(es) in {out['calls']} call(s)"]
+    for m in out["missed"]:
+        near = m["nearest"]
+        hint = (
+            f"nearest {near['entry_id']} ({near['score']:.2f})" if near else "no entries to compare"
+        )
+        lines.append(f"  {m['outcome']}: {m['preview'] or '(no preview)'}\n    {hint}")
+    _ok(args, out, "\n".join(lines))
+    return EXIT_OK if out["ok"] else EXIT_ERROR
+
+
 def _log(args: argparse.Namespace) -> int:
     if args.stats:
         return _log_stats(args)
@@ -1318,6 +1335,14 @@ def build_parser() -> argparse.ArgumentParser:
     log.add_argument("--limit", type=int, default=20)
     log.add_argument("--stats", action="store_true", help="counts, hit rate and median instead")
     log.add_argument("--window", default="30m", help="with --stats: 30m, 2h ... up to 24h")
+
+    check = add(
+        sub, "check", _check, "List every miss in a run with its nearest entry; exit 1 if any"
+    )
+    check.add_argument("--project", default=None)
+    check.add_argument(
+        "--since", default=None, help="ISO time the run began (default: max_misses run)"
+    )
 
     tail = add(sub, "tail", _tail, "Follow calls live (one JSON object per line with --json)")
     tail.add_argument("--project", default=None)
