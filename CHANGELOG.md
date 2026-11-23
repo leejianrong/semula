@@ -8,6 +8,8 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-24
+
 ### Added
 
 - `semula check` and `GET /api/v1/check`: the miss report for a run. It lists every call that had no recorded answer, with a preview of the prompt and the nearest recorded entry and its score, and exits 1 if there is any miss, so a test or CI step can fail on it. `--since` sets where the run began (default: where `max_misses` last began). Replay mode already refuses a miss, so it is the strict mode. Migration 0024 adds the nearest entry to the call log (SEM-104).
