@@ -37,6 +37,9 @@ dependencies = [
 [project.scripts]
 semula = "semula.cli:main"
 
+[project.entry-points.pytest11]
+semula = "semula.pytest_plugin"
+
 [project.urls]
 Homepage = "https://github.com/leejianrong/semula"
 Repository = "https://github.com/leejianrong/semula"

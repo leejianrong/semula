@@ -1,0 +1,9 @@
+{
+  "name": "semula-vitest",
+  "version": "0.1.0",
+  "description": "Start a throwaway semula for a Node test run and fail on any call with no recorded answer",
+  "type": "module",
+  "exports": { "./semula.mjs": "./semula.mjs" },
+  "license": "Apache-2.0",
+  "private": true
+}
