@@ -51,3 +51,13 @@ $ semula check --project game
 ```
 
 Use `--json` for a machine-readable report: `ok`, `hits`, `misses`, `calls`, `since` and `missed`, a list of `{ts, outcome, preview, nearest}` where `nearest` is `{entry_id, score}` or `null`. `--since` takes an ISO time; without it the run is the one `max_misses` last began, or the whole log.
+
+### One command, one throwaway server
+
+`semula run` does the starting, the wiring and the check for you. It starts a server on a free port (no Docker), runs your command with `OPENAI_BASE_URL` set to it, prints the miss report and stops:
+
+```console
+$ semula run --store ./recordings --mode strict -- pytest tests/llm
+```
+
+`--store` keeps the recordings between runs (without it they go in a temporary directory). `--mode strict` exits 1 when any call missed, even if the command passed. The default `replay` follows the command's own exit code, and `record` parks a miss for an agent to answer. `--env NAME` sets another variable to the base URL, and `--project` sends the calls to one project.

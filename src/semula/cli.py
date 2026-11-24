@@ -146,6 +146,136 @@ def _serve(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _run(args: argparse.Namespace) -> int:
+    """An ephemeral server for one command: start it on a free port, run the command with the
+    base URL in its environment, report the misses, stop. The exit code is the command's, or 1
+    for a miss under ``--mode strict``."""
+    command = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
+    if not command:
+        print(
+            "error: give the command to run after `--`, e.g. semula run -- pytest", file=sys.stderr
+        )
+        return EXIT_USAGE
+    try:
+        import socket
+        import subprocess
+        import tempfile
+        import threading
+        import time
+        from dataclasses import replace
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        import httpx
+        import uvicorn
+
+        from .app import create_app
+        from .config import Settings
+        from .schema import iso
+    except ImportError:
+        return _left_out("run", SERVER_HINT)
+
+    scratch = None if args.store else tempfile.TemporaryDirectory(prefix="semula-run-")
+    data_dir = Path(args.store) if args.store else Path(scratch.name)  # type: ignore[union-attr]
+    data_dir.mkdir(parents=True, exist_ok=True)
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", args.port or 0))
+    sock.listen(128)
+    port = sock.getsockname()[1]
+    url = f"http://127.0.0.1:{port}"
+    server = None
+    thread = None
+    try:
+        settings = replace(
+            Settings.from_env(),
+            data_dir=data_dir,
+            database_url=None,
+            mode="record" if args.mode == "record" else "replay",
+            host="127.0.0.1",
+            port=port,
+            api_key=None,
+            hosted=False,
+        )
+        app = create_app(settings)
+        server = uvicorn.Server(
+            uvicorn.Config(
+                app, host="127.0.0.1", port=port, log_level="warning", proxy_headers=False
+            )
+        )
+        thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
+        thread.start()
+        for _ in range(500):
+            try:
+                httpx.get(url + "/health", timeout=0.5)
+                break
+            except httpx.HTTPError:
+                time.sleep(0.02)
+        else:
+            print("error: the server did not start", file=sys.stderr)
+            return EXIT_ERROR
+        since = iso(datetime.now(UTC))
+        env = dict(os.environ)
+        env["OPENAI_BASE_URL"] = url + "/v1"
+        env.setdefault("OPENAI_API_KEY", "semula")
+        env["SEMULA_URL"] = url
+        for name in args.env or []:
+            env[name] = url + "/v1"
+        if args.project:
+            env["OPENAI_BASE_URL"] = f"{url}/v1/projects/{args.project}"
+        if args.mode == "record":
+            print(
+                f"semula: recording at {url}; answer parked calls with `semula --url {url} "
+                "pending` / `answer`",
+                file=sys.stderr,
+            )
+        try:
+            # with --json, stdout is one JSON document, so the command's own output goes to stderr
+            done = subprocess.run(  # noqa: S603 - running the operator's own command is the point
+                command, env=env, stdout=2 if args.json else None
+            )
+            code = done.returncode
+        except (FileNotFoundError, PermissionError) as exc:
+            print(f"error: cannot run {command[0]!r}: {exc.strerror}", file=sys.stderr)
+            return EXIT_USAGE
+        except KeyboardInterrupt:
+            code = 130
+        args.url = url
+        params = {"since": since}
+        if args.project:
+            params["project"] = args.project
+        resp = _call(args, "GET", "/api/v1/check", params=params)
+        if resp.status_code != 200:
+            return _fail(args, resp)
+        report = resp.json()
+        lines = [
+            f"semula: {report['hits']} hit(s), {report['misses']} miss(es) "
+            f"in {report['calls']} call(s)"
+        ]
+        for m in report["missed"]:
+            lines.append(f"  {m['outcome']}: {m['preview'] or '(no preview)'}")
+        if args.json:
+            print(json.dumps({"url": url, "exit_code": code, "check": report}))
+        print("\n".join(lines), file=sys.stderr)
+        if code != 0:
+            return code
+        return EXIT_ERROR if args.mode == "strict" and not report["ok"] else EXIT_OK
+    except Exception as exc:
+        from .db import DatabaseTooNew
+
+        if isinstance(exc, DatabaseTooNew):
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        raise
+    finally:
+        if server is not None:
+            server.should_exit = True
+        if thread is not None:
+            thread.join(timeout=5)
+        sock.close()
+        if scratch is not None:
+            scratch.cleanup()
+
+
 def _pending(args: argparse.Namespace) -> int:
     params = {"status": "all" if args.all else "pending"}
     if args.project:
@@ -1194,6 +1324,25 @@ def build_parser() -> argparse.ArgumentParser:
     serve = add(sub, "serve", _serve, "Run the server")
     serve.add_argument("--host", default=None)
     serve.add_argument("--port", type=int, default=None)
+
+    run = add(
+        sub, "run", _run, "Run one command against an ephemeral server, then report the misses"
+    )
+    run.add_argument(
+        "--mode", choices=("replay", "strict", "record"), default="replay",
+        help="replay answers from recordings (default); strict also exits 1 on any miss; "
+        "record parks a miss for an agent",
+    )  # fmt: skip
+    run.add_argument(
+        "--store", default=None, help="keep recordings in this directory (default: a throwaway one)"
+    )
+    run.add_argument("--project", default=None, help="send the command's calls to this project")
+    run.add_argument("--port", type=int, default=None, help="listen here (default: a free port)")
+    run.add_argument(
+        "--env", action="append", metavar="NAME",
+        help="also set this variable to the base URL (repeatable; OPENAI_BASE_URL is always set)",
+    )  # fmt: skip
+    run.add_argument("cmd", nargs=argparse.REMAINDER, help="-- then the command and its arguments")
 
     mcp_config = add(
         sub, "mcp-config", _mcp_config, "Print (or install) the line that connects an agent to MCP"

@@ -8,6 +8,10 @@ open in the next; the database upgrades itself on start and cannot be downgraded
 
 ## [Unreleased]
 
+### Added
+
+- `semula run -- <command>`: starts a throwaway server on a free port (no Docker), runs the command with `OPENAI_BASE_URL` (and `SEMULA_URL`, plus any `--env NAME`) pointing at it, prints the miss report and stops. `--mode replay` (default) answers from recordings, `strict` also exits 1 on a miss the command ignored, `record` parks a miss for an agent. `--store DIR` keeps recordings between runs; `--project` aims the calls at one project. The exit code is the command's own (SEM-105).
+
 ## [0.7.0] - 2026-11-24
 
 ### Added
