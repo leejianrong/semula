@@ -40,6 +40,7 @@ nav = [
     { "Record through a real model" = "guide/record-through.md" },
     { "Let a command answer" = "guide/answerer.md" },
     { "Manage a busy queue" = "guide/busy-queue.md" },
+    { "Use it in your tests" = "guide/testing.md" },
     { "Upgrade and back up" = "guide/upgrade-and-backup.md" },
     { "Self-host it" = "guide/self-host.md" },
     { "Fork it and publish your own" = "guide/fork.md" },
