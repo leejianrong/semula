@@ -97,6 +97,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S"]
 # The backup script talks to the operator's own bucket and ping URL and runs pg_dump/openssl by
 # name: the URLs and commands come from the operator's environment, not from untrusted input.
 "scripts/backup.py" = ["S310", "S314", "S603"]
+"scripts/loadtest.py" = ["S101", "S501", "SIM115"]  # a measuring tool: asserts, self-signed certs
 
 [tool.mypy]
 python_version = "3.11"

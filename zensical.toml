@@ -44,6 +44,7 @@ nav = [
     { "Self-host it" = "guide/self-host.md" },
     { "Fork it and publish your own" = "guide/fork.md" },
     { "Host for a team" = "guide/hosted.md" },
+    { "Operate a public server" = "guide/operate.md" },
   ] },
   { "Explanation" = [
     { "Why calls park" = "explanation/why-calls-park.md" },
