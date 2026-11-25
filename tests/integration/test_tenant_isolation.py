@@ -260,6 +260,7 @@ SCENARIOS: dict[str, Callable[[World], None]] = {
 # Methods that do not take tenant data, or that are maintenance for the whole database.
 EXEMPT = {
     "authenticate_token": "finds the workspace from the credential, so no tenant exists yet",
+    "cached_principal": "the in-memory half of authenticate_token: no tenant yet, and no database",
     "workspaces_of": "a person's workspaces: people are global",
     "membership_of": "a person's role in a named workspace: people are global",
     "signup_open": "a person with no workspace yet makes their own, found by their own id",
