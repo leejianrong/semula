@@ -53,6 +53,12 @@ runs `docker compose up -d --wait` and waits for `/health`. If the new version d
 it puts the previous one back and the job fails. To redeploy or roll back, run *Actions > Deploy* with a
 released version.
 
+The rollback has been run for real (2026-11-25, SEM-145): a deploy of a version whose image does not exist
+(`0.7.99`, from a throwaway tag) failed at the image pull, printed "did not come up healthy, putting the
+previous release back", rebuilt 0.7.0, and `/health` answered 0.7.0 afterwards; the job still ends red, which is
+how you know the deploy did not happen. To repeat the drill, push a throwaway `vX.Y.99` tag (its Release run fails
+at `verify` and publishes nothing), run *Actions > Deploy* with that version, then delete the tag.
+
 Setup, once:
 
 - On the droplet, a `deploy` user in the `docker` group owns the checkout (`/opt/semula`). Its
