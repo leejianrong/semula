@@ -17,31 +17,29 @@ What one small server carries, measured, so you know the limits before someone f
 | 64 | 296 | 136 ms | 712 ms |
 | 256 | 186 | 707 ms | 5.2 s |
 
-One core serves about 600 hits a second, reached at 4 callers. Past about 16 callers at once throughput *falls* and the tail grows from tens of milliseconds to seconds. Nothing errors; it just gets slow. That is the first thing to give.
+One core serves about 600 hits a second, reached at 4 callers; three load generators at once also totalled about 645, so the server's core is the limit, not the generator. From a single generator, throughput fell and the tail grew past 16 callers, which may be partly the generator's own limit. Nothing errors; it just gets slower as callers pile up.
 
 **Held calls** (record mode, distinct prompts, nobody answering): about 30 KB each. 2,000 held at once took the process from 144 MB to 203 MB, and `/health` still answered (273 ms at the top step, 8 ms at 500). The default hosted limit is 50 held per project and 200 per workspace, far below where this gives out, so memory is not the constraint. The compose file's 512 MB limit for the app is not close to being reached by held calls.
 
-**One workspace flooding another** (128 callers on A while B sends hits):
+**One workspace flooding another** (128 callers on A, in their own process, while B sends hits from another; B's p95 is what to read):
 
 | | B's hits a second | B's p95 |
 |---|---:|---:|
-| B alone, quotas off | 584 | 8.7 ms |
-| B while A floods, quotas off | 70 | 210 ms |
-| B while A floods, default quotas | (B is also limited to 20 a second) | 4.6 ms alone, 223 ms during the flood |
+| Default quotas, B alone | 32 (B is held to 20 a second) | 4.2 ms |
+| Default quotas, A flooding | 22 | 4.1 ms |
+| Quotas off, B alone | 626 | 8.4 ms |
+| Quotas off, A flooding | 359 | 17 ms |
 
 ## What this means
 
-- **The per-token rate limit protects the quota, not the server.** With the defaults (20 requests a second, burst 100, per token) A's flood is mostly answered `429`, and B's latency still rises about fifty-fold. A refused request still has to look the token up in the database before the limiter can see which token it is, so a refusal is not free. All callers share one worker pool, so the queue A builds is the queue B waits in.
-- **A workspace can reach the limit without flooding.** 20 requests a second from each of 30 tokens is the whole core, and a workspace may hold 50 tokens. The rate limit is per token, so it does not bound a workspace.
-- **Not changed**: no quota or compose default was changed on this evidence. The quotas that came out right are the held-call limits and the memory limits. The finding is about concurrency, which the defaults do not govern.
+- **The default limits isolate tenants.** A flood from one token is answered `429` at the rate limit, and another workspace's replay latency does not move. This is the done-when for SEM-121.
+- **With the limits off, tenants share the core.** A flood that is actually served takes its share of one core, and B gets about half. That is arithmetic, not a defect, and it is why the limits stay on in a hosted server.
+- **A workspace can still reach the limit without flooding.** The rate limit is per token. 30 tokens at 20 requests a second is about the whole core, and a workspace may hold 50 tokens. A rate limit per workspace would close this; it is not built.
+- **Measure the flood from another process.** A first version of the `isolate` run flooded and timed B in one process and reported B's latency rising fifty-fold. That was the load generator timing its own saturated event loop. The script now runs the flood as a separate process.
+- **Not changed**: no quota or compose default was changed on this evidence.
 
 ## Before opening to the public
 
-Choose one, then rerun `isolate` on the real droplet:
-
-1. Keep the server in the range where it behaves (cap work in flight at about 16) and shed the rest with a fast `503`, so a flood is refused before it queues.
-2. Remember a token's identity for a few seconds in memory so a refused request costs microseconds. It means a revoked token works for those seconds.
-3. Rate limit by workspace as well as by token.
-4. Rate limit by address at the proxy, so a flood is stopped before the app sees it.
-
-Until one is in, an invite-only server is the safe setting: the people who could flood it are the people you invited.
+1. Run `scripts/loadtest.py` against the real droplet and replace the laptop numbers above. Do it from another machine.
+2. Decide on a per-workspace rate limit (see above) and on how many tokens a workspace may hold.
+3. Set the CPU and disk alerts on the droplet, and the budget alert on the backup bucket, so a flood or a full disk reaches a person.

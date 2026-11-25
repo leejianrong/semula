@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 import time
 
 import httpx
@@ -138,13 +139,17 @@ async def isolate(a: argparse.Namespace) -> None:
         print(line(label, lats, codes, a.seconds), flush=True)
 
     await b_probe("B alone")
-    flood_l: list[float] = []
-    flood_c: dict[int, int] = {}
-    flood = asyncio.create_task(hammer(a.url, a.token, a.flood, a.seconds + 2, flood_l, flood_c))
+    # The flood runs in its own process. One process that floods and also times B's calls ends
+    # up timing its own saturated event loop, which reads as the server being slow.
+    flood = await asyncio.create_subprocess_exec(
+        sys.executable, __file__, "replay", a.url, a.token,
+        "--steps", str(a.flood), "--seconds", str(a.seconds + 2),
+        stdout=asyncio.subprocess.PIPE,
+    )  # fmt: skip
     await asyncio.sleep(1)
     await b_probe("B during flood")
-    await flood
-    print(line("A (the flood)", flood_l, flood_c, a.seconds + 2))
+    out, _ = await flood.communicate()
+    print("A (the flood)  " + out.decode().strip().splitlines()[-1].strip())
 
 
 def main() -> None:
