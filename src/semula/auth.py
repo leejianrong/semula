@@ -178,11 +178,11 @@ class TokenAuthMiddleware:
         secret = auth[7:].strip().decode() if auth[:7].lower() == b"bearer " else ""
         secret = secret or headers.get(b"x-api-key", b"").decode().strip()
         try:
-            principal = (
-                await run_in_threadpool(self.service.authenticate_token, secret, client)
-                if secret
-                else None
-            )
+            # a token seen recently is answered from memory, on the event loop: a flood of
+            # repeat or refused requests then never queues the thread pool other tenants use
+            principal = self.service.cached_principal(secret) if secret else None
+            if principal is None and secret:
+                principal = await run_in_threadpool(self.service.authenticate_token, secret, client)
         except SemulaError as refusal:  # a suspended workspace: a clear refusal, not a bad guess
             await self._refuse(send, refusal)
             return

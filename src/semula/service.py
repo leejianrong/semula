@@ -418,6 +418,18 @@ class Service:
         self._forget_token(token_id)
         return successor
 
+    def cached_principal(self, secret: str) -> Principal | None:
+        """The principal for a token verified within ``TOKEN_CACHE_TTL`` seconds, or None. It
+        reads memory only and never blocks, so the auth middleware can ask it on the event loop
+        and leave the thread pool for requests that need the database (SEM-121)."""
+        if not tok.looks_like_a_token(secret):
+            return None
+        with self._tokens.lock:
+            cached = self._tokens.cache.get(tok.digest(secret))
+        if cached and cached[0] > time.monotonic() and (cached[2] is None or cached[2] > now_iso()):
+            return cached[1]
+        return None
+
     def authenticate_token(self, secret: str, client: str | None = None) -> Principal | None:
         """The principal a token stands for, or None. This is how a request finds its workspace,
         so it is not scoped to one; a verified token is trusted for ``TOKEN_CACHE_TTL`` seconds."""
@@ -425,10 +437,8 @@ class Service:
             return None
         digest = tok.digest(secret)
         now = time.monotonic()
-        with self._tokens.lock:
-            cached = self._tokens.cache.get(digest)
-        if cached and cached[0] > now and (cached[2] is None or cached[2] > now_iso()):
-            return cached[1]
+        if (cached := self.cached_principal(secret)) is not None:
+            return cached
         row = self.db.for_workspace(None).one(
             sa.select(
                 T,

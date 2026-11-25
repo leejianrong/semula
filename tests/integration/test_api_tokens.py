@@ -158,3 +158,25 @@ def test_the_scopes_are_ordered() -> None:
     assert tok.looks_like_a_token(tok.generate()) and tok.generate() != tok.generate()
     assert tok.coarse_address("2001:db8:1234:5678::1") == "2001:db8:1234::/48"
     assert tok.coarse_address("not an address") is None
+
+
+def test_cached_principal_answers_without_the_database_and_forgets_on_revoke(
+    service: Service,
+) -> None:
+    """The middleware asks this on the event loop (SEM-121), so it must never block or query."""
+    made = a(service).create_token("ci", "replay")
+    assert service.cached_principal(made["token"]) is None  # nothing verified yet
+    assert service.authenticate_token(made["token"]) is not None
+    first = service.cached_principal(made["token"])
+    assert first is not None and first.workspace_id == "a"
+    assert service.cached_principal("not a token") is None
+    a(service).revoke_token(made["id"])
+    assert service.cached_principal(made["token"]) is None  # immediate in this process
+
+
+def test_an_expired_cached_token_is_not_served(service: Service) -> None:
+    soon = iso(datetime.now(UTC) + timedelta(seconds=1))
+    made = a(service).create_token("short", "replay", expires_at=soon)
+    assert service.authenticate_token(made["token"]) is not None
+    time.sleep(1.2)
+    assert service.cached_principal(made["token"]) is None
